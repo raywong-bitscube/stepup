@@ -9,6 +9,8 @@
     if (q) return q.replace(/\/$/, '');
     const s = localStorage.getItem(LS_API);
     if (s) return s.replace(/\/$/, '');
+    const p = location.pathname || '';
+    if (p.startsWith('/student')) return location.origin;
     return 'http://localhost:8080';
   }
 

@@ -30,10 +30,11 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	mux.HandleFunc("GET /readyz", health.ReadyHandler(cfg.DBDSN != "", db))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"service":"stepup","env":"` + cfg.AppEnv + `"}`))
+		_, _ = w.Write([]byte(`{"service":"stepup","env":"` + cfg.AppEnv + `","ui":{"admin":"/admin/","student":"/student/"}}`))
 	})
 
 	registerAPIRoutes(mux, cfg, db)
+	registerStatic(mux, cfg)
 	return middleware.CORS(cfg.CORSAllowedOrigins, mux)
 }
 

@@ -14,7 +14,7 @@
 - **服务层**：`internal/service/*`（业务规则 + DB 操作 + 少量回退逻辑）
 - **基础设施层**：MySQL 连接、配置加载、中间件、审计写入
 
-`frontend-admin` 与 `frontend-student` 为 **纯静态页面**（HTML + CSS + 原生 `fetch` 调用 API），Docker 内由 Nginx 托管，无前端构建步骤。管理端涵盖登录、学生/科目/阶段/AI 模型/Prompt/审计与学生试卷查看；学生端涵盖验证码注册、密码登录、上传试卷与查看分析/改进计划。token 存 `localStorage`；可用 **`?api=http://主机:8080`** 指定后端根地址，并确保 `CORS_ALLOWED_ORIGINS` 包含前端 Origin。
+`frontend-admin` 与 `frontend-student` 为 **纯静态页面**（HTML + CSS + 原生 `fetch`）。**后端 Docker 镜像**内将两套页面复制到 `STATIC_DIR/admin`、`STATIC_DIR/student`，由 Go 在 **`/admin/`**、**`/student/`** 路径提供静态文件（与 API 同端口）；Compose 仍可额外启动 Nginx 映射 3000/3001。pathname 以 `/admin` 或 `/student` 开头时，前端脚本默认使用 **`location.origin`** 作为 API 根。token 存 `localStorage`；亦可用 **`?api=`** 强制指定后端地址。
 
 ---
 

@@ -19,6 +19,8 @@ type Config struct {
 	AdminBootstrapPassword string
 	AdminSessionTTL        time.Duration
 	CORSAllowedOrigins     []string
+	// StaticDir, if set, serves bundled UIs at /admin/ and /student/ (see Dockerfile).
+	StaticDir string
 }
 
 func Load() Config {
@@ -42,7 +44,8 @@ func Load() Config {
 		AdminBootstrapUsername: getenv("ADMIN_BOOTSTRAP_USERNAME", "admin"),
 		AdminBootstrapPassword: getenv("ADMIN_BOOTSTRAP_PASSWORD", "admin123"),
 		AdminSessionTTL:        time.Duration(sessionHours) * time.Hour,
-		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")),
+		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:8080")),
+		StaticDir:              strings.TrimSpace(getenv("STATIC_DIR", "")),
 	}
 }
 

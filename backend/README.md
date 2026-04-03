@@ -10,7 +10,7 @@ go run ./backend/cmd/server
 
 Server default address: `0.0.0.0:8080`
 
-仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS），Compose 映射 `:3001` / `:3000`；访问时若 API 与页面不同源，请在环境中配置 **`CORS_ALLOWED_ORIGINS`**。页面支持 **`?api=http://后端:8080`** 覆盖默认的 `http://localhost:8080`。
+仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS）。**Docker 构建的后端镜像**会将两套页面装入容器 **`STATIC_DIR`（默认 `/srv/static`）**，并由 Go 进程挂载到 **`/admin/`**、**`/student/`**（与 API 同端口，免跨域）。Compose 仍可选启动独立 Nginx 容器映射 `:3001` / `:3000`。环境变量 **`CORS_ALLOWED_ORIGINS`** 在分端口访问时需包含前端 Origin；默认已含 `localhost:8080`。页面支持 **`?api=`** 与 `localStorage` 覆盖 API 根地址。
 
 ## Quick Start (with Docker Compose)
 

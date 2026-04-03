@@ -13,6 +13,10 @@ RUN addgroup -S app && adduser -S app -G app
 WORKDIR /srv
 
 COPY --from=builder /out/server /srv/server
+COPY --chown=app:app frontend-admin /srv/static/admin
+COPY --chown=app:app frontend-student /srv/static/student
+
+ENV STATIC_DIR=/srv/static
 
 USER app
 EXPOSE 8080

@@ -80,11 +80,14 @@ curl -sS "http://localhost:${BACKEND_PORT:-8080}/readyz"
 
 ### 3.5 访问前端
 
-- 学生端：`http://<主机>:${STUDENT_PORT:-3000}`
-- 管理端：`http://<主机>:${ADMIN_PORT:-3001}`
-- API：`http://<主机>:${BACKEND_PORT:-8080}`
+- **整合入口（推荐）**：后端镜像内已打包静态页，与 API 同端口：
+  - 管理端：`http://<主机>:${BACKEND_PORT:-8080}/admin/`
+  - 学生端：`http://<主机>:${BACKEND_PORT:-8080}/student/`
+  - `GET /` 返回 JSON，并可查看其中 `ui` 字段的快捷路径。
+- **独立 nginx 容器**（Compose 默认仍启动）：`http://<主机>:${STUDENT_PORT:-3000}`、`http://<主机>:${ADMIN_PORT:-3001}`。
+- API：`http://<主机>:${BACKEND_PORT:-8080}/api/v1/...`
 
-浏览器访问跨域时，后端的 **`CORS_ALLOWED_ORIGINS`** 必须包含前端实际 **Origin**（含协议与端口），见 §5。
+同域访问 `/admin/`、`/student/` 时一般无 CORS 问题；若仍使用独立端口前端，后端的 **`CORS_ALLOWED_ORIGINS`** 必须包含对应 **Origin**（见根目录 `.env.example` 与 §5）。
 
 ---
 
