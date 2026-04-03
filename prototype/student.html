@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StepUp Student Prototype</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --text: #1b2430;
+      --muted: #5f6b7a;
+      --primary: #3662ff;
+      --primary-2: #6b8cff;
+      --border: #e4e9f2;
+      --ok: #1f9d55;
+      --warn: #c57c00;
+      --shadow: 0 10px 24px rgba(23, 35, 79, 0.08);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #f4f7ff 0%, var(--bg) 32%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .shell { max-width: 1180px; margin: 0 auto; padding: 20px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; gap: 10px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+    .logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--primary), var(--primary-2)); display: grid; place-items: center; color: #fff; box-shadow: var(--shadow); font-size: 15px; }
+    .tag { border: 1px solid var(--border); color: var(--muted); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 270px 1fr; gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .sidebar { padding: 14px; height: fit-content; position: sticky; top: 16px; }
+    .menu { display: grid; gap: 8px; margin-top: 10px; }
+    .menu button { border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px 12px; text-align: left; color: var(--text); cursor: pointer; font-size: 14px; }
+    .menu button.active { border-color: #cdd9ff; background: #f4f7ff; color: #2443c7; font-weight: 600; }
+    .content { display: grid; gap: 16px; }
+    .hero { padding: 20px; display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 0; color: var(--muted); line-height: 1.5; }
+    .btn { border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+    .btn.primary { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; }
+    .btn.ghost { background: #fff; border: 1px solid var(--border); color: var(--text); }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .kpi { padding: 16px; }
+    .kpi .label { font-size: 12px; color: var(--muted); }
+    .kpi .value { margin-top: 6px; font-size: 24px; font-weight: 700; }
+    .kpi .hint { margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .panel { padding: 18px; }
+    .panel h2 { margin: 0 0 12px; font-size: 18px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    input, select { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 10px 11px; font-size: 14px; background: #fff; color: var(--text); }
+    .dropzone { border: 1px dashed #b7c6eb; border-radius: 12px; background: #f9fbff; padding: 18px; text-align: center; color: var(--muted); margin-bottom: 10px; }
+    .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; margin-right: 8px; }
+    .ok { background: #e9f9ef; color: var(--ok); }
+    .warn { background: #fff6e8; color: var(--warn); }
+    .result-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; margin-top: 8px; }
+    .list { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+    .list li { margin-bottom: 6px; }
+    .link-back { text-decoration: none; color: #3358c7; font-size: 13px; }
+    @media (max-width: 1024px) {
+      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .result-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+    }
+    @media (max-width: 560px) {
+      .shell { padding: 14px; }
+      .kpis { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+      h1 { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand">
+        <div class="logo">S</div>
+        <div>StepUp 学生端</div>
+      </div>
+      <div class="tag">Student Prototype</div>
+    </div>
+    <a class="link-back" href="./index.html">← 返回原型入口</a>
+
+    <div class="grid" style="margin-top: 12px;">
+      <aside class="card sidebar">
+        <strong>我的学习</strong>
+        <div class="menu">
+          <button class="active">试卷上传与分析</button>
+          <button>改进计划</button>
+          <button>历史记录</button>
+          <button>账户设置</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="card hero">
+          <div>
+            <h1>精准定位薄弱点，给出可执行改进路径</h1>
+            <p>v0.1：选择科目与阶段，上传试卷后查看 AI 分析和个性化改进建议。</p>
+          </div>
+          <div>
+            <button class="btn ghost">查看历史分析</button>
+            <button class="btn primary">开始新分析</button>
+          </div>
+        </section>
+
+        <section class="kpis">
+          <div class="card kpi"><div class="label">累计上传试卷</div><div class="value">18</div><div class="hint">近 30 天 +5</div></div>
+          <div class="card kpi"><div class="label">已完成分析</div><div class="value">16</div><div class="hint">完成率 88.9%</div></div>
+          <div class="card kpi"><div class="label">薄弱知识点</div><div class="value">7</div><div class="hint">主要集中在力学</div></div>
+          <div class="card kpi"><div class="label">当前模型</div><div class="value" style="font-size:18px;">DeepSeek-R1</div><div class="hint">模型快照已保存</div></div>
+        </section>
+
+        <section class="card panel">
+          <h2>上传试卷</h2>
+          <div class="form-row">
+            <select><option>科目：物理</option><option>科目：语文</option></select>
+            <select><option>阶段：高中</option></select>
+          </div>
+          <div class="dropzone">
+            <div style="font-weight:600; margin-bottom:4px;">拖拽文件到这里，或点击选择文件</div>
+            <div style="font-size:13px;">支持 PDF / PNG / JPG，建议不超过 20MB</div>
+          </div>
+          <div class="form-row">
+            <input type="date" value="2026-04-03">
+            <input type="number" placeholder="试卷分数（可选）">
+          </div>
+          <button class="btn primary">提交并开始 AI 分析</button>
+        </section>
+
+        <section class="card panel">
+          <h2>分析结果（示例）</h2>
+          <div style="margin-bottom: 8px;">
+            <span class="status-pill ok">状态：completed</span>
+            <span class="status-pill warn">模型快照：name + url</span>
+          </div>
+          <div class="result-grid">
+            <div class="card panel" style="margin:0;">
+              <strong>薄弱点识别</strong>
+              <ul class="list">
+                <li>牛顿第二定律综合题中的受力分解不稳定</li>
+                <li>图像题关键条件提取速度偏慢</li>
+                <li>单位换算与有效数字在计算题中丢分较多</li>
+              </ul>
+            </div>
+            <div class="card panel" style="margin:0;">
+              <strong>7 天改进计划</strong>
+              <ul class="list">
+                <li>D1-D2：力学基础回顾 + 15 题专项</li>
+                <li>D3-D4：图像题分层训练 + 错因标注</li>
+                <li>D5-D6：限时模拟 2 套 + 复盘</li>
+                <li>D7：知识点回顾 + 弱项再测</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
