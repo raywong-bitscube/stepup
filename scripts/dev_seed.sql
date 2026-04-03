@@ -26,14 +26,14 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW(),
   updated_by = 0;
 
--- Admin bootstrap account
--- default password is plain text for current scaffold auth flow.
--- switch to bcrypt and hash-compare in production.
+-- Admin bootstrap account (password: admin123, bcrypt cost default)
+-- Regenerate: go run scripts/gen_admin_bcrypt.go
 INSERT INTO admin
   (username, password, role, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES
-  ('admin', 'admin123', 'super_admin', 1, NOW(), 0, NOW(), 0, 0)
+  ('admin', '$2a$10$cuSJlDfmvmDFtT/9q68TTuRlwD.ZC/2Ki5ehU5bnrqtjrPVAEaGM2', 'super_admin', 1, NOW(), 0, NOW(), 0, 0)
 ON DUPLICATE KEY UPDATE
+  password = VALUES(password),
   role = VALUES(role),
   status = VALUES(status),
   updated_at = NOW(),

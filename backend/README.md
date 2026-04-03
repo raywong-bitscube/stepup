@@ -77,6 +77,6 @@ Copy `backend/.env.example` and export values in your shell.
 
 - Without `DB_DSN`, admin and student auth (and student papers) use in-memory stores.
 - With `DB_DSN`, admin uses `admin` + `admin_session`; student uses `student`, `verification_code`, and `student_session`; papers persist to `exam_paper` and related tables.
-- Current seed admin password uses plain text to match scaffold behavior. Replace with bcrypt before production.
+- Dev seed stores the bootstrap admin password as **bcrypt** (`admin123` by default; regenerate with `go run scripts/gen_admin_bcrypt.go` if you change it).
 - Student paper analysis currently uses a pluggable `AnalysisAdapter` (default mock).
 - HTTP adapter scaffold is available via `ANALYSIS_ADAPTER=http`; it falls back to mock output on request/parse failure.
