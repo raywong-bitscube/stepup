@@ -46,6 +46,13 @@
 | 架构工具 | Go + Gin + GORM + templ |
 | 数据库 | MySQL |
 
+### 数据库设计约束
+
+- 关键业务数据只能软删除，不允许物理删除
+- 涉及启停状态的字段统一使用 `status`，取值规范为：active = 1，inactive = 0
+- 每个记录都必须有 `created_at` 和 `created_by`
+- 可修改的记录必须有 `updated_at` 和 `updated_by`
+
 ---
 
 ## 系统开发计划
