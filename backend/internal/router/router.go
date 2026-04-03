@@ -6,7 +6,11 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/admin"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/health"
+	"github.com/raywong-bitscube/stepup/backend/internal/handler/student"
+	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
 
 func New(cfg config.Config) http.Handler {
@@ -20,11 +24,14 @@ func New(cfg config.Config) http.Handler {
 	})
 
 	registerAPIRoutes(mux, cfg)
-	return mux
+	return middleware.CORS(cfg.CORSAllowedOrigins, mux)
 }
 
 func registerAPIRoutes(mux *http.ServeMux, cfg config.Config) {
 	adminAuthHandler := admin.NewAuthHandler(adminauth.New(cfg))
+	studentAuthService := studentauth.New(cfg)
+	studentAuthHandler := student.NewAuthHandler(studentAuthService)
+	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg))
 
 	// Admin routes
 	mux.HandleFunc("POST /api/v1/admin/auth/login", adminAuthHandler.Login)
@@ -32,16 +39,18 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config) {
 	mux.HandleFunc("GET /api/v1/admin/auth/me", adminAuthHandler.Me)
 
 	// Student auth routes
-	mux.HandleFunc("POST /api/v1/student/auth/send-code", notImplemented)
-	mux.HandleFunc("POST /api/v1/student/auth/verify-code", notImplemented)
-	mux.HandleFunc("POST /api/v1/student/auth/set-password", notImplemented)
-	mux.HandleFunc("POST /api/v1/student/auth/login", notImplemented)
+	mux.HandleFunc("POST /api/v1/student/auth/send-code", studentAuthHandler.SendCode)
+	mux.HandleFunc("POST /api/v1/student/auth/verify-code", studentAuthHandler.VerifyCode)
+	mux.HandleFunc("POST /api/v1/student/auth/set-password", studentAuthHandler.SetPassword)
+	mux.HandleFunc("POST /api/v1/student/auth/login", studentAuthHandler.Login)
+	mux.HandleFunc("POST /api/v1/student/auth/logout", studentAuthHandler.Logout)
+	mux.HandleFunc("GET /api/v1/student/auth/me", studentAuthHandler.Me)
 
 	// Student paper routes
-	mux.HandleFunc("POST /api/v1/student/papers", notImplemented)
-	mux.HandleFunc("GET /api/v1/student/papers", notImplemented)
-	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/analysis", notImplemented)
-	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/plan", notImplemented)
+	mux.HandleFunc("POST /api/v1/student/papers", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Create))
+	mux.HandleFunc("GET /api/v1/student/papers", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.List))
+	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/analysis", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Analysis))
+	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/plan", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Plan))
 
 	// Admin management routes
 	mux.HandleFunc("GET /api/v1/admin/students", notImplemented)
