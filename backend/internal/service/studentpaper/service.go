@@ -65,18 +65,18 @@ func (s *Service) resolveAdapter(ctx context.Context) (AnalysisAdapter, *activeM
 		return MockAnalysisAdapter{}, nil
 	}
 	if s.db != nil {
-		var name, url string
+		var name, url, appKey, appSecret string
 		err := s.db.QueryRowContext(ctx, `
-SELECT name, url
+SELECT name, url, app_key, app_secret
 FROM ai_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
-`).Scan(&name, &url)
+`).Scan(&name, &url, &appKey, &appSecret)
 		if err == nil {
 			url = strings.TrimSpace(url)
 			if url != "" {
-				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout), &activeModel{
+				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout, appSecret, appKey), &activeModel{
 					Name: strings.TrimSpace(name),
 					URL:  url,
 				}
@@ -84,7 +84,7 @@ LIMIT 1
 		}
 	}
 	if ep := strings.TrimSpace(s.cfg.AIEndpoint); ep != "" {
-		return NewHTTPAnalysisAdapter(ep, s.cfg.AIRequestTimeout), nil
+		return NewHTTPAnalysisAdapter(ep, s.cfg.AIRequestTimeout, "", ""), nil
 	}
 	return MockAnalysisAdapter{}, nil
 }
