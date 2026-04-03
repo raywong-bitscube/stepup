@@ -2,8 +2,8 @@ package adminauth
 
 import (
 	"context"
-	"database/sql"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -55,7 +56,7 @@ func (s *Service) Login(username, password string) (Session, error) {
 }
 
 func (s *Service) loginMemory(username, password string) (Session, error) {
-	if username != s.cfg.AdminBootstrapUsername || password != s.cfg.AdminBootstrapPassword {
+	if username != s.cfg.AdminBootstrapUsername || !verifyPassword(s.cfg.AdminBootstrapPassword, password) {
 		return Session{}, ErrUnauthorized
 	}
 	token, err := generateToken()
@@ -131,7 +132,7 @@ LIMIT 1
 		}
 		return Session{}, err
 	}
-	if dbPass != password {
+	if !verifyPassword(dbPass, password) {
 		return Session{}, ErrUnauthorized
 	}
 
@@ -226,4 +227,12 @@ func generateToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+func verifyPassword(stored, input string) bool {
+	// Backward compatibility: allow plain-text value during transition.
+	if strings.HasPrefix(stored, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(input)) == nil
+	}
+	return stored == input
 }

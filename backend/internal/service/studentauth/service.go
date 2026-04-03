@@ -2,9 +2,9 @@ package studentauth
 
 import (
 	"context"
-	"database/sql"
 	"crypto/rand"
 	crand "crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -137,6 +138,10 @@ func (s *Service) SetPassword(identifier, password string) error {
 }
 
 func (s *Service) setPasswordMemory(identifier, password string) error {
+	hashed, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -144,12 +149,12 @@ func (s *Service) setPasswordMemory(identifier, password string) error {
 	if !ok {
 		s.students[identifier] = student{
 			Identifier: identifier,
-			Password:   password,
+			Password:   hashed,
 			Status:     s.defaultStatus,
 		}
 		return nil
 	}
-	existing.Password = password
+	existing.Password = hashed
 	s.students[identifier] = existing
 	return nil
 }
@@ -179,7 +184,7 @@ func (s *Service) loginMemory(identifier, password string) (Session, error) {
 	if stu.Password == "" {
 		return Session{}, ErrPasswordUnset
 	}
-	if stu.Password != password {
+	if !verifyPassword(stu.Password, password) {
 		return Session{}, ErrUnauthorized
 	}
 
@@ -318,11 +323,15 @@ WHERE id = ?
 }
 
 func (s *Service) setPasswordDB(identifier, password string) error {
+	hashed, err := hashPassword(password)
+	if err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	var id uint64
-	err := s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, `
 SELECT id FROM student
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
@@ -344,7 +353,7 @@ LIMIT 1
 INSERT INTO student
   (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 1, 1, ?, 0, ?, 0, 0)
-`, phone, email, password, identifier, now, now)
+`, phone, email, hashed, identifier, now, now)
 		return err
 	}
 
@@ -352,7 +361,7 @@ VALUES (?, ?, ?, ?, 1, 1, ?, 0, ?, 0, 0)
 UPDATE student
 SET password = ?, updated_at = ?, updated_by = 0
 WHERE id = ?
-`, password, now, id)
+`, hashed, now, id)
 	return err
 }
 
@@ -379,7 +388,7 @@ LIMIT 1
 		}
 		return Session{}, err
 	}
-	if status != 1 || dbPass != password {
+	if status != 1 || !verifyPassword(dbPass, password) {
 		return Session{}, ErrUnauthorized
 	}
 
@@ -470,4 +479,20 @@ SET status = 0, updated_at = NOW(), updated_by = student_id
 WHERE session_token = ? AND is_deleted = 0
 `, token)
 	return err
+}
+
+func hashPassword(raw string) (string, error) {
+	out, err := bcrypt.GenerateFromPassword([]byte(raw), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+func verifyPassword(stored, input string) bool {
+	// Backward compatibility: allow plain-text value during transition.
+	if strings.HasPrefix(stored, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(input)) == nil
+	}
+	return stored == input
 }
