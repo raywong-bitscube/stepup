@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 )
@@ -31,13 +30,13 @@ func (h *StudentsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type row struct {
-		ID        uint64    `json:"id"`
-		Phone     *string   `json:"phone"`
-		Email     *string   `json:"email"`
-		Name      string    `json:"name"`
-		Stage     string    `json:"stage"`
-		Status    int       `json:"status"`
-		CreatedAt timeJSON  `json:"created_at"`
+		ID        uint64      `json:"id"`
+		Phone     *string     `json:"phone"`
+		Email     *string     `json:"email"`
+		Name      string      `json:"name"`
+		Stage     string      `json:"stage"`
+		Status    int         `json:"status"`
+		CreatedAt RFC3339Time `json:"created_at"`
 	}
 
 	out := make([]row, 0, len(items))
@@ -49,7 +48,7 @@ func (h *StudentsHandler) List(w http.ResponseWriter, r *http.Request) {
 			Name:      s.Name,
 			Stage:     s.StageName,
 			Status:    s.Status,
-			CreatedAt: timeJSON(s.CreatedAt),
+			CreatedAt: RFC3339Time(s.CreatedAt),
 		})
 	}
 
@@ -128,11 +127,4 @@ func (h *StudentsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	}
-}
-
-// timeJSON encodes time in RFC3339 for JSON without exporting a custom type on the public API structs.
-type timeJSON time.Time
-
-func (t timeJSON) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Time(t).UTC().Format(time.RFC3339Nano))
 }

@@ -173,6 +173,78 @@ Authorization: Bearer <admin_token>
 {"status":"ok"}
 ```
 
+### 3.7 科目（管理端）
+
+#### 列表
+
+`GET /api/v1/admin/subjects`
+
+Header: `Authorization: Bearer <admin_token>`
+
+响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "name": "物理",
+      "description": "默认科目：物理",
+      "status": 1,
+      "created_at": "2026-04-03T12:00:00Z"
+    }
+  ]
+}
+```
+
+#### 创建
+
+`POST /api/v1/admin/subjects`
+
+请求：
+
+```json
+{
+  "name": "化学",
+  "description": "可选说明"
+}
+```
+
+#### 更新
+
+`PATCH /api/v1/admin/subjects/{subjectId}`
+
+请求（可选字段，至少一项）：
+
+```json
+{
+  "name": "化学（新课标）",
+  "description": "",
+  "status": 1
+}
+```
+
+说明：`description` 传空字符串表示置为 `NULL`。
+
+### 3.8 阶段（管理端）
+
+与科目相同模式：
+
+- `GET /api/v1/admin/stages`
+- `POST /api/v1/admin/stages`
+- `PATCH /api/v1/admin/stages/{stageId}`
+
+创建请求示例：
+
+```json
+{
+  "name": "初中",
+  "description": "可选说明"
+}
+```
+
+科目 / 阶段接口均需 `DB_DSN`；名称唯一冲突返回 `409` `CONFLICT`。
+
 ---
 
 ## 4) Student 鉴权

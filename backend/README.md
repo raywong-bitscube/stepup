@@ -74,6 +74,8 @@ Copy `backend/.env.example` and export values in your shell.
 - `GET /api/v1/admin/students` — list students (requires admin Bearer token and `DB_DSN`)
 - `POST /api/v1/admin/students` — create student (identifier/password/name/stage)
 - `PATCH /api/v1/admin/students/{studentId}` — update student (name/stage/status/password)
+- `GET|POST /api/v1/admin/subjects`, `PATCH /api/v1/admin/subjects/{subjectId}` — subject CRUD
+- `GET|POST /api/v1/admin/stages`, `PATCH /api/v1/admin/stages/{stageId}` — stage CRUD
 - API route skeleton for other v0.1 admin endpoints (returns `501 NOT_IMPLEMENTED`)
 
 ## Notes

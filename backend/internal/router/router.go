@@ -10,7 +10,9 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/student"
 	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
@@ -33,6 +35,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminAuthService := adminauth.New(cfg, db)
 	adminAuthHandler := admin.NewAuthHandler(adminAuthService)
 	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db))
+	adminSubjectsHandler := admin.NewSubjectsHandler(adminsubjects.New(db))
+	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db))
@@ -61,13 +65,13 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("POST /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Create))
 	mux.HandleFunc("PATCH /api/v1/admin/students/{studentId}", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Patch))
 
-	mux.HandleFunc("GET /api/v1/admin/subjects", notImplemented)
-	mux.HandleFunc("POST /api/v1/admin/subjects", notImplemented)
-	mux.HandleFunc("PATCH /api/v1/admin/subjects/{subjectId}", notImplemented)
+	mux.HandleFunc("GET /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.List))
+	mux.HandleFunc("POST /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.Create))
+	mux.HandleFunc("PATCH /api/v1/admin/subjects/{subjectId}", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.Patch))
 
-	mux.HandleFunc("GET /api/v1/admin/stages", notImplemented)
-	mux.HandleFunc("POST /api/v1/admin/stages", notImplemented)
-	mux.HandleFunc("PATCH /api/v1/admin/stages/{stageId}", notImplemented)
+	mux.HandleFunc("GET /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.List))
+	mux.HandleFunc("POST /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Create))
+	mux.HandleFunc("PATCH /api/v1/admin/stages/{stageId}", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/ai-models", notImplemented)
 	mux.HandleFunc("POST /api/v1/admin/ai-models", notImplemented)
