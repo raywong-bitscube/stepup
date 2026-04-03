@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: stepup-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-stepup}
+      MYSQL_USER: ${MYSQL_USER:-stepup_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stepup_pass}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - stepup_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u${MYSQL_USER:-stepup_user}", "-p${MYSQL_PASSWORD:-stepup_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: stepup-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8080
+      DB_DSN: "${MYSQL_USER:-stepup_user}:${MYSQL_PASSWORD:-stepup_pass}@tcp(mysql:3306)/${MYSQL_DATABASE:-stepup}?charset=utf8mb4&parseTime=True&loc=Local"
+      ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-admin123}
+      ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-24}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  frontend-student:
+    build:
+      context: .
+      dockerfile: frontend-student/Dockerfile
+    container_name: stepup-frontend-student
+    restart: unless-stopped
+    ports:
+      - "${STUDENT_PORT:-3000}:80"
+    depends_on:
+      - backend
+
+  frontend-admin:
+    build:
+      context: .
+      dockerfile: frontend-admin/Dockerfile
+    container_name: stepup-frontend-admin
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_PORT:-3001}:80"
+    depends_on:
+      - backend
+
+volumes:
+  stepup_mysql_data:
