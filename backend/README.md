@@ -72,6 +72,8 @@ Copy `backend/.env.example` and export values in your shell.
   - `GET /api/v1/student/papers/{paperId}/plan`
   - All paper endpoints require `Authorization: Bearer <student_token>`
 - `GET /api/v1/admin/students` — list students (requires admin Bearer token and `DB_DSN`)
+- `POST /api/v1/admin/students` — create student (identifier/password/name/stage)
+- `PATCH /api/v1/admin/students/{studentId}` — update student (name/stage/status/password)
 - API route skeleton for other v0.1 admin endpoints (returns `501 NOT_IMPLEMENTED`)
 
 ## Notes

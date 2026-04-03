@@ -58,8 +58,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 
 	// Admin management routes
 	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))
-	mux.HandleFunc("POST /api/v1/admin/students", notImplemented)
-	mux.HandleFunc("PATCH /api/v1/admin/students/{studentId}", notImplemented)
+	mux.HandleFunc("POST /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Create))
+	mux.HandleFunc("PATCH /api/v1/admin/students/{studentId}", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/subjects", notImplemented)
 	mux.HandleFunc("POST /api/v1/admin/subjects", notImplemented)

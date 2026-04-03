@@ -113,6 +113,66 @@ Authorization: Bearer <admin_token>
 
 - 需要已配置 `DB_DSN`（无数据库时返回 `503`，`{"code":"DATABASE_REQUIRED"}`）。
 
+### 3.5 创建学生（管理端）
+
+`POST /api/v1/admin/students`
+
+Header:
+
+```text
+Authorization: Bearer <admin_token>
+```
+
+请求：
+
+```json
+{
+  "identifier": "13800138000",
+  "password": "12345678",
+  "name": "示例学生",
+  "stage": "高中"
+}
+```
+
+成功响应：
+
+```json
+{"status":"ok"}
+```
+
+说明：
+
+- `identifier` 支持手机号或邮箱。
+- 学生密码按 bcrypt 存储。
+- `identifier` 冲突返回 `409`，`{"code":"CONFLICT"}`。
+
+### 3.6 更新学生（管理端）
+
+`PATCH /api/v1/admin/students/{studentId}`
+
+Header:
+
+```text
+Authorization: Bearer <admin_token>
+```
+
+请求（可选字段，至少一个）：
+
+```json
+{
+  "name": "新名字",
+  "stage": "高中",
+  "status": 1,
+  "password": "newpass123"
+}
+```
+
+成功响应：
+
+```json
+{"status":"ok"}
+```
+
 ---
 
 ## 4) Student 鉴权
@@ -260,6 +320,7 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 - `FILE_REQUIRED`
 - `INVALID_MULTIPART`
 - `NOT_FOUND`
+- `CONFLICT`
 - `DATABASE_REQUIRED`（管理端依赖 MySQL 的接口在未配置数据库时）
 - `NOT_IMPLEMENTED`（尚未完成的接口）
 
