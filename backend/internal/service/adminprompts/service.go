@@ -79,14 +79,14 @@ type CreateInput struct {
 	Status      *int
 }
 
-func (s *Service) Create(ctx context.Context, in CreateInput) error {
+func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	if s == nil || s.db == nil {
-		return ErrNoDatabase
+		return 0, ErrNoDatabase
 	}
 	key := strings.TrimSpace(in.Key)
 	content := strings.TrimSpace(in.Content)
 	if key == "" || content == "" {
-		return ErrInvalidInput
+		return 0, ErrInvalidInput
 	}
 	desc := sql.NullString{}
 	d := strings.TrimSpace(in.Description)
@@ -96,25 +96,26 @@ func (s *Service) Create(ctx context.Context, in CreateInput) error {
 	status := 1
 	if in.Status != nil {
 		if *in.Status != 0 && *in.Status != 1 {
-			return ErrInvalidInput
+			return 0, ErrInvalidInput
 		}
 		status = *in.Status
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 INSERT INTO prompt_template
   (`+"`key`"+`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, 0, ?, 0, 0)
 `, key, desc, content, status, now, now)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return ErrConflict
+			return 0, ErrConflict
 		}
-		return err
+		return 0, err
 	}
-	return nil
+	nid, _ := res.LastInsertId()
+	return uint64(nid), nil
 }
 
 type UpdateInput struct {

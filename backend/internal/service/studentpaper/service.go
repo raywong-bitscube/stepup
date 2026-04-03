@@ -26,19 +26,18 @@ type Paper struct {
 }
 
 type Analysis struct {
-	PaperID          uint64    `json:"paper_id"`
-	Status           string    `json:"status"`
-	AIModelSnapshot  any       `json:"ai_model_snapshot"`
-	WeakPoints       []string  `json:"weak_points"`
-	Summary          string    `json:"summary"`
-	UpdatedAt        time.Time `json:"updated_at"`
-	ImprovementPlan  []string  `json:"improvement_plan"`
+	PaperID         uint64    `json:"paper_id"`
+	Status          string    `json:"status"`
+	AIModelSnapshot any       `json:"ai_model_snapshot"`
+	WeakPoints      []string  `json:"weak_points"`
+	Summary         string    `json:"summary"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	ImprovementPlan []string  `json:"improvement_plan"`
 }
 
 type Service struct {
 	cfg      config.Config
 	db       *sql.DB
-	adapter  AnalysisAdapter
 	mu       sync.RWMutex
 	nextID   uint64
 	papers   map[uint64]Paper
@@ -46,18 +45,58 @@ type Service struct {
 }
 
 func New(cfg config.Config, db *sql.DB) *Service {
-	svc := &Service{
+	return &Service{
 		cfg:      cfg,
 		db:       db,
-		adapter:  MockAnalysisAdapter{},
 		nextID:   1,
 		papers:   map[uint64]Paper{},
 		analysis: map[uint64]Analysis{},
 	}
-	if strings.EqualFold(cfg.AnalysisAdapter, "http") {
-		svc.adapter = NewHTTPAnalysisAdapter(cfg.AIEndpoint, cfg.AIRequestTimeout)
+}
+
+// activeModel holds DB-backed endpoint metadata (no secrets) for paper_analysis snapshot.
+type activeModel struct {
+	Name string
+	URL  string
+}
+
+func (s *Service) resolveAdapter(ctx context.Context) (AnalysisAdapter, *activeModel) {
+	if !strings.EqualFold(s.cfg.AnalysisAdapter, "http") {
+		return MockAnalysisAdapter{}, nil
 	}
-	return svc
+	if s.db != nil {
+		var name, url string
+		err := s.db.QueryRowContext(ctx, `
+SELECT name, url
+FROM ai_model
+WHERE status = 1 AND is_deleted = 0
+ORDER BY id DESC
+LIMIT 1
+`).Scan(&name, &url)
+		if err == nil {
+			url = strings.TrimSpace(url)
+			if url != "" {
+				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout), &activeModel{
+					Name: strings.TrimSpace(name),
+					URL:  url,
+				}
+			}
+		}
+	}
+	if ep := strings.TrimSpace(s.cfg.AIEndpoint); ep != "" {
+		return NewHTTPAnalysisAdapter(ep, s.cfg.AIRequestTimeout), nil
+	}
+	return MockAnalysisAdapter{}, nil
+}
+
+func applyModelSnapshot(out AnalyzeOutput, meta *activeModel) AnalyzeOutput {
+	if meta != nil {
+		out.ModelSnapshot = map[string]any{
+			"name": meta.Name,
+			"url":  meta.URL,
+		}
+	}
+	return out
 }
 
 func (s *Service) Create(identifier, subject, stage, fileName string, fileSize int64) Paper {
@@ -66,6 +105,9 @@ func (s *Service) Create(identifier, subject, stage, fileName string, fileSize i
 			return p
 		}
 	}
+
+	ctx := context.Background()
+	adapter, meta := s.resolveAdapter(ctx)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -82,15 +124,15 @@ func (s *Service) Create(identifier, subject, stage, fileName string, fileSize i
 		FileSize:   fileSize,
 		CreatedAt:  time.Now(),
 	}
-	s.papers[id] = p
-	out := s.adapter.Analyze(AnalyzeInput{
+	out := adapter.Analyze(AnalyzeInput{
 		Subject:  subject,
 		Stage:    stage,
 		FileName: fileName,
 	})
+	out = applyModelSnapshot(out, meta)
 	s.analysis[id] = Analysis{
-		PaperID: id,
-		Status:  "completed",
+		PaperID:         id,
+		Status:          "completed",
 		AIModelSnapshot: out.ModelSnapshot,
 		Summary:         out.Summary,
 		WeakPoints:      out.WeakPoints,
@@ -194,11 +236,13 @@ LIMIT 1
 	now := time.Now()
 	fileType := detectFileType(fileName)
 	fileURL := "/uploads/" + fileName
-	analysisOut := s.adapter.Analyze(AnalyzeInput{
+	adapter, meta := s.resolveAdapter(ctx)
+	analysisOut := adapter.Analyze(AnalyzeInput{
 		Subject:  subject,
 		Stage:    stage,
 		FileName: fileName,
 	})
+	analysisOut = applyModelSnapshot(analysisOut, meta)
 
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO exam_paper

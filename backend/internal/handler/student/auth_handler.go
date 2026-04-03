@@ -6,15 +6,17 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 )
 
 type AuthHandler struct {
 	service *studentauth.Service
+	audit   *auditlog.Writer
 }
 
-func NewAuthHandler(service *studentauth.Service) *AuthHandler {
-	return &AuthHandler{service: service}
+func NewAuthHandler(service *studentauth.Service, audit *auditlog.Writer) *AuthHandler {
+	return &AuthHandler{service: service, audit: audit}
 }
 
 type identifierRequest struct {
@@ -108,6 +110,22 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	if h.audit != nil && session.StudentID != 0 {
+		snap, _ := json.Marshal(map[string]any{"identifier": session.Identifier})
+		sid := session.StudentID
+		h.audit.Write(r.Context(), auditlog.Event{
+			UserID:     &sid,
+			UserType:   "student",
+			Action:     "login",
+			EntityType: "student",
+			EntityID:   &sid,
+			Snapshot:   snap,
+			IP:         r.RemoteAddr,
+			CreatedBy:  0,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"token":      session.Token,
 		"expires_at": session.ExpiresAt,

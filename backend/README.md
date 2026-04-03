@@ -44,8 +44,10 @@ Copy `backend/.env.example` and export values in your shell.
 - `DB_DSN` - MySQL DSN (e.g. `user:pass@tcp(127.0.0.1:3306)/stepup?parseTime=true&loc=Local`); when unset, auth and papers stay in-memory
 - `CORS_ALLOWED_ORIGINS` - `http://localhost:3000,http://localhost:3001`
 - `ANALYSIS_ADAPTER` - `mock` (default) or `http`
-- `AI_ENDPOINT` - HTTP adapter target endpoint (used when `ANALYSIS_ADAPTER=http`)
+- `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
 - `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls
+
+**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用 MySQL **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。
 
 ## Current Scope
 
@@ -80,10 +82,14 @@ Copy `backend/.env.example` and export values in your shell.
 - `GET|POST /api/v1/admin/prompts`, `PATCH /api/v1/admin/prompts/{promptId}` — Prompt 模板
 - `GET /api/v1/admin/audit-logs` — 审计日志只读列表（`?limit=`，默认 100，最大 500）
 
+## Audit log（`audit_log`）
+
+在 **`DB_DSN` 已配置** 时，关键写操作会异步写入 `audit_log`（短超时，失败不影响主流程），包括：管理员与学生登录；学生上传试卷创建分析任务；管理员对学生 / 科目 / 阶段 / AI 模型 / Prompt 的创建与更新。涉及 **`app_secret` 的 PATCH** 记为 **`credential_change`**；学生/管理员密码变更记为 **`password_change`**。`snapshot` 刻意避免密码、`app_secret` 等敏感正文，多为标识字段或布尔标记。
+
 ## Notes
 
-- Without `DB_DSN`, admin and student auth (and student papers) use in-memory stores.
+- Without `DB_DSN`, admin and student auth (and student papers) use in-memory stores; **audit 写入同样依赖数据库**，无 DB 时不落库。
 - With `DB_DSN`, admin uses `admin` + `admin_session`; student uses `student`, `verification_code`, and `student_session`; papers persist to `exam_paper` and related tables.
 - Dev seed stores the bootstrap admin password as **bcrypt** (`admin123` by default; regenerate with `go run scripts/gen_admin_bcrypt.go` if you change it).
-- Student paper analysis currently uses a pluggable `AnalysisAdapter` (default mock).
-- HTTP adapter scaffold is available via `ANALYSIS_ADAPTER=http`; it falls back to mock output on request/parse failure.
+- Student paper analysis uses a pluggable `AnalysisAdapter` (default mock).
+- `ANALYSIS_ADAPTER=http` uses the URL resolution order above; HTTP 调用失败或解析失败时仍可能退回 mock 输出。

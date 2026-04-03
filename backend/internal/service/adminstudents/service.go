@@ -104,20 +104,20 @@ type UpdateInput struct {
 	Password *string
 }
 
-func (s *Service) Create(ctx context.Context, in CreateInput) error {
+func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	if s == nil || s.db == nil {
-		return ErrNoDatabase
+		return 0, ErrNoDatabase
 	}
 	identifier := strings.TrimSpace(strings.ToLower(in.Identifier))
 	name := strings.TrimSpace(in.Name)
 	stage := strings.TrimSpace(in.Stage)
 	password := strings.TrimSpace(in.Password)
 	if identifier == "" || password == "" || name == "" || stage == "" {
-		return ErrInvalidInput
+		return 0, ErrInvalidInput
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -131,9 +131,9 @@ LIMIT 1
 `, stage).Scan(&stageID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return ErrInvalidInput
+			return 0, ErrInvalidInput
 		}
-		return err
+		return 0, err
 	}
 
 	phone := sql.NullString{}
@@ -144,18 +144,19 @@ LIMIT 1
 		phone = sql.NullString{String: identifier, Valid: true}
 	}
 	now := time.Now()
-	_, err = s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 INSERT INTO student
   (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, 1, ?, 0, ?, 0, 0)
 `, phone, email, string(hashed), name, stageID, now, now)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return ErrConflict
+			return 0, ErrConflict
 		}
-		return err
+		return 0, err
 	}
-	return nil
+	nid, _ := res.LastInsertId()
+	return uint64(nid), nil
 }
 
 func (s *Service) Patch(ctx context.Context, studentID uint64, in UpdateInput) error {

@@ -21,6 +21,7 @@ var (
 )
 
 type Session struct {
+	AdminID   uint64
 	Token     string
 	Username  string
 	Role      string
@@ -65,6 +66,7 @@ func (s *Service) loginMemory(username, password string) (Session, error) {
 	}
 	now := time.Now()
 	session := Session{
+		AdminID:   0,
 		Token:     token,
 		Username:  username,
 		Role:      "super_admin",
@@ -153,6 +155,7 @@ VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
 	}
 
 	return Session{
+		AdminID:   adminID,
 		Token:     token,
 		Username:  dbUser,
 		Role:      role,
@@ -202,6 +205,7 @@ WHERE session_token = ? AND is_deleted = 0
 `, now, now, adminID, token)
 
 	return Session{
+		AdminID:   adminID,
 		Token:     token,
 		Username:  username,
 		Role:      role,

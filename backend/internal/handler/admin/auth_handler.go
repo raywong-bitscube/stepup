@@ -7,14 +7,16 @@ import (
 	"strings"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 )
 
 type AuthHandler struct {
 	service *adminauth.Service
+	audit   *auditlog.Writer
 }
 
-func NewAuthHandler(service *adminauth.Service) *AuthHandler {
-	return &AuthHandler{service: service}
+func NewAuthHandler(service *adminauth.Service, audit *auditlog.Writer) *AuthHandler {
+	return &AuthHandler{service: service, audit: audit}
 }
 
 type loginRequest struct {
@@ -40,6 +42,26 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 		}
 		return
+	}
+
+	if h.audit != nil {
+		snap, _ := json.Marshal(map[string]any{"username": session.Username, "role": session.Role})
+		var uid *uint64
+		cb := uint64(0)
+		if session.AdminID != 0 {
+			uid = &session.AdminID
+			cb = session.AdminID
+		}
+		h.audit.Write(r.Context(), auditlog.Event{
+			UserID:     uid,
+			UserType:   "admin",
+			Action:     "login",
+			EntityType: "admin",
+			EntityID:   uid,
+			Snapshot:   snap,
+			IP:         r.RemoteAddr,
+			CreatedBy:  cb,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{

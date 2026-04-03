@@ -40,6 +40,7 @@ type verification struct {
 }
 
 type Session struct {
+	StudentID  uint64
 	Token      string
 	Identifier string
 	ExpiresAt  time.Time
@@ -194,6 +195,7 @@ func (s *Service) loginMemory(identifier, password string) (Session, error) {
 	}
 	now := time.Now()
 	session := Session{
+		StudentID:  0,
 		Token:      token,
 		Identifier: identifier,
 		ExpiresAt:  now.Add(s.sessionTTL),
@@ -409,6 +411,7 @@ VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
 	}
 
 	return Session{
+		StudentID:  studentID,
 		Token:      token,
 		Identifier: identifier,
 		ExpiresAt:  expiresAt,
@@ -463,6 +466,7 @@ WHERE session_token = ? AND is_deleted = 0
 	}
 
 	return Session{
+		StudentID:  studentID,
 		Token:      token,
 		Identifier: idf,
 		ExpiresAt:  expiresAt,

@@ -68,21 +68,21 @@ type CreateInput struct {
 	Status    *int
 }
 
-func (s *Service) Create(ctx context.Context, in CreateInput) error {
+func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	if s == nil || s.db == nil {
-		return ErrNoDatabase
+		return 0, ErrNoDatabase
 	}
 	name := strings.TrimSpace(in.Name)
 	url := strings.TrimSpace(in.URL)
 	key := strings.TrimSpace(in.AppKey)
 	secret := strings.TrimSpace(in.AppSecret)
 	if name == "" || url == "" || key == "" || secret == "" {
-		return ErrInvalidInput
+		return 0, ErrInvalidInput
 	}
 	status := 0
 	if in.Status != nil {
 		if *in.Status != 0 && *in.Status != 1 {
-			return ErrInvalidInput
+			return 0, ErrInvalidInput
 		}
 		status = *in.Status
 	}
@@ -92,7 +92,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) error {
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -102,18 +102,22 @@ UPDATE ai_model
 SET status = 0, updated_at = ?, updated_by = 0
 WHERE is_deleted = 0
 `, now); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `
+	res, err := tx.ExecContext(ctx, `
 INSERT INTO ai_model
   (name, url, app_key, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
 `, name, url, key, secret, status, now, now)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return tx.Commit()
+	nid, _ := res.LastInsertId()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return uint64(nid), nil
 }
 
 type UpdateInput struct {

@@ -16,6 +16,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
@@ -35,17 +36,18 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 }
 
 func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
+	auditWriter := auditlog.New(db)
 	adminAuthService := adminauth.New(cfg, db)
-	adminAuthHandler := admin.NewAuthHandler(adminAuthService)
-	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db))
-	adminSubjectsHandler := admin.NewSubjectsHandler(adminsubjects.New(db))
-	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db))
-	adminAIModelsHandler := admin.NewAIModelsHandler(adminaimodels.New(db))
-	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db))
+	adminAuthHandler := admin.NewAuthHandler(adminAuthService, auditWriter)
+	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db), auditWriter)
+	adminSubjectsHandler := admin.NewSubjectsHandler(adminsubjects.New(db), auditWriter)
+	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db), auditWriter)
+	adminAIModelsHandler := admin.NewAIModelsHandler(adminaimodels.New(db), auditWriter)
+	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db), auditWriter)
 	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
 	studentAuthService := studentauth.New(cfg, db)
-	studentAuthHandler := student.NewAuthHandler(studentAuthService)
-	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db))
+	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
+	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
 
 	// Admin routes
 	mux.HandleFunc("POST /api/v1/admin/auth/login", adminAuthHandler.Login)

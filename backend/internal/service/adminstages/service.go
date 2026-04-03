@@ -78,13 +78,13 @@ type CreateInput struct {
 	Description string
 }
 
-func (s *Service) Create(ctx context.Context, in CreateInput) error {
+func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	if s == nil || s.db == nil {
-		return ErrNoDatabase
+		return 0, ErrNoDatabase
 	}
 	name := strings.TrimSpace(in.Name)
 	if name == "" {
-		return ErrInvalidInput
+		return 0, ErrInvalidInput
 	}
 	desc := sql.NullString{}
 	d := strings.TrimSpace(in.Description)
@@ -95,18 +95,19 @@ func (s *Service) Create(ctx context.Context, in CreateInput) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, `
+	res, err := s.db.ExecContext(ctx, `
 INSERT INTO stage
   (name, description, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 1, ?, 0, ?, 0, 0)
 `, name, desc, now, now)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return ErrConflict
+			return 0, ErrConflict
 		}
-		return err
+		return 0, err
 	}
-	return nil
+	nid, _ := res.LastInsertId()
+	return uint64(nid), nil
 }
 
 type UpdateInput struct {

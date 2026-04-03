@@ -12,6 +12,8 @@ type studentCtxKey string
 
 const studentIdentifierKey studentCtxKey = "student_identifier"
 
+const studentIDKey studentCtxKey = "student_id"
+
 func RequireStudentAuth(service *studentauth.Service, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := BearerToken(r.Header.Get("Authorization"))
@@ -27,6 +29,7 @@ func RequireStudentAuth(service *studentauth.Service, next http.HandlerFunc) htt
 		}
 
 		ctx := context.WithValue(r.Context(), studentIdentifierKey, session.Identifier)
+		ctx = context.WithValue(ctx, studentIDKey, session.StudentID)
 		next(w, r.WithContext(ctx))
 	}
 }
@@ -36,3 +39,7 @@ func StudentIdentifier(ctx context.Context) string {
 	return strings.TrimSpace(v)
 }
 
+func StudentDBID(ctx context.Context) uint64 {
+	v, _ := ctx.Value(studentIDKey).(uint64)
+	return v
+}

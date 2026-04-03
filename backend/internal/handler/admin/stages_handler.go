@@ -7,15 +7,18 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 )
 
 type StagesHandler struct {
 	service *adminstages.Service
+	audit   *auditlog.Writer
 }
 
-func NewStagesHandler(service *adminstages.Service) *StagesHandler {
-	return &StagesHandler{service: service}
+func NewStagesHandler(service *adminstages.Service, audit *auditlog.Writer) *StagesHandler {
+	return &StagesHandler{service: service, audit: audit}
 }
 
 func (h *StagesHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +64,7 @@ func (h *StagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_JSON"})
 		return
 	}
-	err := h.service.Create(r.Context(), adminstages.CreateInput{
+	nid, err := h.service.Create(r.Context(), adminstages.CreateInput{
 		Name:        req.Name,
 		Description: req.Description,
 	})
@@ -75,6 +78,23 @@ func (h *StagesHandler) Create(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 	default:
+		if h.audit != nil {
+			if sess, ok := middleware.AdminSession(r.Context()); ok && sess.AdminID != 0 {
+				adm := sess.AdminID
+				snap, _ := json.Marshal(map[string]any{"name": req.Name})
+				pid := nid
+				h.audit.Write(r.Context(), auditlog.Event{
+					UserID:     &adm,
+					UserType:   "admin",
+					Action:     "create",
+					EntityType: "stage",
+					EntityID:   &pid,
+					Snapshot:   snap,
+					IP:         r.RemoteAddr,
+					CreatedBy:  adm,
+				})
+			}
+		}
 		writeJSON(w, http.StatusCreated, map[string]any{"status": "ok"})
 	}
 }
@@ -114,6 +134,23 @@ func (h *StagesHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 	default:
+		if h.audit != nil {
+			if sess, ok := middleware.AdminSession(r.Context()); ok && sess.AdminID != 0 {
+				adm := sess.AdminID
+				snap, _ := json.Marshal(map[string]any{"has_name": req.Name != nil, "has_description": req.Description != nil, "has_status": req.Status != nil})
+				sid := id
+				h.audit.Write(r.Context(), auditlog.Event{
+					UserID:     &adm,
+					UserType:   "admin",
+					Action:     "update",
+					EntityType: "stage",
+					EntityID:   &sid,
+					Snapshot:   snap,
+					IP:         r.RemoteAddr,
+					CreatedBy:  adm,
+				})
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 	}
 }

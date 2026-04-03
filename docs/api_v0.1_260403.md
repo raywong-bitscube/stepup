@@ -10,6 +10,8 @@
 - 所有请求/响应均为 JSON（除上传接口使用 `multipart/form-data`）。
 - 鉴权采用 `Authorization: Bearer <token>`。
 - `admin` 和 `student` token 不通用。
+- **试卷 HTTP 分析**（环境变量 `ANALYSIS_ADAPTER=http`）：在 **`DB_DSN` 已配置** 时，分析请求发往 MySQL **`ai_model`** 中 **当前激活** 模型（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若无激活模型则用 **`AI_ENDPOINT`**；再无可则用 mock。`paper_analysis` 中保存的模型信息为 `name` + `url`，不含密钥。
+- **审计**：同上，仅在 **`DB_DSN` 已配置** 时向 **`audit_log`** 追加记录；`GET /api/v1/admin/audit-logs` 为只读查询。快照字段不落密码 / `app_secret` 正文；AI 模型 PATCH 若包含 `app_secret` 更新，动作为 **`credential_change`**；改学生密码为 **`password_change`**。
 
 ---
 
@@ -263,6 +265,7 @@ Header: `Authorization: Bearer <admin_token>`
 ### 3.11 审计日志（管理端）
 
 - `GET /api/v1/admin/audit-logs?limit=100` — 只读列表，`limit` 默认 `100`，最大 `500`，按 `id` 降序。
+- **写入范围（v0.1）**：管理员登录、学生登录、学生创建试卷（上传）、管理端对上述学生 / 科目 / 阶段 / AI 模型 / Prompt 资源的 **POST 创建** 与 **PATCH 更新**（含密码 / secret 类事件的特殊 `action`，见 §1）。需数据库；无 `DB_DSN` 时不写审计表。
 
 ---
 
@@ -359,6 +362,8 @@ Authorization: Bearer <student_token>
 
 > 以下接口都要求 student token。
 
+分析引擎由服务端 **`ANALYSIS_ADAPTER`** 决定：`mock` 为本地占位；`http` 时实际请求 URL 按 §1「试卷 HTTP 分析」优先级解析（激活 `ai_model` → `AI_ENDPOINT` → mock）。
+
 ### 5.1 上传试卷
 
 `POST /api/v1/student/papers`
@@ -422,4 +427,5 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 
 - 当前是 v0.1 开发阶段接口文档，后续将补充 OpenAPI 规范。
 - 部分功能有「DB 实现 + 内存回退」双模式，用于在无数据库时持续联调。
-- 支持 `ANALYSIS_ADAPTER=http` 对接本地 mock-ai（`AI_ENDPOINT=http://mock-ai:8090/analyze`）。
+- `ANALYSIS_ADAPTER=http` 时：有数据库且存在激活 AI 模型则优先用库中 `url`；否则可用 `AI_ENDPOINT`（例如本地 `http://mock-ai:8090/analyze`）；再无则 mock。
+- 审计与 `audit_log` 表仅在配置 MySQL 时参与；管理端列表接口不改变审计内容。
