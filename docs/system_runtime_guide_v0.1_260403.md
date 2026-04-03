@@ -14,7 +14,7 @@
 - **服务层**：`internal/service/*`（业务规则 + DB 操作 + 少量回退逻辑）
 - **基础设施层**：MySQL 连接、配置加载、中间件、审计写入
 
-前端目前不是完整业务前端（不是 SPA，也不是完整 HTMX 页面），`frontend-admin` / `frontend-student` 只是**静态占位入口页**，方便部署时占位和页面演示。业务联调主要看后端 API。
+`frontend-admin` 与 `frontend-student` 为 **纯静态页面**（HTML + CSS + 原生 `fetch` 调用 API），Docker 内由 Nginx 托管，无前端构建步骤。管理端涵盖登录、学生/科目/阶段/AI 模型/Prompt/审计与学生试卷查看；学生端涵盖验证码注册、密码登录、上传试卷与查看分析/改进计划。token 存 `localStorage`；可用 **`?api=http://主机:8080`** 指定后端根地址，并确保 `CORS_ALLOWED_ORIGINS` 包含前端 Origin。
 
 ---
 

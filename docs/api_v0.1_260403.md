@@ -34,6 +34,21 @@
 - 已持有连接池但 `Ping` 失败：`503`，`{"status":"not_ready","code":"DATABASE_UNREACHABLE"}`。
 - 数据库可达：`200`，`{"status":"ready"}`。
 
+### GET `/api/v1/catalog`
+
+**无需鉴权**（供学生端下拉框等使用）。需已配置 `DB_DSN`；无数据库时 `503`，`{"code":"DATABASE_REQUIRED"}`。
+
+成功示例：
+
+```json
+{
+  "subjects": [{ "id": 1, "name": "物理" }],
+  "stages": [{ "id": 1, "name": "高中" }]
+}
+```
+
+仅返回 `status = 1` 且未软删的科目与阶段。
+
 ---
 
 ## 3) Admin 鉴权
@@ -175,6 +190,16 @@ Authorization: Bearer <admin_token>
 ```json
 {"status":"ok"}
 ```
+
+### 3.6.1 学生试卷与分析（管理端，只读）
+
+Header: `Authorization: Bearer <admin_token>`
+
+- `GET /api/v1/admin/students/{studentId}/papers` — 返回 `items`：`id`、`subject`、`stage`、`file_url`、`file_name`、`created_at`。学生不存在时 `404` `NOT_FOUND`。
+- `GET /api/v1/admin/students/{studentId}/papers/{paperId}/analysis` — 返回 `analysis`（与学生端分析结构一致，含摘要、薄弱点、模型快照、改进计划摘要等）。
+- `GET /api/v1/admin/students/{studentId}/papers/{paperId}/plan` — 返回 `paper_id`、`plan`（数组）、`updated`（与改进计划表一致）。
+
+均需 `DB_DSN`。
 
 ### 3.7 科目（管理端）
 

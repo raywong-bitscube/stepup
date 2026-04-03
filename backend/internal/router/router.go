@@ -6,12 +6,14 @@ import (
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/admin"
+	"github.com/raywong-bitscube/stepup/backend/internal/handler/catalog"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/health"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/student"
 	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaimodels"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaudit"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminpapers"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminprompts"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
@@ -44,6 +46,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db), auditWriter)
 	adminAIModelsHandler := admin.NewAIModelsHandler(adminaimodels.New(db), auditWriter)
 	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db), auditWriter)
+	adminStudentPapersHandler := admin.NewStudentPapersHandler(adminpapers.New(db))
 	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
@@ -62,6 +65,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("POST /api/v1/student/auth/logout", studentAuthHandler.Logout)
 	mux.HandleFunc("GET /api/v1/student/auth/me", studentAuthHandler.Me)
 
+	mux.HandleFunc("GET /api/v1/catalog", catalog.Handler(db))
+
 	// Student paper routes
 	mux.HandleFunc("POST /api/v1/student/papers", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Create))
 	mux.HandleFunc("GET /api/v1/student/papers", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.List))
@@ -72,6 +77,10 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Create))
 	mux.HandleFunc("PATCH /api/v1/admin/students/{studentId}", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Patch))
+
+	mux.HandleFunc("GET /api/v1/admin/students/{studentId}/papers/{paperId}/analysis", middleware.RequireAdminAuth(adminAuthService, adminStudentPapersHandler.Analysis))
+	mux.HandleFunc("GET /api/v1/admin/students/{studentId}/papers/{paperId}/plan", middleware.RequireAdminAuth(adminAuthService, adminStudentPapersHandler.Plan))
+	mux.HandleFunc("GET /api/v1/admin/students/{studentId}/papers", middleware.RequireAdminAuth(adminAuthService, adminStudentPapersHandler.List))
 
 	mux.HandleFunc("GET /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.Create))

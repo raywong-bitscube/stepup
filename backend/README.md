@@ -10,6 +10,8 @@ go run ./backend/cmd/server
 
 Server default address: `0.0.0.0:8080`
 
+仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS），Compose 映射 `:3001` / `:3000`；访问时若 API 与页面不同源，请在环境中配置 **`CORS_ALLOWED_ORIGINS`**。页面支持 **`?api=http://后端:8080`** 覆盖默认的 `http://localhost:8080`。
+
 ## Quick Start (with Docker Compose)
 
 ```bash
