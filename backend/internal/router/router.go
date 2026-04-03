@@ -1,6 +1,7 @@
 package router
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
@@ -13,7 +14,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
 
-func New(cfg config.Config) http.Handler {
+func New(cfg config.Config, db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health.Get)
@@ -23,15 +24,15 @@ func New(cfg config.Config) http.Handler {
 		_, _ = w.Write([]byte(`{"service":"stepup","env":"` + cfg.AppEnv + `"}`))
 	})
 
-	registerAPIRoutes(mux, cfg)
+	registerAPIRoutes(mux, cfg, db)
 	return middleware.CORS(cfg.CORSAllowedOrigins, mux)
 }
 
-func registerAPIRoutes(mux *http.ServeMux, cfg config.Config) {
-	adminAuthHandler := admin.NewAuthHandler(adminauth.New(cfg))
-	studentAuthService := studentauth.New(cfg)
+func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
+	adminAuthHandler := admin.NewAuthHandler(adminauth.New(cfg, db))
+	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService)
-	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg))
+	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db))
 
 	// Admin routes
 	mux.HandleFunc("POST /api/v1/admin/auth/login", adminAuthHandler.Login)

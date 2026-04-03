@@ -32,6 +32,8 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < scripts/dev_seed.sql
 ```
 
+When `DB_DSN` is set, the process opens **one** shared `*sql.DB` connection pool; admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
+
 ## Environment Variables
 
 Copy `backend/.env.example` and export values in your shell.
@@ -39,7 +41,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `APP_ENV` - `dev` by default
 - `HTTP_HOST` - `0.0.0.0` by default
 - `HTTP_PORT` - `8080` by default
-- `DB_DSN` - MySQL DSN placeholder for next phase
+- `DB_DSN` - MySQL DSN (e.g. `user:pass@tcp(127.0.0.1:3306)/stepup?parseTime=true&loc=Local`); when unset, auth and papers stay in-memory
 - `CORS_ALLOWED_ORIGINS` - `http://localhost:3000,http://localhost:3001`
 - `ANALYSIS_ADAPTER` - `mock` (default) or `http`
 - `AI_ENDPOINT` - HTTP adapter target endpoint (used when `ANALYSIS_ADAPTER=http`)
@@ -52,18 +54,18 @@ Copy `backend/.env.example` and export values in your shell.
 - Health endpoints:
   - `GET /healthz`
   - `GET /readyz`
-- Admin auth minimal flow (in-memory session store):
+- Admin auth minimal flow (in-memory without `DB_DSN`; `admin` + `admin_session` when configured):
   - `POST /api/v1/admin/auth/login`
   - `POST /api/v1/admin/auth/logout`
   - `GET /api/v1/admin/auth/me`
-- Student auth minimal flow (in-memory):
+- Student auth minimal flow (in-memory without `DB_DSN`; `student`, `verification_code`, `student_session` when configured):
   - `POST /api/v1/student/auth/send-code`
   - `POST /api/v1/student/auth/verify-code`
   - `POST /api/v1/student/auth/set-password`
   - `POST /api/v1/student/auth/login`
   - `POST /api/v1/student/auth/logout`
   - `GET /api/v1/student/auth/me`
-- Student paper flow (in-memory):
+- Student paper flow (in-memory without `DB_DSN`; persisted to MySQL when `DB_DSN` is set):
   - `POST /api/v1/student/papers` (multipart: `subject`, `stage`, `file`)
   - `GET /api/v1/student/papers`
   - `GET /api/v1/student/papers/{paperId}/analysis`
@@ -73,9 +75,8 @@ Copy `backend/.env.example` and export values in your shell.
 
 ## Notes
 
-- Current admin auth/session is scaffold-only and uses in-memory sessions.
-- Current student auth flow is scaffold-only and uses in-memory stores.
-- Replace with DB implementations (`admin`, `admin_session`, `student`, `verification_code`) in next step.
+- Without `DB_DSN`, admin and student auth (and student papers) use in-memory stores.
+- With `DB_DSN`, admin uses `admin` + `admin_session`; student uses `student`, `verification_code`, and `student_session`; papers persist to `exam_paper` and related tables.
 - Current seed admin password uses plain text to match scaffold behavior. Replace with bcrypt before production.
 - Student paper analysis currently uses a pluggable `AnalysisAdapter` (default mock).
 - HTTP adapter scaffold is available via `ANALYSIS_ADAPTER=http`; it falls back to mock output on request/parse failure.

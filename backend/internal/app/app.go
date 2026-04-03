@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -9,12 +11,27 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/database"
 	"github.com/raywong-bitscube/stepup/backend/internal/router"
 )
 
 func Run() error {
 	cfg := config.Load()
-	handler := router.New(cfg)
+
+	var db *sql.DB
+	if cfg.DBDSN != "" {
+		var err error
+		db, err = database.OpenMySQL(cfg.DBDSN)
+		if err != nil {
+			log.Printf("database: open failed (%v); continuing without DB-backed stores", err)
+			db = nil
+		}
+	}
+	if db != nil {
+		defer func() { _ = db.Close() }()
+	}
+
+	handler := router.New(cfg, db)
 
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddress(),

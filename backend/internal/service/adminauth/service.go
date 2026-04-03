@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
-	"github.com/raywong-bitscube/stepup/backend/internal/database"
 )
 
 var (
@@ -35,18 +34,12 @@ type Service struct {
 	sessions map[string]Session
 }
 
-func New(cfg config.Config) *Service {
-	svc := &Service{
+func New(cfg config.Config, db *sql.DB) *Service {
+	return &Service{
 		cfg:      cfg,
+		db:       db,
 		sessions: map[string]Session{},
 	}
-	if cfg.DBDSN != "" {
-		db, err := database.OpenMySQL(cfg.DBDSN)
-		if err == nil {
-			svc.db = db
-		}
-	}
-	return svc
 }
 
 func (s *Service) Login(username, password string) (Session, error) {

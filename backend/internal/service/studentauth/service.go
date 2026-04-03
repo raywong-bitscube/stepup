@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
-	"github.com/raywong-bitscube/stepup/backend/internal/database"
 )
 
 var (
@@ -58,9 +57,10 @@ type Service struct {
 	defaultStatus int
 }
 
-func New(cfg config.Config) *Service {
-	svc := &Service{
+func New(cfg config.Config, db *sql.DB) *Service {
+	return &Service{
 		cfg:           cfg,
+		db:            db,
 		students:      map[string]student{},
 		codes:         map[string]verification{},
 		sessions:      map[string]Session{},
@@ -68,13 +68,6 @@ func New(cfg config.Config) *Service {
 		sessionTTL:    24 * time.Hour,
 		defaultStatus: 1,
 	}
-	if cfg.DBDSN != "" {
-		db, err := database.OpenMySQL(cfg.DBDSN)
-		if err == nil {
-			svc.db = db
-		}
-	}
-	return svc
 }
 
 func (s *Service) SendCode(identifier string) (string, error) {
@@ -209,8 +202,13 @@ func (s *Service) loginMemory(identifier, password string) (Session, error) {
 }
 
 func (s *Service) Logout(token string) {
+	token = strings.TrimSpace(token)
+	if s.db != nil {
+		_ = s.logoutStudentDB(token)
+		return
+	}
 	s.mu.Lock()
-	delete(s.sessions, strings.TrimSpace(token))
+	delete(s.sessions, token)
 	s.mu.Unlock()
 }
 
@@ -218,6 +216,9 @@ func (s *Service) Current(token string) (Session, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return Session{}, ErrUnauthorized
+	}
+	if s.db != nil {
+		return s.currentStudentDB(token)
 	}
 
 	s.mu.RLock()
@@ -360,17 +361,18 @@ func (s *Service) loginDB(identifier, password string) (Session, error) {
 	defer cancel()
 
 	var (
-		phone  sql.NullString
-		email  sql.NullString
-		dbPass string
-		status int
+		studentID uint64
+		phone     sql.NullString
+		email     sql.NullString
+		dbPass    string
+		status    int
 	)
 	err := s.db.QueryRowContext(ctx, `
-SELECT phone, email, password, status
+SELECT id, phone, email, password, status
 FROM student
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
-`, identifier, identifier).Scan(&phone, &email, &dbPass, &status)
+`, identifier, identifier).Scan(&studentID, &phone, &email, &dbPass, &status)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnauthorized
@@ -385,21 +387,87 @@ LIMIT 1
 	if err != nil {
 		return Session{}, err
 	}
-	idf := identifier
-	if phone.Valid {
-		idf = phone.String
-	} else if email.Valid {
-		idf = email.String
-	}
 	now := time.Now()
-	session := Session{
+	expiresAt := now.Add(s.sessionTTL)
+
+	_, err = s.db.ExecContext(ctx, `
+INSERT INTO student_session
+  (student_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
+`, studentID, token, expiresAt, now, now, studentID, now, studentID)
+	if err != nil {
+		return Session{}, fmt.Errorf("create student_session: %w", err)
+	}
+
+	return Session{
+		Token:      token,
+		Identifier: identifier,
+		ExpiresAt:  expiresAt,
+		LastSeenAt: now,
+	}, nil
+}
+
+func (s *Service) currentStudentDB(token string) (Session, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var (
+		studentID uint64
+		phone     sql.NullString
+		email     sql.NullString
+		expiresAt time.Time
+	)
+	err := s.db.QueryRowContext(ctx, `
+SELECT s.id, s.phone, s.email, sess.expires_at
+FROM student_session sess
+JOIN student s ON s.id = sess.student_id
+WHERE sess.session_token = ?
+  AND sess.status = 1
+  AND sess.is_deleted = 0
+  AND s.status = 1
+  AND s.is_deleted = 0
+LIMIT 1
+`, token).Scan(&studentID, &phone, &email, &expiresAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Session{}, ErrUnauthorized
+		}
+		return Session{}, err
+	}
+	if time.Now().After(expiresAt) {
+		_ = s.logoutStudentDB(token)
+		return Session{}, ErrUnauthorized
+	}
+
+	now := time.Now()
+	_, _ = s.db.ExecContext(ctx, `
+UPDATE student_session
+SET last_seen_at = ?, updated_at = ?, updated_by = ?
+WHERE session_token = ? AND is_deleted = 0
+`, now, now, studentID, token)
+
+	var idf string
+	if phone.Valid && strings.TrimSpace(phone.String) != "" {
+		idf = normalizeIdentifier(phone.String)
+	} else if email.Valid && strings.TrimSpace(email.String) != "" {
+		idf = normalizeIdentifier(email.String)
+	}
+
+	return Session{
 		Token:      token,
 		Identifier: idf,
-		ExpiresAt:  now.Add(s.sessionTTL),
+		ExpiresAt:  expiresAt,
 		LastSeenAt: now,
-	}
-	s.mu.Lock()
-	s.sessions[token] = session
-	s.mu.Unlock()
-	return session, nil
+	}, nil
+}
+
+func (s *Service) logoutStudentDB(token string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `
+UPDATE student_session
+SET status = 0, updated_at = NOW(), updated_by = student_id
+WHERE session_token = ? AND is_deleted = 0
+`, token)
+	return err
 }

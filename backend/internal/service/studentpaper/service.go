@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
-	"github.com/raywong-bitscube/stepup/backend/internal/database"
 )
 
 type Paper struct {
@@ -46,19 +45,14 @@ type Service struct {
 	analysis map[uint64]Analysis
 }
 
-func New(cfg config.Config) *Service {
+func New(cfg config.Config, db *sql.DB) *Service {
 	svc := &Service{
 		cfg:      cfg,
+		db:       db,
 		adapter:  MockAnalysisAdapter{},
 		nextID:   1,
 		papers:   map[uint64]Paper{},
 		analysis: map[uint64]Analysis{},
-	}
-	if cfg.DBDSN != "" {
-		db, err := database.OpenMySQL(cfg.DBDSN)
-		if err == nil {
-			svc.db = db
-		}
 	}
 	if strings.EqualFold(cfg.AnalysisAdapter, "http") {
 		svc.adapter = NewHTTPAnalysisAdapter(cfg.AIEndpoint, cfg.AIRequestTimeout)
