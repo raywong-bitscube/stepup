@@ -229,7 +229,36 @@ CREATE TABLE IF NOT EXISTS improvement_plan (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
--- 10) verification_code
+-- 10) admin_session
+-- =====================================
+CREATE TABLE IF NOT EXISTS admin_session (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  admin_id BIGINT UNSIGNED NOT NULL,
+  session_token VARCHAR(255) NOT NULL COMMENT 'store token hash in production',
+  expires_at DATETIME NOT NULL,
+  last_seen_at DATETIME NULL,
+  ip_address VARCHAR(64) NULL,
+  user_agent VARCHAR(512) NULL,
+  status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=active,0=inactive',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_admin_session_token (session_token),
+  KEY idx_admin_session_admin_id (admin_id),
+  KEY idx_admin_session_expires_at (expires_at),
+  KEY idx_admin_session_status (status),
+  KEY idx_admin_session_is_deleted (is_deleted),
+  CONSTRAINT fk_admin_session_admin
+    FOREIGN KEY (admin_id) REFERENCES admin (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================
+-- 11) verification_code
 -- =====================================
 CREATE TABLE IF NOT EXISTS verification_code (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -253,7 +282,7 @@ CREATE TABLE IF NOT EXISTS verification_code (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
--- 11) audit_log
+-- 12) audit_log
 -- =====================================
 CREATE TABLE IF NOT EXISTS audit_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

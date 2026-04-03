@@ -224,7 +224,7 @@
 
 ### 9. Admin (管理员)
 
-**说明**: 后台管理系统用户。
+**说明**: 后台管理系统登录用户表，用于后台账号认证和角色权限控制。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
@@ -240,7 +240,28 @@
 
 ---
 
-### 10. VerificationCode (验证码)
+### 10. AdminSession (管理员登录会话)
+
+**说明**: 后台管理登录态会话记录，用于 session 续期、失效和退出管理。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | uint | 主键 |
+| admin_id | uint | 关联管理员 ID |
+| session_token | string | 会话 token（建议存 hash） |
+| expires_at | time | 过期时间 |
+| last_seen_at | time | 最后访问时间 |
+| ip_address | string | 登录/访问 IP |
+| user_agent | string | 客户端 UA |
+| status | enum | active/inactive |
+| created_at | time | 创建时间 |
+| updated_at | time | 更新时间 |
+
+**索引**: admin_id, session_token (unique), expires_at
+
+---
+
+### 11. VerificationCode (验证码)
 
 **说明**: 登录/注册时发送的验证码。
 
@@ -258,7 +279,7 @@
 
 ---
 
-### 11. AuditLog (审计日志)
+### 12. AuditLog (审计日志)
 
 **说明**: 记录所有用户操作，支持数据变更快照。
 
@@ -287,6 +308,7 @@
 | ExamPaper → Subject | N:1 | 试卷属于某个科目 |
 | ExamPaper → PaperAnalysis | 1:1 | 每份试卷对应一个分析 |
 | ExamPaper → ImprovementPlan | 1:1 | 每份试卷对应一个改进计划 |
+| Admin → AdminSession | 1:N | 管理员可有多个登录会话 |
 | PaperAnalysis | 快照 | `ai_model_snapshot` 记录本次分析所用模型信息（至少含 `name`、`url`；无外键；不落盘密钥） |
 | AuditLog → User | N:1 | 日志关联操作用户 |
 
