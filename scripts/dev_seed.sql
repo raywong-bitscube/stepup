@@ -40,14 +40,14 @@ ON DUPLICATE KEY UPDATE
   updated_by = 0;
 
 -- DeepSeek（OpenAI 兼容 chat/completions）。运行后端请设 ANALYSIS_ADAPTER=http；app_key 为模型名，app_secret 为 API Key。
--- 临时：密钥写入种子便于联调；上线前请改管理端或迁移为环境变量注入，勿长期把生产密钥留在仓库。
+-- 执行前将 app_secret 占位符替换为真实 key（勿提交到 git）；若密钥曾出现在仓库历史中，请到 DeepSeek 控制台轮换。
 INSERT INTO ai_model
   (name, url, app_key, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT
   'DeepSeek',
   'https://api.deepseek.com/v1/chat/completions',
   'deepseek-chat',
-  'sk-bf34b8a8b05d4ae9ba1738ea68660877',
+  '__REPLACE_WITH_DEEPSEEK_API_KEY__',
   1,
   NOW(),
   0,
