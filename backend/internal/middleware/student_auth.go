@@ -14,7 +14,7 @@ const studentIdentifierKey studentCtxKey = "student_identifier"
 
 func RequireStudentAuth(service *studentauth.Service, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := bearerToken(r.Header.Get("Authorization"))
+		token := BearerToken(r.Header.Get("Authorization"))
 		if token == "" {
 			http.Error(w, `{"code":"UNAUTHORIZED"}`, http.StatusUnauthorized)
 			return
@@ -36,14 +36,3 @@ func StudentIdentifier(ctx context.Context) string {
 	return strings.TrimSpace(v)
 }
 
-func bearerToken(raw string) string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return ""
-	}
-	parts := strings.SplitN(raw, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return ""
-	}
-	return strings.TrimSpace(parts[1])
-}

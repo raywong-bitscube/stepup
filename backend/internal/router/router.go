@@ -10,6 +10,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/student"
 	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
@@ -29,7 +30,9 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 }
 
 func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
-	adminAuthHandler := admin.NewAuthHandler(adminauth.New(cfg, db))
+	adminAuthService := adminauth.New(cfg, db)
+	adminAuthHandler := admin.NewAuthHandler(adminAuthService)
+	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db))
@@ -54,7 +57,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/plan", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Plan))
 
 	// Admin management routes
-	mux.HandleFunc("GET /api/v1/admin/students", notImplemented)
+	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/students", notImplemented)
 	mux.HandleFunc("PATCH /api/v1/admin/students/{studentId}", notImplemented)
 

@@ -81,6 +81,38 @@ Header:
 Authorization: Bearer <admin_token>
 ```
 
+### 3.4 学生列表（管理端）
+
+`GET /api/v1/admin/students`
+
+Header:
+
+```text
+Authorization: Bearer <admin_token>
+```
+
+成功响应示例：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "phone": "13800138000",
+      "email": null,
+      "name": "示例学生",
+      "stage": "高中",
+      "status": 1,
+      "created_at": "2026-04-03T12:00:00Z"
+    }
+  ]
+}
+```
+
+说明：
+
+- 需要已配置 `DB_DSN`（无数据库时返回 `503`，`{"code":"DATABASE_REQUIRED"}`）。
+
 ---
 
 ## 4) Student 鉴权
@@ -228,6 +260,7 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 - `FILE_REQUIRED`
 - `INVALID_MULTIPART`
 - `NOT_FOUND`
+- `DATABASE_REQUIRED`（管理端依赖 MySQL 的接口在未配置数据库时）
 - `NOT_IMPLEMENTED`（尚未完成的接口）
 
 ---
