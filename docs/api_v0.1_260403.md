@@ -25,11 +25,12 @@
 
 ### GET `/readyz`
 
-响应：
+就绪探测：
 
-```json
-{"status":"ready"}
-```
+- 未设置 `DB_DSN`：始终 `200`，`{"status":"ready"}`。
+- 已设置 `DB_DSN` 但进程未持有可用连接池（例如连接打开失败）：`503`，`{"status":"not_ready","code":"DATABASE_UNAVAILABLE"}`。
+- 已持有连接池但 `Ping` 失败：`503`，`{"status":"not_ready","code":"DATABASE_UNREACHABLE"}`。
+- 数据库可达：`200`，`{"status":"ready"}`。
 
 ---
 
@@ -245,6 +246,24 @@ Header: `Authorization: Bearer <admin_token>`
 
 科目 / 阶段接口均需 `DB_DSN`；名称唯一冲突返回 `409` `CONFLICT`。
 
+### 3.9 AI 模型（管理端）
+
+列表、创建、更新均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`。
+
+- `GET /api/v1/admin/ai-models`：返回 `items`（**不含** `app_secret`）。
+- `POST /api/v1/admin/ai-models`：请求体 `name`、`url`、`app_key`、`app_secret` 必填；`status` 可选 `0|1`。将某一模型设为 `status=1` 时，会先将其余模型置为 `0`（同一时间仅一个激活模型）。
+- `PATCH /api/v1/admin/ai-models/{modelId}`：可选更新上述字段（至少一项）。将 `status` 设为 `1` 时同样会 deactivate 其他模型。
+
+### 3.10 Prompt 模板（管理端）
+
+- `GET /api/v1/admin/prompts` — 列表（含 `key`、`content`）
+- `POST /api/v1/admin/prompts` — `key`、`content` 必填；`description`、`status` 可选
+- `PATCH /api/v1/admin/prompts/{promptId}` — 局部更新；`key` 冲突返回 `409`
+
+### 3.11 审计日志（管理端）
+
+- `GET /api/v1/admin/audit-logs?limit=100` — 只读列表，`limit` 默认 `100`，最大 `500`，按 `id` 降序。
+
 ---
 
 ## 4) Student 鉴权
@@ -394,6 +413,7 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 - `NOT_FOUND`
 - `CONFLICT`
 - `DATABASE_REQUIRED`（管理端依赖 MySQL 的接口在未配置数据库时）
+- `DATABASE_UNAVAILABLE` / `DATABASE_UNREACHABLE`（`/readyz` 在配置 `DB_DSN` 时）
 - `NOT_IMPLEMENTED`（尚未完成的接口）
 
 ---

@@ -9,7 +9,10 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/health"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/student"
 	"github.com/raywong-bitscube/stepup/backend/internal/middleware"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaimodels"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaudit"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminprompts"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
@@ -21,7 +24,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health.Get)
-	mux.HandleFunc("GET /readyz", health.Ready)
+	mux.HandleFunc("GET /readyz", health.ReadyHandler(cfg.DBDSN != "", db))
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"service":"stepup","env":"` + cfg.AppEnv + `"}`))
@@ -37,6 +40,9 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db))
 	adminSubjectsHandler := admin.NewSubjectsHandler(adminsubjects.New(db))
 	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db))
+	adminAIModelsHandler := admin.NewAIModelsHandler(adminaimodels.New(db))
+	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db))
+	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db))
@@ -73,19 +79,13 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("POST /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Create))
 	mux.HandleFunc("PATCH /api/v1/admin/stages/{stageId}", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Patch))
 
-	mux.HandleFunc("GET /api/v1/admin/ai-models", notImplemented)
-	mux.HandleFunc("POST /api/v1/admin/ai-models", notImplemented)
-	mux.HandleFunc("PATCH /api/v1/admin/ai-models/{modelId}", notImplemented)
+	mux.HandleFunc("GET /api/v1/admin/ai-models", middleware.RequireAdminAuth(adminAuthService, adminAIModelsHandler.List))
+	mux.HandleFunc("POST /api/v1/admin/ai-models", middleware.RequireAdminAuth(adminAuthService, adminAIModelsHandler.Create))
+	mux.HandleFunc("PATCH /api/v1/admin/ai-models/{modelId}", middleware.RequireAdminAuth(adminAuthService, adminAIModelsHandler.Patch))
 
-	mux.HandleFunc("GET /api/v1/admin/prompts", notImplemented)
-	mux.HandleFunc("POST /api/v1/admin/prompts", notImplemented)
-	mux.HandleFunc("PATCH /api/v1/admin/prompts/{promptId}", notImplemented)
+	mux.HandleFunc("GET /api/v1/admin/prompts", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.List))
+	mux.HandleFunc("POST /api/v1/admin/prompts", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.Create))
+	mux.HandleFunc("PATCH /api/v1/admin/prompts/{promptId}", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.Patch))
 
-	mux.HandleFunc("GET /api/v1/admin/audit-logs", notImplemented)
-}
-
-func notImplemented(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_, _ = w.Write([]byte(`{"code":"NOT_IMPLEMENTED","message":"endpoint scaffolded"}`))
+	mux.HandleFunc("GET /api/v1/admin/audit-logs", middleware.RequireAdminAuth(adminAuthService, adminAuditLogsHandler.List))
 }

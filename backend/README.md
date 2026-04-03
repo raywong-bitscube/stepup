@@ -53,7 +53,7 @@ Copy `backend/.env.example` and export values in your shell.
 - Graceful shutdown
 - Health endpoints:
   - `GET /healthz`
-  - `GET /readyz`
+  - `GET /readyz` — if `DB_DSN` is set, checks DB ping (`503` + `DATABASE_UNAVAILABLE` / `DATABASE_UNREACHABLE` when not healthy)
 - Admin auth minimal flow (in-memory without `DB_DSN`; `admin` + `admin_session` when configured):
   - `POST /api/v1/admin/auth/login`
   - `POST /api/v1/admin/auth/logout`
@@ -76,7 +76,9 @@ Copy `backend/.env.example` and export values in your shell.
 - `PATCH /api/v1/admin/students/{studentId}` — update student (name/stage/status/password)
 - `GET|POST /api/v1/admin/subjects`, `PATCH /api/v1/admin/subjects/{subjectId}` — subject CRUD
 - `GET|POST /api/v1/admin/stages`, `PATCH /api/v1/admin/stages/{stageId}` — stage CRUD
-- API route skeleton for other v0.1 admin endpoints (returns `501 NOT_IMPLEMENTED`)
+- `GET|POST /api/v1/admin/ai-models`, `PATCH /api/v1/admin/ai-models/{modelId}` — AI 模型（列表不返回 secret；激活一个模型会将其他模型置为非激活）
+- `GET|POST /api/v1/admin/prompts`, `PATCH /api/v1/admin/prompts/{promptId}` — Prompt 模板
+- `GET /api/v1/admin/audit-logs` — 审计日志只读列表（`?limit=`，默认 100，最大 500）
 
 ## Notes
 
