@@ -34,6 +34,8 @@ When `DB_DSN` is set, the process opens **one** shared `*sql.DB` connection pool
 
 Copy `backend/.env.example` and export values in your shell.
 
+**QA / 测试（仅 `go run`，不经 Compose）**：可使用 `backend/.env.qa` 为模板，改 `DB_DSN`、密码与 `CORS_ALLOWED_ORIGINS` 后加载再启动。Docker 编排请用仓库根目录的 **`.env.qa`** + `docker compose --env-file .env.qa`。
+
 - `APP_ENV` - `dev` by default
 - `HTTP_HOST` - `0.0.0.0` by default
 - `HTTP_PORT` - `8080` by default

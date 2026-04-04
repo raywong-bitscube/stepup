@@ -51,6 +51,8 @@ cp .env.example .env
 docker compose --env-file .env.qa up -d --build
 ```
 
+若在测试机 **直接运行 Go 二进制**（`go run` / 编译后的 `server`），请用 **`backend/.env.qa`** 配置 `DB_DSN` 等（与根目录 `.env.qa` 中数据库账号可保持一致），详见 [`backend/README.md`](../backend/README.md)。
+
 ### 3.2 启动
 
 ```bash
