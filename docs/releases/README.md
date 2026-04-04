@@ -5,6 +5,7 @@
 | 文件 | 说明 |
 |------|------|
 | [DEPLOY_AND_UPGRADE_v0.1_260404.md](./DEPLOY_AND_UPGRADE_v0.1_260404.md) | AI 调用日志、`db/` 目录、文档结构、前端分端口等增量与升级 checklist |
+| [DEPLOY_AND_UPGRADE_v0.1_260406.md](./DEPLOY_AND_UPGRADE_v0.1_260406.md) | 识图上传与 `UPLOAD_DIR`、Prompt 模板与 `paper_analyze_chat_user`、AI 日志 `request_body`/`response_body` 与 admin 表格优化、Kimi 迁移可选 |
 
 新增发版时：可复制上一篇改日期与正文，或新建 `DEPLOY_AND_UPGRADE_v0.1_YYYYMMDD.md`，并在本表登记。
 
