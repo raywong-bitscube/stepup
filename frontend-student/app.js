@@ -9,8 +9,19 @@
     if (q) return q.replace(/\/$/, '');
     const s = localStorage.getItem(LS_API);
     if (s) return s.replace(/\/$/, '');
+    const meta = document.querySelector('meta[name="stepup-api-base"]');
+    if (meta) {
+      const mc = (meta.getAttribute('content') || '').trim();
+      if (mc) return mc.replace(/\/$/, '');
+    }
     const p = location.pathname || '';
     if (p.startsWith('/student')) return location.origin;
+    const host = location.hostname;
+    const port = location.port;
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    if (isLocal && port === '3000') return 'http://localhost:8080';
+    if (isLocal && port === '8080') return location.origin;
+    if (!isLocal) return location.origin;
     return 'http://localhost:8080';
   }
 

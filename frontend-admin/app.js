@@ -9,8 +9,20 @@
     if (q) return q.replace(/\/$/, '');
     const s = localStorage.getItem(LS_API);
     if (s) return s.replace(/\/$/, '');
+    const meta = document.querySelector('meta[name="stepup-api-base"]');
+    if (meta) {
+      const mc = (meta.getAttribute('content') || '').trim();
+      if (mc) return mc.replace(/\/$/, '');
+    }
     const p = location.pathname || '';
     if (p.startsWith('/admin')) return location.origin;
+    const host = location.hostname;
+    const port = location.port;
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    if (isLocal && port === '3001') return 'http://localhost:8080';
+    if (isLocal && port === '8080') return location.origin;
+    // 公网/内网 IP 或域名：默认与当前页面同源（需 Nginx 把 /api 反代到 Go）；否则用 meta 或登录框填写后端根地址
+    if (!isLocal) return location.origin;
     return 'http://localhost:8080';
   }
 
@@ -102,8 +114,9 @@
           ${flash}
           <div class="form-grid" style="margin-top:12px">
             <div>
-              <label>API 基础地址（可选，默认 localhost:8080）</label>
-              <input type="text" id="apiBase" placeholder="http://localhost:8080" value="${escapeHtml(apiBase())}" />
+              <label>API 根地址</label>
+              <input type="text" id="apiBase" placeholder="与页面同域且已反代 /api 时可留当前值" value="${escapeHtml(apiBase())}" />
+              <p class="muted" style="font-size:12px;margin:4px 0 0">开发：Compose 下管理页在 3001 时默认填 <code>http://localhost:8080</code>。部署：若页面在 <code>:7011</code> 而后端在 <code>:8080</code>，请改成后端完整地址，或在 Nginx 同端口反代 <code>/api</code> 后保存当前值。</p>
             </div>
             <div>
               <label>用户名</label>
