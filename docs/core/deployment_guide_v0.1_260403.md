@@ -207,8 +207,8 @@ Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默
 **Q：`readyz` 503 `DATABASE_UNAVAILABLE`？**  
 A：后端未连上 MySQL，检查 `DB_DSN`、网络、账号权限与防火墙。
 
-**Q：前端报 CORS 错误？**  
-A：将浏览器地址栏的 Origin（含协议与端口）加入 **`CORS_ALLOWED_ORIGINS`**，重启后端。
+**Q：前端报 CORS 错误（`No 'Access-Control-Allow-Origin' header`）？**  
+A：将 **页面** 的 Origin（地址栏「协议 + 主机 + 端口」，无路径、无末尾 `/`）逐字加入 **`CORS_ALLOWED_ORIGINS`**（逗号分隔），**重启 backend** 使环境变量生效。学生静态 `:7010`、管理 `:7011`、API 经 Nginx `:7012` 时，白名单要写 **`http://…:7010` 与 `http://…:7011`**，一般不必写 `:7012`。若仍失败，用浏览器开发工具看请求是否到达 Go（Nginx 对 4xx/5xx 的响应有时不带 CORS 头，需先排除上游错误或 OPTIONS 未转发）。
 
 **Q：试卷分析总是 mock 结果？**  
 A：确认 **`ANALYSIS_ADAPTER=http`**、库内有 **激活** `ai_model` 且 **URL 可解析**；若用真实 LLM，确认 **`app_secret` 已配置** 且能访问公网 API；失败时实现会回退 mock，可查后端日志与网络。
