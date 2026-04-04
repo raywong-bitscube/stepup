@@ -61,3 +61,24 @@ WHERE NOT EXISTS (
   WHERE url = 'https://api.moonshot.cn/v1/chat/completions'
     AND is_deleted = 0
 );
+
+-- Prompt: 试卷分析 user 模板（占位符 %subject %stage %file_name）；与 db/migrations/20260406_prompt_paper_analyze_template.sql 一致
+INSERT INTO prompt_template
+  (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
+SELECT
+  'paper_analyze_chat_user',
+  '学生试卷分析：发给大模型的 user 文案。占位符：%subject %stage %file_name；识图走多模态 image。',
+  '试卷上传元信息：科目=%subject，阶段=%stage，原始文件名=%file_name。
+请只输出一段合法 JSON（不要用 markdown 代码围栏），严格符合下列键：summary (string)、weak_points (string 数组)、improvement_plan (string 数组)、raw_content (string，可为试卷要点摘录或空字符串)。
+内容针对中国学生试卷分析场景，用语简洁专业。',
+  1,
+  NOW(),
+  0,
+  NOW(),
+  0,
+  0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM prompt_template
+  WHERE `key` = 'paper_analyze_chat_user' AND is_deleted = 0
+);

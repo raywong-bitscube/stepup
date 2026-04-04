@@ -3,6 +3,7 @@ package studentpaper
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/service/prompttemplate"
 )
 
 type HTTPAnalysisAdapter struct {
@@ -182,18 +185,40 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 	}
 	start := time.Now()
 
-	userPrompt := fmt.Sprintf(
-		`试卷上传元信息：科目=%s，阶段=%s，原始文件名=%s。
-请只输出一段合法 JSON（不要用 markdown 代码围栏），严格符合下列键：summary (string)、weak_points (string 数组)、improvement_plan (string 数组)、raw_content (string，可为试卷要点摘录或空字符串)。
-内容针对中国学生试卷分析场景，用语简洁专业。`,
-		input.Subject, input.Stage, input.FileName,
-	)
+	userPrompt := strings.TrimSpace(input.ChatUserPrompt)
+	if userPrompt == "" {
+		userPrompt = prompttemplate.Expand(prompttemplate.DefaultPaperAnalyzeChatUser(), map[string]string{
+			"subject":   input.Subject,
+			"stage":     input.Stage,
+			"file_name": input.FileName,
+		})
+	}
+
+	var userMsg map[string]any
+	if len(input.ImageData) > 0 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(input.ImageMIME)), "image/") {
+		dataURL := fmt.Sprintf("data:%s;base64,%s", input.ImageMIME, base64.StdEncoding.EncodeToString(input.ImageData))
+		userMsg = map[string]any{
+			"role": "user",
+			"content": []any{
+				map[string]any{
+					"type": "image_url",
+					"image_url": map[string]any{
+						"url": dataURL,
+					},
+				},
+				map[string]any{"type": "text", "text": userPrompt},
+			},
+		}
+	} else {
+		userMsg = map[string]any{
+			"role":    "user",
+			"content": userPrompt,
+		}
+	}
 
 	reqBody := map[string]any{
-		"model": model,
-		"messages": []map[string]string{
-			{"role": "user", "content": userPrompt},
-		},
+		"model":    model,
+		"messages": []any{userMsg},
 	}
 	payload, err := json.Marshal(reqBody)
 	if err != nil {

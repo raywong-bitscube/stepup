@@ -1,9 +1,13 @@
 package studentpaper
 
 type AnalyzeInput struct {
-	Subject  string
-	Stage    string
-	FileName string
+	Subject   string
+	Stage     string
+	FileName  string
+	ImageMIME string // optional; image/* when sending multimodal chat completions
+	ImageData []byte // optional; raw image bytes (e.g. JPEG/PNG)
+	// ChatUserPrompt is the final user message for chat/completions (from prompt_template + placeholders).
+	ChatUserPrompt string
 }
 
 type AnalyzeOutput struct {

@@ -81,7 +81,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `GET|POST /api/v1/admin/subjects`, `PATCH /api/v1/admin/subjects/{subjectId}` — subject CRUD
 - `GET|POST /api/v1/admin/stages`, `PATCH /api/v1/admin/stages/{stageId}` — stage CRUD
 - `GET|POST /api/v1/admin/ai-models`, `PATCH /api/v1/admin/ai-models/{modelId}` — AI 模型（列表不返回 secret；激活一个模型会将其他模型置为非激活）
-- `GET|POST /api/v1/admin/prompts`, `PATCH /api/v1/admin/prompts/{promptId}` — Prompt 模板
+- `GET /api/v1/admin/prompts`, `PATCH /api/v1/admin/prompts/{promptId}` — Prompt 模板（预置行，仅更新）
 - `GET /api/v1/admin/audit-logs` — 审计日志只读列表（`?limit=`，默认 100，最大 500）
 
 ## Audit log（`audit_log`）

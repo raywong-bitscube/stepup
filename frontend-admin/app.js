@@ -757,14 +757,14 @@
       )
       .join('');
     return `
-      <div class="toolbar"><h2 style="margin:0">Prompt 模板</h2><button type="button" class="btn" id="btnAddPr">新建</button></div>
+      <div class="toolbar"><h2 style="margin:0">Prompt 模板</h2></div>
+      <p class="muted">仅可编辑内容与说明；系统预置模板由迁移/种子写入，不提供新增或删除。占位符：<code>%subject</code> <code>%stage</code> <code>%file_name</code>。有试卷图片时由接口以多模态形式附在消息里，由模型自行识图分析，无需用占位符塞 OCR 文本。</p>
       <table class="data"><thead><tr><th>ID</th><th>key</th><th>说明</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
         '<tr><td colspan="5">暂无</td></tr>'}</tbody></table><div id="modalRoot"></div>`;
   }
 
   function bindPrompts(pane) {
     const mr = pane.querySelector('#modalRoot');
-    pane.querySelector('#btnAddPr').addEventListener('click', () => openPromptModal(mr, null));
     pane.querySelectorAll('button[data-pid]').forEach((b) => {
       b.addEventListener('click', () => {
         const id = Number(b.getAttribute('data-pid'));
@@ -774,15 +774,16 @@
   }
 
   function openPromptModal(mr, ex) {
-    const edit = !!ex;
+    if (!ex) return;
     mr.innerHTML = `
-      <div class="modal-backdrop" id="bd"><div class="modal wide"><h3>${edit ? '编辑 Prompt' : '新建 Prompt'}</h3>
+      <div class="modal-backdrop" id="bd"><div class="modal wide"><h3>编辑 Prompt</h3>
       <div class="form-grid">
-        <div><label>key</label><input id="k" value="${edit ? escapeHtml(ex.key) : ''}" ${edit ? 'readonly' : ''} /></div>
-        <div><label>说明</label><input id="d" value="${edit && ex.description ? escapeHtml(ex.description) : ''}" /></div>
-        <div><label>内容</label><textarea id="c">${edit ? escapeHtml(ex.content) : ''}</textarea></div>
-        ${edit ? `<div><label>状态</label><input id="st" type="number" value="${ex.status}" /></div>` : ''}
+        <div><label>key（只读）</label><input id="k" value="${escapeHtml(ex.key)}" readonly /></div>
+        <div><label>说明</label><input id="d" value="${ex.description ? escapeHtml(ex.description) : ''}" /></div>
+        <div><label>内容</label><textarea id="c">${escapeHtml(ex.content)}</textarea></div>
+        <div><label>状态</label><input id="st" type="number" value="${ex.status}" /></div>
       </div>
+      <p class="muted" style="margin-top:8px">占位符：<code>%subject</code> <code>%stage</code> <code>%file_name</code></p>
       <div class="row"><button type="button" class="btn" id="ok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
       </div></div>`;
     const close = () => {
@@ -794,25 +795,14 @@
     });
     mr.querySelector('#ok').addEventListener('click', async () => {
       try {
-        if (edit) {
-          await api('/api/v1/admin/prompts/' + ex.id, {
-            method: 'PATCH',
-            jsonBody: {
-              description: mr.querySelector('#d').value,
-              content: mr.querySelector('#c').value,
-              status: Number(mr.querySelector('#st').value),
-            },
-          });
-        } else {
-          await api('/api/v1/admin/prompts', {
-            method: 'POST',
-            jsonBody: {
-              key: mr.querySelector('#k').value.trim(),
-              description: mr.querySelector('#d').value.trim(),
-              content: mr.querySelector('#c').value,
-            },
-          });
-        }
+        await api('/api/v1/admin/prompts/' + ex.id, {
+          method: 'PATCH',
+          jsonBody: {
+            description: mr.querySelector('#d').value,
+            content: mr.querySelector('#c').value,
+            status: Number(mr.querySelector('#st').value),
+          },
+        });
         close();
         mount(document.getElementById('app'));
       } catch (e) {

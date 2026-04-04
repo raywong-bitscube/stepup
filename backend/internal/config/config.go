@@ -21,6 +21,8 @@ type Config struct {
 	CORSAllowedOrigins     []string
 	// StaticDir, if set, serves bundled UIs at /admin/ and /student/ (see Dockerfile).
 	StaticDir string
+	// UploadDir is where student paper files are stored; also served at GET /uploads/ when non-empty.
+	UploadDir string
 }
 
 func Load() Config {
@@ -46,6 +48,7 @@ func Load() Config {
 		AdminSessionTTL:        time.Duration(sessionHours) * time.Hour,
 		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:8080")),
 		StaticDir:              strings.TrimSpace(getenv("STATIC_DIR", "")),
+		UploadDir:              strings.TrimSpace(getenv("UPLOAD_DIR", "data/uploads")),
 	}
 }
 

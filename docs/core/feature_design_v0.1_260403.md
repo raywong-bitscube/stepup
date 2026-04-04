@@ -233,7 +233,7 @@ v0.1 目标：完成「后台管理 + 浏览器学生端」最小可用闭环。
 - `GET/POST/PATCH /admin/subjects`
 - `GET/POST/PATCH /admin/stages`
 - `GET/POST/PATCH /admin/ai-models`
-- `GET/POST/PATCH /admin/prompts`
+- `GET/PATCH /admin/prompts`（模板预置，仅编辑）
 - `GET /admin/audit-logs`
 
 ---

@@ -9,8 +9,13 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 )
 
-// registerStatic mounts /admin/ and /student/ from cfg.StaticDir/{admin,student} when the directories exist.
+// registerStatic mounts /admin/ and /student/ from cfg.StaticDir/{admin,student} when the directories exist,
+// and /uploads/ from cfg.UploadDir (student paper files).
 func registerStatic(mux *http.ServeMux, cfg config.Config) {
+	if dir := strings.TrimSpace(cfg.UploadDir); dir != "" {
+		mux.Handle("GET /uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir(dir))))
+	}
+
 	root := strings.TrimSpace(cfg.StaticDir)
 	if root == "" {
 		return

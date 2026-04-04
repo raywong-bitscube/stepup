@@ -11,7 +11,6 @@ import (
 var (
 	ErrNoDatabase   = errors.New("database not configured")
 	ErrInvalidInput = errors.New("invalid input")
-	ErrConflict     = errors.New("conflict")
 	ErrNotFound     = errors.New("not found")
 )
 
@@ -42,7 +41,7 @@ func (s *Service) List(ctx context.Context) ([]Prompt, error) {
 SELECT id, ` + "`key`" + `, description, content, status, created_at
 FROM prompt_template
 WHERE is_deleted = 0
-ORDER BY id DESC
+ORDER BY ` + "`key`" + ` ASC
 LIMIT 500`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -72,54 +71,7 @@ LIMIT 500`
 	return out, rows.Err()
 }
 
-type CreateInput struct {
-	Key         string
-	Description string
-	Content     string
-	Status      *int
-}
-
-func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
-	if s == nil || s.db == nil {
-		return 0, ErrNoDatabase
-	}
-	key := strings.TrimSpace(in.Key)
-	content := strings.TrimSpace(in.Content)
-	if key == "" || content == "" {
-		return 0, ErrInvalidInput
-	}
-	desc := sql.NullString{}
-	d := strings.TrimSpace(in.Description)
-	if d != "" {
-		desc = sql.NullString{String: d, Valid: true}
-	}
-	status := 1
-	if in.Status != nil {
-		if *in.Status != 0 && *in.Status != 1 {
-			return 0, ErrInvalidInput
-		}
-		status = *in.Status
-	}
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	now := time.Now()
-	res, err := s.db.ExecContext(ctx, `
-INSERT INTO prompt_template
-  (`+"`key`"+`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, ?, 0, ?, 0, 0)
-`, key, desc, content, status, now, now)
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return 0, ErrConflict
-		}
-		return 0, err
-	}
-	nid, _ := res.LastInsertId()
-	return uint64(nid), nil
-}
-
 type UpdateInput struct {
-	Key         *string
 	Description *string
 	Content     *string
 	Status      *int
@@ -137,14 +89,6 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 
 	var sets []string
 	var args []any
-	if in.Key != nil {
-		k := strings.TrimSpace(*in.Key)
-		if k == "" {
-			return ErrInvalidInput
-		}
-		sets = append(sets, "`key` = ?")
-		args = append(args, k)
-	}
 	if in.Description != nil {
 		d := strings.TrimSpace(*in.Description)
 		if d == "" {
@@ -179,9 +123,6 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	q := `UPDATE prompt_template SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, q, args...)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-			return ErrConflict
-		}
 		return err
 	}
 	n, _ := res.RowsAffected()

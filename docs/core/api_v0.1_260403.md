@@ -285,14 +285,17 @@ Header: `Authorization: Bearer <admin_token>`
 
 ### 3.10 Prompt 模板（管理端）
 
-- `GET /api/v1/admin/prompts` — 列表（含 `key`、`content`）
-- `POST /api/v1/admin/prompts` — `key`、`content` 必填；`description`、`status` 可选
-- `PATCH /api/v1/admin/prompts/{promptId}` — 局部更新；`key` 冲突返回 `409`
+模板行由迁移/种子预置，**不支持**通过 API 新增或删除；管理端仅可 **编辑** `description`、`content`、`status`。
+
+- `GET /api/v1/admin/prompts` — 列表（含 `key`、`content`），按 `key` 升序。
+- `PATCH /api/v1/admin/prompts/{promptId}` — 可选更新 `description`、`content`、`status`（至少一项）；**不可**修改 `key`。
+
+系统密钥 **`paper_analyze_chat_user`**：学生试卷走 HTTP 分析时，发给大模型的 **user** 文案取自该模板（`status=1`）。占位符由后端替换：`%subject`、`%stage`、`%file_name`。附带试卷图片时由请求中的多模态 **`image_url`** 传入像素内容，由模型自行识图/OCR 与推理，**不**通过占位符预填 OCR 结果。缺行或不可读时回退至后端内置默认模板。
 
 ### 3.11 审计日志（管理端）
 
 - `GET /api/v1/admin/audit-logs?limit=100` — 只读列表，`limit` 默认 `100`，最大 `500`，按 `id` 降序。
-- **写入范围（v0.1）**：管理员登录、学生登录、学生创建试卷（上传）、管理端对上述学生 / 科目 / 阶段 / AI 模型 / Prompt 资源的 **POST 创建** 与 **PATCH 更新**（含密码 / secret 类事件的特殊 `action`，见 §1）。需数据库；无 `DB_DSN` 时不写审计表。
+- **写入范围（v0.1）**：管理员登录、学生登录、学生创建试卷（上传）、管理端对上述学生 / 科目 / 阶段 / AI 模型的 **POST 创建** 与 **PATCH 更新**、Prompt 模板仅 **PATCH 更新**（含密码 / secret 类事件的特殊 `action`，见 §1）。需数据库；无 `DB_DSN` 时不写审计表。
 
 ### 3.12 AI 调用日志（管理端）
 

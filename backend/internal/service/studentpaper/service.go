@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/prompttemplate"
 )
 
 type Paper struct {
@@ -105,7 +107,24 @@ func applyModelSnapshot(out AnalyzeOutput, meta *activeModel) AnalyzeOutput {
 	return out
 }
 
-func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, paperID uint64, subject, stage, fileName string, out AnalyzeOutput, tr AnalyzeTrace) {
+func (s *Service) paperChatUserPrompt(ctx context.Context, in AnalyzeInput) string {
+	tpl := prompttemplate.DefaultPaperAnalyzeChatUser()
+	if s.db != nil {
+		ctx2, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if c, err := prompttemplate.GetActiveContent(ctx2, s.db, prompttemplate.KeyPaperAnalyzeChatUser); err == nil && c != "" {
+			tpl = c
+		}
+	}
+	// 有试卷图片时由多模态消息的 image_url 传入，由模型自行识图/OCR；不在此用 %file_content 预填文案。
+	return prompttemplate.Expand(tpl, map[string]string{
+		"subject":   in.Subject,
+		"stage":     in.Stage,
+		"file_name": in.FileName,
+	})
+}
+
+func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, paperID uint64, subject, stage, originalFileName, filePath string, out AnalyzeOutput, tr AnalyzeTrace) {
 	if s.aiLog == nil {
 		return
 	}
@@ -118,11 +137,15 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 		}
 		nameSnap = meta.Name
 	}
-	reqM, _ := json.Marshal(map[string]string{
+	metaReq := map[string]any{
 		"subject":   subject,
 		"stage":     stage,
-		"file_name": fileName,
-	})
+		"file_name": originalFileName,
+	}
+	if strings.TrimSpace(filePath) != "" {
+		metaReq["file_path"] = filePath
+	}
+	reqM, _ := json.Marshal(metaReq)
 	respM, _ := json.Marshal(map[string]any{
 		"summary_len":     len(out.Summary),
 		"weak_points_n":   len(out.WeakPoints),
@@ -158,15 +181,14 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 	})
 }
 
-func (s *Service) Create(identifier, subject, stage, fileName string, fileSize int64) Paper {
+func (s *Service) Create(identifier, subject, stage, originalFileName string, fileSize int64, contentType string, fileBytes []byte) (Paper, error) {
 	if s.db != nil {
-		if p, err := s.createDB(identifier, subject, stage, fileName, fileSize); err == nil {
-			return p
-		}
+		return s.createDB(identifier, subject, stage, originalFileName, fileSize, contentType, fileBytes)
 	}
 
 	ctx := context.Background()
 	adapter, meta := s.resolveAdapter(ctx)
+	vmime, vdata := visionImageForModel(originalFileName, contentType, fileBytes)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -179,15 +201,19 @@ func (s *Service) Create(identifier, subject, stage, fileName string, fileSize i
 		Identifier: identifier,
 		Subject:    subject,
 		Stage:      stage,
-		FileName:   fileName,
+		FileName:   originalFileName,
 		FileSize:   fileSize,
 		CreatedAt:  time.Now(),
 	}
-	result := adapter.Analyze(AnalyzeInput{
-		Subject:  subject,
-		Stage:    stage,
-		FileName: fileName,
-	})
+	ain := AnalyzeInput{
+		Subject:   subject,
+		Stage:     stage,
+		FileName:  originalFileName,
+		ImageMIME: vmime,
+		ImageData: vdata,
+	}
+	ain.ChatUserPrompt = s.paperChatUserPrompt(ctx, ain)
+	result := adapter.Analyze(ain)
 	out := applyModelSnapshot(result.Out, meta)
 	s.analysis[id] = Analysis{
 		PaperID:         id,
@@ -198,7 +224,7 @@ func (s *Service) Create(identifier, subject, stage, fileName string, fileSize i
 		ImprovementPlan: out.ImprovementPlan,
 		UpdatedAt:       time.Now(),
 	}
-	return p
+	return p, nil
 }
 
 func (s *Service) List(identifier string) []Paper {
@@ -263,7 +289,7 @@ func (s *Service) GetPlan(identifier, paperIDRaw string) (map[string]any, error)
 	}, nil
 }
 
-func (s *Service) createDB(identifier, subject, stage, fileName string, fileSize int64) (Paper, error) {
+func (s *Service) createDB(identifier, subject, stage, originalFileName string, fileSize int64, contentType string, fileBytes []byte) (Paper, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -292,16 +318,34 @@ LIMIT 1
 		return Paper{}, err
 	}
 
+	vmime, vdata := visionImageForModel(originalFileName, contentType, fileBytes)
+
 	now := time.Now()
-	fileType := detectFileType(fileName)
-	fileURL := "/uploads/" + fileName
+	fileType := detectFileType(originalFileName)
 	adapter, meta := s.resolveAdapter(ctx)
-	analyzeResult := adapter.Analyze(AnalyzeInput{
-		Subject:  subject,
-		Stage:    stage,
-		FileName: fileName,
-	})
+	ain := AnalyzeInput{
+		Subject:   subject,
+		Stage:     stage,
+		FileName:  originalFileName,
+		ImageMIME: vmime,
+		ImageData: vdata,
+	}
+	ain.ChatUserPrompt = s.paperChatUserPrompt(ctx, ain)
+	analyzeResult := adapter.Analyze(ain)
 	analysisOut := applyModelSnapshot(analyzeResult.Out, meta)
+
+	uploadDir := strings.TrimSpace(s.cfg.UploadDir)
+	if uploadDir == "" {
+		uploadDir = "data/uploads"
+	}
+	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		return Paper{}, err
+	}
+	stored := uniqueStoredFileName(originalFileName)
+	if err := os.WriteFile(filepath.Join(uploadDir, stored), fileBytes, 0644); err != nil {
+		return Paper{}, err
+	}
+	fileURL := "/uploads/" + stored
 
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO exam_paper
@@ -313,7 +357,7 @@ VALUES (?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
 	}
 	paperID, _ := res.LastInsertId()
 
-	s.writeAILog(context.Background(), meta, studentID, uint64(paperID), subject, stage, fileName, analysisOut, analyzeResult.Trace)
+	s.writeAILog(context.Background(), meta, studentID, uint64(paperID), subject, stage, originalFileName, fileURL, analysisOut, analyzeResult.Trace)
 
 	snapshotRaw, _ := json.Marshal(analysisOut.ModelSnapshot)
 	weakRaw, _ := json.Marshal(analysisOut.WeakPoints)
@@ -340,7 +384,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, 0)
 		Identifier: identifier,
 		Subject:    subject,
 		Stage:      stageName(stage, stageID),
-		FileName:   fileName,
+		FileName:   originalFileName,
 		FileSize:   fileSize,
 		CreatedAt:  now,
 	}, nil

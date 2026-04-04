@@ -2,6 +2,7 @@ package student
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 
@@ -38,9 +39,25 @@ func (h *PaperHandler) Create(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "FILE_REQUIRED"})
 		return
 	}
-	_ = file.Close()
+	defer func() { _ = file.Close() }()
 
-	paper := h.service.Create(identifier, subject, stage, header.Filename, header.Size)
+	const maxBytes = 25 << 20
+	raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "READ_FAILED"})
+		return
+	}
+	if len(raw) > maxBytes {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"code": "FILE_TOO_LARGE"})
+		return
+	}
+	contentType := header.Header.Get("Content-Type")
+	size := int64(len(raw))
+	paper, err := h.service.Create(identifier, subject, stage, header.Filename, size, contentType, raw)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "PAPER_CREATE_FAILED"})
+		return
+	}
 	if h.audit != nil {
 		if sid := middleware.StudentDBID(r.Context()); sid != 0 {
 			pid := paper.ID

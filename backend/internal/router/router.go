@@ -98,7 +98,6 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("PATCH /api/v1/admin/ai-models/{modelId}", middleware.RequireAdminAuth(adminAuthService, adminAIModelsHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/prompts", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.List))
-	mux.HandleFunc("POST /api/v1/admin/prompts", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.Create))
 	mux.HandleFunc("PATCH /api/v1/admin/prompts/{promptId}", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", middleware.RequireAdminAuth(adminAuthService, adminAuditLogsHandler.List))

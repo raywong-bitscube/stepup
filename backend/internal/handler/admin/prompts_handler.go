@@ -55,58 +55,7 @@ func (h *PromptsHandler) List(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"items": out})
 }
 
-type createPromptRequest struct {
-	Key         string `json:"key"`
-	Description string `json:"description"`
-	Content     string `json:"content"`
-	Status      *int   `json:"status"`
-}
-
-func (h *PromptsHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createPromptRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_JSON"})
-		return
-	}
-	nid, err := h.service.Create(r.Context(), adminprompts.CreateInput{
-		Key:         req.Key,
-		Description: req.Description,
-		Content:     req.Content,
-		Status:      req.Status,
-	})
-	switch {
-	case errors.Is(err, adminprompts.ErrNoDatabase):
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
-	case errors.Is(err, adminprompts.ErrInvalidInput):
-		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
-	case errors.Is(err, adminprompts.ErrConflict):
-		writeJSON(w, http.StatusConflict, map[string]any{"code": "CONFLICT"})
-	case err != nil:
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
-	default:
-		if h.audit != nil {
-			if sess, ok := middleware.AdminSession(r.Context()); ok && sess.AdminID != 0 {
-				adm := sess.AdminID
-				snap, _ := json.Marshal(map[string]any{"key": strings.TrimSpace(req.Key)})
-				pid := nid
-				h.audit.Write(r.Context(), auditlog.Event{
-					UserID:     &adm,
-					UserType:   "admin",
-					Action:     "create",
-					EntityType: "prompt_template",
-					EntityID:   &pid,
-					Snapshot:   snap,
-					IP:         r.RemoteAddr,
-					CreatedBy:  adm,
-				})
-			}
-		}
-		writeJSON(w, http.StatusCreated, map[string]any{"status": "ok"})
-	}
-}
-
 type patchPromptRequest struct {
-	Key         *string `json:"key"`
 	Description *string `json:"description"`
 	Content     *string `json:"content"`
 	Status      *int    `json:"status"`
@@ -125,7 +74,6 @@ func (h *PromptsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = h.service.Patch(r.Context(), id, adminprompts.UpdateInput{
-		Key:         req.Key,
 		Description: req.Description,
 		Content:     req.Content,
 		Status:      req.Status,
@@ -137,8 +85,6 @@ func (h *PromptsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
 	case errors.Is(err, adminprompts.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
-	case errors.Is(err, adminprompts.ErrConflict):
-		writeJSON(w, http.StatusConflict, map[string]any{"code": "CONFLICT"})
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 	default:
@@ -146,8 +92,9 @@ func (h *PromptsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 			if sess, ok := middleware.AdminSession(r.Context()); ok && sess.AdminID != 0 {
 				adm := sess.AdminID
 				snap, _ := json.Marshal(map[string]any{
-					"has_key": req.Key != nil, "has_description": req.Description != nil,
-					"has_content": req.Content != nil, "has_status": req.Status != nil,
+					"has_description": req.Description != nil,
+					"has_content":     req.Content != nil,
+					"has_status":      req.Status != nil,
 				})
 				sid := id
 				h.audit.Write(r.Context(), auditlog.Event{
