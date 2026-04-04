@@ -39,15 +39,16 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW(),
   updated_by = 0;
 
--- DeepSeek（OpenAI 兼容 chat/completions）。运行后端请设 ANALYSIS_ADAPTER=http；app_key 为模型名，app_secret 为 API Key。
--- 执行前将 app_secret 占位符替换为真实 key（勿提交到 git）；若密钥曾出现在仓库历史中，请到 DeepSeek 控制台轮换。
+-- Kimi / Moonshot（OpenAI 兼容 chat/completions）。ANALYSIS_ADAPTER=http；app_key 为模型名，app_secret 为 API Key。
+-- 国内常用 https://api.moonshot.cn/v1/chat/completions；国际可用 https://api.moonshot.ai/v1/chat/completions。
+-- 执行前替换 app_secret；模型 id 可按控制台套餐改为 moonshot-v1-8k、moonshot-v1-32k、kimi-k2.5 等。
 INSERT INTO ai_model
   (name, url, app_key, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT
-  'DeepSeek',
-  'https://api.deepseek.com/v1/chat/completions',
-  'deepseek-chat',
-  '__REPLACE_WITH_DEEPSEEK_API_KEY__',
+  'Kimi (Moonshot)',
+  'https://api.moonshot.cn/v1/chat/completions',
+  'kimi-k2.5',
+  '__REPLACE_WITH_MOONSHOT_API_KEY__',
   1,
   NOW(),
   0,
@@ -57,7 +58,6 @@ SELECT
 FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM ai_model
-  WHERE name = 'DeepSeek'
-    AND url = 'https://api.deepseek.com/v1/chat/completions'
+  WHERE url = 'https://api.moonshot.cn/v1/chat/completions'
     AND is_deleted = 0
 );
