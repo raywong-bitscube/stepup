@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -103,6 +104,7 @@ func (a *HTTPAnalysisAdapter) analyzeMockAIProtocol(input AnalyzeInput, host str
 		trace.ErrorMessage = truncateRunes(err.Error(), 400)
 		return a.mockFallback(input, trace)
 	}
+	trace.RequestBody = redactLogJSON(string(payload))
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
 	defer cancel()
@@ -126,6 +128,15 @@ func (a *HTTPAnalysisAdapter) analyzeMockAIProtocol(input AnalyzeInput, host str
 	defer resp.Body.Close()
 
 	trace.HTTPStatus = resp.StatusCode
+	respBodyBytes, rerr := io.ReadAll(resp.Body)
+	if rerr != nil {
+		trace.ErrorPhase = "read_body"
+		trace.ErrorMessage = truncateRunes(rerr.Error(), 400)
+		trace.ResponseBody = string(respBodyBytes)
+		return a.mockFallback(input, trace)
+	}
+	trace.ResponseBody = string(respBodyBytes)
+
 	if resp.StatusCode >= 400 {
 		trace.ErrorPhase = "http_status"
 		trace.ErrorMessage = truncateRunes(fmt.Sprintf("HTTP %d", resp.StatusCode), 400)
@@ -140,7 +151,7 @@ func (a *HTTPAnalysisAdapter) analyzeMockAIProtocol(input AnalyzeInput, host str
 		ImprovementPlan []string `json:"improvement_plan"`
 		RawContent      string   `json:"raw_content"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+	if err := json.Unmarshal(respBodyBytes, &parsed); err != nil {
 		trace.ErrorPhase = "decode"
 		trace.ErrorMessage = truncateRunes(err.Error(), 400)
 		return a.mockFallback(input, trace)
@@ -227,6 +238,7 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 		trace.ErrorMessage = truncateRunes(err.Error(), 400)
 		return a.mockFallback(input, trace)
 	}
+	trace.RequestBody = redactLogJSON(string(payload))
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.timeout)
 	defer cancel()
@@ -251,6 +263,15 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 	defer resp.Body.Close()
 
 	trace.HTTPStatus = resp.StatusCode
+	respBodyBytes, rerr := io.ReadAll(resp.Body)
+	if rerr != nil {
+		trace.ErrorPhase = "read_body"
+		trace.ErrorMessage = truncateRunes(rerr.Error(), 400)
+		trace.ResponseBody = string(respBodyBytes)
+		return a.mockFallback(input, trace)
+	}
+	trace.ResponseBody = string(respBodyBytes)
+
 	if resp.StatusCode >= 400 {
 		trace.ErrorPhase = "http_status"
 		trace.ErrorMessage = truncateRunes(fmt.Sprintf("HTTP %d", resp.StatusCode), 400)
@@ -264,7 +285,7 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&openAI); err != nil {
+	if err := json.Unmarshal(respBodyBytes, &openAI); err != nil {
 		trace.ErrorPhase = "decode"
 		trace.ErrorMessage = truncateRunes(err.Error(), 400)
 		return a.mockFallback(input, trace)

@@ -111,44 +111,40 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		ID             uint64          `json:"id"`
 		CreatedAt      RFC3339Time     `json:"created_at"`
-		AIModelID      *uint64         `json:"ai_model_id"`
 		ModelNameSnap  string          `json:"model_name_snapshot"`
 		Action         string          `json:"action"`
 		AdapterKind    string          `json:"adapter_kind"`
-		ResultStatus   string          `json:"result_status"`
-		HTTPStatus     *int            `json:"http_status"`
+		Outcome        string          `json:"outcome"`
 		LatencyMS      *int64          `json:"latency_ms"`
 		ErrorPhase     string          `json:"error_phase"`
 		ErrorMessage   string          `json:"error_message"`
 		EndpointHost   string          `json:"endpoint_host"`
 		ChatModel      string          `json:"chat_model"`
 		FallbackToMock bool            `json:"fallback_to_mock"`
-		PaperID        *uint64         `json:"paper_id"`
-		StudentID      *uint64         `json:"student_id"`
 		RequestMeta    json.RawMessage `json:"request_meta"`
 		ResponseMeta   json.RawMessage `json:"response_meta"`
+		RequestBody    string          `json:"request_body"`
+		ResponseBody   string          `json:"response_body"`
 	}
 	out := make([]row, 0, len(items))
 	for _, e := range items {
 		out = append(out, row{
 			ID:             e.ID,
 			CreatedAt:      RFC3339Time(e.CreatedAt),
-			AIModelID:      e.AIModelID,
 			ModelNameSnap:  e.ModelNameSnap,
 			Action:         e.Action,
 			AdapterKind:    e.AdapterKind,
-			ResultStatus:   e.ResultStatus,
-			HTTPStatus:     e.HTTPStatus,
+			Outcome:        e.Outcome,
 			LatencyMS:      e.LatencyMS,
 			ErrorPhase:     e.ErrorPhase,
 			ErrorMessage:   e.ErrorMessage,
 			EndpointHost:   e.EndpointHost,
 			ChatModel:      e.ChatModel,
 			FallbackToMock: e.FallbackToMock,
-			PaperID:        e.PaperID,
-			StudentID:      e.StudentID,
 			RequestMeta:    e.RequestMeta,
 			ResponseMeta:   e.ResponseMeta,
+			RequestBody:    e.RequestBody,
+			ResponseBody:   e.ResponseBody,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")

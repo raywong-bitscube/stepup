@@ -72,7 +72,8 @@ func (s *ListService) List(ctx context.Context, p ListParams) ([]ListEntry, erro
 	q := `
 SELECT id, created_at, ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
        http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-       fallback_to_mock, paper_id, student_id, request_meta, response_meta
+       fallback_to_mock, paper_id, student_id, request_meta, response_meta,
+       request_body, response_body
 FROM ai_call_log`
 	if len(conds) > 0 {
 		q += " WHERE " + joinAnd(conds)
@@ -97,12 +98,14 @@ FROM ai_call_log`
 			stu          sql.NullInt64
 			reqM         sql.NullString
 			respM        sql.NullString
+			reqB         sql.NullString
+			respB        sql.NullString
 			fallbackTiny int
 		)
 		if err := rows.Scan(
 			&e.ID, &e.CreatedAt, &aid, &e.ModelNameSnap, &e.Action, &e.AdapterKind, &e.ResultStatus,
 			&httpSt, &lat, &e.ErrorPhase, &e.ErrorMessage, &e.EndpointHost, &e.ChatModel,
-			&fallbackTiny, &paper, &stu, &reqM, &respM,
+			&fallbackTiny, &paper, &stu, &reqM, &respM, &reqB, &respB,
 		); err != nil {
 			return nil, err
 		}
@@ -137,6 +140,13 @@ FROM ai_call_log`
 		} else {
 			e.ResponseMeta = json.RawMessage("null")
 		}
+		if reqB.Valid {
+			e.RequestBody = reqB.String
+		}
+		if respB.Valid {
+			e.ResponseBody = respB.String
+		}
+		e.Outcome = FormatOutcome(e.ResultStatus, e.HTTPStatus)
 		out = append(out, e)
 	}
 	return out, rows.Err()

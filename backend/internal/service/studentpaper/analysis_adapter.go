@@ -29,6 +29,8 @@ type AnalyzeTrace struct {
 	EndpointHost   string
 	ChatModel      string
 	FallbackToMock bool
+	RequestBody    string // e.g. outbound JSON (image base64 redacted in http adapter)
+	ResponseBody   string // upstream response body when available
 }
 
 type AnalyzeResult struct {

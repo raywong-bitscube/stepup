@@ -178,6 +178,8 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 		StudentID:        &sID,
 		RequestMetaJSON:  reqM,
 		ResponseMetaJSON: respM,
+		RequestBody:      tr.RequestBody,
+		ResponseBody:     tr.ResponseBody,
 	})
 }
 

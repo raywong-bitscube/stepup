@@ -23,6 +23,8 @@ type InsertRow struct {
 	StudentID        *uint64
 	RequestMetaJSON  json.RawMessage
 	ResponseMetaJSON json.RawMessage
+	RequestBody      string
+	ResponseBody     string
 }
 
 // ListEntry is a row returned to admin API.
@@ -45,6 +47,9 @@ type ListEntry struct {
 	StudentID      *uint64         `json:"student_id"`
 	RequestMeta    json.RawMessage `json:"request_meta"`
 	ResponseMeta   json.RawMessage `json:"response_meta"`
+	RequestBody    string          `json:"request_body"`
+	ResponseBody   string          `json:"response_body"`
+	Outcome        string          `json:"outcome"`
 }
 
 // ListParams filters listing.

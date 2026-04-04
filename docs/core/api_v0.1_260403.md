@@ -299,7 +299,7 @@ Header: `Authorization: Bearer <admin_token>`
 
 ### 3.12 AI 调用日志（管理端）
 
-需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节或增量 `db/migrations/20260404_ai_call_log.sql`）。
+需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节；历史环境另执行 `db/migrations/20260408_ai_call_log_request_response_body.sql` 等增量脚本）。
 
 `GET /api/v1/admin/ai-call-logs`
 
@@ -314,7 +314,7 @@ Header: `Authorization: Bearer <admin_token>`
 | `from` | 起始时间：`RFC3339` 或日期 `2006-01-02`（按本地日边界 00:00） |
 | `to` | 结束时间：日期形式时包含当日直到 **23:59:59.999** |
 
-响应：`{ "items": [ { "id", "created_at", "ai_model_id", "model_name_snapshot", "action", "adapter_kind", "result_status", "http_status", "latency_ms", "error_phase", "error_message", "endpoint_host", "chat_model", "fallback_to_mock", "paper_id", "student_id", "request_meta", "response_meta" } ] }`。
+响应 `items[]` 字段（管理端列表已精简显示项；筛选仍可用 `ai_model_id` 等 query，但响应里不返回试卷/学生 id）：`id`、`created_at`、`model_name_snapshot`、`action`、`adapter_kind`、**`outcome`**（`result_status` 与 HTTP 合并展示：`success` 且 HTTP 200 时仅 `success`，否则含 `· HTTP xxx`）、`latency_ms`、`error_phase`、`error_message`、`endpoint_host`、`chat_model`、`fallback_to_mock`、`request_meta`、`response_meta`、**`request_body`**（出站 chat JSON，**内联图片 base64 已脱敏**）、**`response_body`**（上游响应原文，可截断存储）。
 
 无库或表不存在时：查询可能返回 `503` / `500`；写入侧在表缺失时静默跳过（不影响上传主流程）。
 

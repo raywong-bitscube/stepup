@@ -18,7 +18,7 @@ body {
   line-height: 1.45;
 }
 a { color: var(--primary); }
-.wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
 .card {
   background: var(--card);
   border: 1px solid var(--border);
@@ -31,8 +31,11 @@ h2 { margin: 0 0 10px; font-size: 17px; }
 p.muted { margin: 0; color: var(--muted); }
 .layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: 12px;
+}
+.layout > section {
+  min-width: 0;
 }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
@@ -132,6 +135,58 @@ pre.raw {
   overflow-x: auto;
   font-size: 12px;
   max-height: 240px;
+}
+.table-wrap-ai {
+  overflow-x: auto;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+table.data.ai-logs {
+  min-width: 1080px;
+  table-layout: auto;
+}
+table.data.ai-logs th,
+table.data.ai-logs td {
+  white-space: nowrap;
+}
+table.data.ai-logs td.ai-wrap {
+  white-space: normal;
+  min-width: 220px;
+  max-width: min(420px, 36vw);
+}
+details.ai-fold {
+  margin: 6px 0;
+}
+details.ai-fold > summary {
+  cursor: pointer;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 12px;
+  list-style: none;
+}
+details.ai-fold > summary::-webkit-details-marker { display: none; }
+details.ai-fold > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform 0.12s ease;
+}
+details.ai-fold[open] > summary::before { transform: rotate(90deg); }
+pre.ai-fold-pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: #f1f5f9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 10px; }
 @media (max-width: 700px) { .kpis { grid-template-columns: 1fr; } }

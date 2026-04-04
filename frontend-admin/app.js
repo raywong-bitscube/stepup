@@ -61,6 +61,29 @@
       .replace(/"/g, '&quot;');
   }
 
+  function aiLogFold(label, text) {
+    const t = String(text || '').trim();
+    if (!t) return '<span class="muted">—</span>';
+    return `<details class="ai-fold"><summary>${escapeHtml(label)}</summary><pre class="ai-fold-pre">${escapeHtml(t)}</pre></details>`;
+  }
+
+  function aiLogErrLine(e) {
+    const p = String(e.error_phase || '').trim();
+    const m = String(e.error_message || '').trim();
+    if (!p && !m) return '—';
+    const line = p && m ? p + ' · ' + m : p || m;
+    return escapeHtml(line.length > 120 ? line.slice(0, 120) + '…' : line);
+  }
+
+  function aiLogMetaBlock(e) {
+    try {
+      const blob = JSON.stringify({ request_meta: e.request_meta, response_meta: e.response_meta }, null, 2);
+      return aiLogFold('结构化 Meta', blob);
+    } catch {
+      return '—';
+    }
+  }
+
   const state = {
     token: localStorage.getItem(LS_TOKEN),
     view: 'dashboard',
@@ -818,32 +841,26 @@
         (e) =>
           `<tr>
         <td>${e.id}</td>
-        <td>${escapeHtml(e.created_at || '')}</td>
-        <td>${e.ai_model_id ?? '—'}</td>
-        <td>${escapeHtml(e.model_name_snapshot || '')}</td>
+        <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.created_at || '')}</td>
+        <td class="ai-wrap">${escapeHtml(e.model_name_snapshot || '')}</td>
         <td>${escapeHtml(e.action || '')}</td>
-        <td>${escapeHtml(e.adapter_kind || '')}</td>
-        <td>${escapeHtml(e.result_status || '')}</td>
-        <td>${e.http_status ?? '—'}</td>
+        <td class="ai-wrap">${escapeHtml(e.adapter_kind || '')}</td>
+        <td>${escapeHtml(e.outcome || '')}</td>
         <td>${e.latency_ms != null ? e.latency_ms : '—'}</td>
-        <td>${escapeHtml(e.error_phase || '')}</td>
-        <td style="max-width:200px;word-break:break-all">${escapeHtml((e.error_message || '').slice(0, 200))}</td>
-        <td>${escapeHtml(e.endpoint_host || '')}</td>
-        <td>${escapeHtml(e.chat_model || '')}</td>
+        <td class="ai-wrap" style="font-size:12px">${aiLogErrLine(e)}</td>
+        <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.endpoint_host || '')}</td>
+        <td class="ai-wrap">${escapeHtml(e.chat_model || '')}</td>
         <td>${e.fallback_to_mock ? '是' : '否'}</td>
-        <td>${e.paper_id ?? '—'}</td>
-        <td>${e.student_id ?? '—'}</td>
-        <td><pre class="raw" style="max-height:80px;margin:0;font-size:11px">${escapeHtml(JSON.stringify(e.request_meta))}</pre></td>
-        <td><pre class="raw" style="max-height:80px;margin:0;font-size:11px">${escapeHtml(JSON.stringify(e.response_meta))}</pre></td>
+        <td class="ai-wrap">${aiLogFold('请求 JSON', e.request_body)}${aiLogFold('响应原文', e.response_body)}${aiLogMetaBlock(e)}</td>
       </tr>`
       )
       .join('');
     return `
       <h2>AI 调用日志</h2>
-      <p class="muted">学生上传试卷触发的模型调用（不含 API Key 与完整请求/响应体）。</p>
+      <p class="muted">展示脱敏后的出站 JSON 与上游响应（内联图片 base64 已替换为占位符）；密钥永不记录。筛选仍可用模型 id，列表中已省略模型/试卷/学生 id 与重复 HTTP 列。</p>
       <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-width:1100px;align-items:end;margin-bottom:12px">
         <div>
-          <label>模型 ID</label>
+          <label>筛选：模型 id</label>
           <input type="text" id="ailogModel" placeholder="ai_model.id" value="${escapeHtml(f.ai_model_id)}" />
         </div>
         <div>
@@ -881,13 +898,13 @@
           <button type="button" class="btn secondary small" id="ailogNext">下一页</button>
         </div>
       </div>
-      <div style="overflow-x:auto">
-      <table class="data">
+      <div class="table-wrap-ai">
+      <table class="data ai-logs">
         <thead><tr>
-          <th>ID</th><th>时间</th><th>模型ID</th><th>模型名快照</th><th>动作</th><th>适配器</th><th>结果</th><th>HTTP</th><th>耗时ms</th>
-          <th>错误阶段</th><th>错误摘要</th><th>Endpoint</th><th>chat模型</th><th>回退mock</th><th>试卷</th><th>学生</th><th>请求meta</th><th>响应meta</th>
+          <th>ID</th><th>时间</th><th>模型名</th><th>动作</th><th>适配器</th><th>状态</th><th>ms</th>
+          <th>错误</th><th>Endpoint</th><th>chat</th><th>mock</th><th>请求 / 响应</th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="18">暂无</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="12">暂无</td></tr>'}</tbody>
       </table></div>`;
   }
 

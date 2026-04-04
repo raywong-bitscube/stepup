@@ -56,16 +56,22 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 		fallback = 1
 	}
 
+	rb := row.RequestBody
+	rb = TruncateBody(rb)
+	rsp := row.ResponseBody
+	rsp = TruncateBody(rsp)
+
 	_, _ = w.db.ExecContext(ctx, `
 INSERT INTO ai_call_log (
   ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
   http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-  fallback_to_mock, paper_id, student_id, request_meta, response_meta
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  fallback_to_mock, paper_id, student_id, request_meta, response_meta,
+  request_body, response_body
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `, nullInt64(aid), row.ModelNameSnap, row.Action, row.AdapterKind, row.ResultStatus,
 		nullInt64(httpSt), nullInt64(lat), row.ErrorPhase, row.ErrorMessage,
 		row.EndpointHost, row.ChatModel, fallback,
-		nullInt64(paper), nullInt64(stu), req, resp)
+		nullInt64(paper), nullInt64(stu), req, resp, rb, rsp)
 }
 
 func nullInt64(n sql.NullInt64) any {

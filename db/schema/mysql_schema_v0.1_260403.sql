@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS verification_code (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
--- 13) ai_call_log（AI 外部调用轨迹，不含密钥与完整请求体）
+-- 13) ai_call_log（AI 外部调用轨迹；不落 API Key；request_body 为脱敏后的 chat JSON）
 -- =====================================
 CREATE TABLE IF NOT EXISTS ai_call_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -334,6 +334,8 @@ CREATE TABLE IF NOT EXISTS ai_call_log (
   student_id BIGINT UNSIGNED NULL,
   request_meta JSON NULL COMMENT 'subject, stage, file_name',
   response_meta JSON NULL COMMENT 'summary_len, weak_points_n, ...',
+  request_body LONGTEXT NULL COMMENT 'chat请求JSON（图片base64已脱敏，可截断）',
+  response_body LONGTEXT NULL COMMENT '上游响应原文（可截断）',
   PRIMARY KEY (id),
   KEY idx_ai_call_log_created (created_at),
   KEY idx_ai_call_log_model (ai_model_id),
