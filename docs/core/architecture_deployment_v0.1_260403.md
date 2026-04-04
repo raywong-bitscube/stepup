@@ -136,7 +136,7 @@
 - `HTTP_HOST=0.0.0.0`
 - `HTTP_PORT=8080`
 - `DB_DSN=...`
-- `ADMIN_SESSION_TTL_HOURS=24`
+- `SESSION_TTL_MINUTES=30`（管理端与学生端会话；未设时可使用 legacy `ADMIN_SESSION_TTL_HOURS`）
 - `CORS_ALLOWED_ORIGINS=https://app.xxx,https://admin.xxx`
 - `AI_TIMEOUT_SECONDS=60`
 - `UPLOAD_MAX_MB=20`

@@ -70,7 +70,7 @@ func (s *Service) loginMemory(username, password string) (Session, error) {
 		Token:     token,
 		Username:  username,
 		Role:      "super_admin",
-		ExpiresAt: now.Add(s.cfg.AdminSessionTTL),
+		ExpiresAt: now.Add(s.cfg.SessionTTL),
 		LastSeen:  now,
 	}
 
@@ -143,7 +143,7 @@ LIMIT 1
 		return Session{}, err
 	}
 	now := time.Now()
-	expiresAt := now.Add(s.cfg.AdminSessionTTL)
+	expiresAt := now.Add(s.cfg.SessionTTL)
 
 	_, err = s.db.ExecContext(ctx, `
 INSERT INTO admin_session

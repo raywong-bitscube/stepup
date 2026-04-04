@@ -45,7 +45,7 @@ mysql … < db/migrations/20260408_ai_call_log_request_response_body.sql
 
 - **Docker Compose**：`backend` 已增加 **`UPLOAD_DIR`**（默认 `/srv/uploads`）与卷 **`stepup_uploads`**；部署后确认容器内目录可写。  
 - **非容器**：设置 **`UPLOAD_DIR`** 为持久化目录，并保证进程有写权限。  
-- **分析**：`ANALYSIS_ADAPTER=http`，视频觉模型在管理端 **`ai_model.app_key`** 中配置（如 `kimi-k2.5`）；超时不足时可调大 **`AI_REQUEST_TIMEOUT_SECONDS`**。  
+- **分析**：`ANALYSIS_ADAPTER=http`，视觉模型在管理端 **`ai_model.app_key`** 中配置（如 `kimi-k2.5`）。**`AI_REQUEST_TIMEOUT_SECONDS`** 默认 **180**（识图建议不低于 120）。  
 - **管理端静态**：须更新 **`frontend-admin`**（Prompt 页、AI 调用日志页）。
 
 ---

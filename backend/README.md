@@ -47,7 +47,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `CORS_ALLOWED_ORIGINS` - `http://localhost:3000,http://localhost:3001`
 - `ANALYSIS_ADAPTER` - `mock` (default) or `http`
 - `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
-- `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls
+- `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls (default **180**; vision / slow networks may need more)
 
 **HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用 MySQL **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，`app_key` 作为 **model** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
 

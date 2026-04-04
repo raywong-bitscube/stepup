@@ -67,7 +67,7 @@ func New(cfg config.Config, db *sql.DB) *Service {
 		codes:         map[string]verification{},
 		sessions:      map[string]Session{},
 		codeTTL:       5 * time.Minute,
-		sessionTTL:    24 * time.Hour,
+		sessionTTL:    cfg.SessionTTL,
 		defaultStatus: 1,
 	}
 }

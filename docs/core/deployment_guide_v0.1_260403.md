@@ -167,9 +167,9 @@ export CORS_ALLOWED_ORIGINS='https://app.example.com,https://admin.example.com'
 | `DB_DSN` | 非 Compose 时必填；Compose 内由 compose 拼装注入容器 |
 | `ANALYSIS_ADAPTER` | `http`：走 HTTP 适配器；`mock`：不调用外部分析 URL |
 | `AI_ENDPOINT` | `ANALYSIS_ADAPTER=http` 时，**无可用库内激活模型 URL** 时的回退地址；可与 `mock-ai` 对接 |
-| `AI_REQUEST_TIMEOUT_SECONDS` | 分析 HTTP 超时 |
+| `AI_REQUEST_TIMEOUT_SECONDS` | 分析 HTTP 超时（默认 **180** 秒，识图建议 ≥120） |
 | `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | 首次 bootstrap 管理员；**测试环境务必改为强密码** |
-| `ADMIN_SESSION_TTL_HOURS` | 管理端会话时长 |
+| `SESSION_TTL_MINUTES` | **管理端 + 学生端** 登录会话时长（分钟），默认 **30**；未设置时仍可读 legacy `ADMIN_SESSION_TTL_HOURS`（小时） |
 | `CORS_ALLOWED_ORIGINS` | **逗号分隔**的前端 Origin 白名单；缺省常为 localhost，上线 **必须** 改为真实域名 |
 
 **分析行为**（`ANALYSIS_ADAPTER=http`）：优先使用 **`ai_model` 中 `status=1` 且未删除** 的最新一条的 **`url`**；若该行 **`app_secret` 非空**，则按 **OpenAI 兼容 `chat/completions`** 调用；`app_secret` 为空则按项目 **mock-ai** JSON 协议请求（适合 `AI_ENDPOINT` 指向 `mock-ai`）。详见 [`backend/README.md`](../../backend/README.md)。

@@ -159,8 +159,16 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 	}
 	lat := tr.LatencyMS
 	latPtr := &lat
-	pID := paperID
-	sID := studentID
+	var paperPtr *uint64
+	if paperID != 0 {
+		v := paperID
+		paperPtr = &v
+	}
+	var stuPtr *uint64
+	if studentID != 0 {
+		v := studentID
+		stuPtr = &v
+	}
 	s.aiLog.Write(ctx, ailog.InsertRow{
 		AIModelID:        aid,
 		ModelNameSnap:    nameSnap,
@@ -174,8 +182,8 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 		EndpointHost:     tr.EndpointHost,
 		ChatModel:        tr.ChatModel,
 		FallbackToMock:   tr.FallbackToMock,
-		PaperID:          &pID,
-		StudentID:        &sID,
+		PaperID:          paperPtr,
+		StudentID:        stuPtr,
 		RequestMetaJSON:  reqM,
 		ResponseMetaJSON: respM,
 		RequestBody:      tr.RequestBody,
@@ -292,31 +300,33 @@ func (s *Service) GetPlan(identifier, paperIDRaw string) (map[string]any, error)
 }
 
 func (s *Service) createDB(identifier, subject, stage, originalFileName string, fileSize int64, contentType string, fileBytes []byte) (Paper, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+	// Short deadline only for pre-analyze DB lookups. AI Analyze may take AIRequestTimeout (e.g. 30s+);
+	// reusing one 5s context caused Insert to fail with context canceled after long vision calls.
+	lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	var (
 		studentID uint64
 		stageID   uint64
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(lookupCtx, `
 SELECT id, stage_id
 FROM student
 WHERE (phone = ? OR email = ?) AND status = 1 AND is_deleted = 0
 LIMIT 1
 `, identifier, identifier).Scan(&studentID, &stageID)
 	if err != nil {
+		lookupCancel()
 		return Paper{}, err
 	}
 
 	var subjectID uint64
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(lookupCtx, `
 SELECT id
 FROM subject
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `, subject).Scan(&subjectID)
 	if err != nil {
+		lookupCancel()
 		return Paper{}, err
 	}
 
@@ -324,7 +334,7 @@ LIMIT 1
 
 	now := time.Now()
 	fileType := detectFileType(originalFileName)
-	adapter, meta := s.resolveAdapter(ctx)
+	adapter, meta := s.resolveAdapter(lookupCtx)
 	ain := AnalyzeInput{
 		Subject:   subject,
 		Stage:     stage,
@@ -332,34 +342,45 @@ LIMIT 1
 		ImageMIME: vmime,
 		ImageData: vdata,
 	}
-	ain.ChatUserPrompt = s.paperChatUserPrompt(ctx, ain)
+	ain.ChatUserPrompt = s.paperChatUserPrompt(lookupCtx, ain)
+	lookupCancel()
+
 	analyzeResult := adapter.Analyze(ain)
 	analysisOut := applyModelSnapshot(analyzeResult.Out, meta)
+
+	logAITrace := func(paperID uint64, filePath string) {
+		s.writeAILog(context.Background(), meta, studentID, paperID, subject, stage, originalFileName, filePath, analysisOut, analyzeResult.Trace)
+	}
 
 	uploadDir := strings.TrimSpace(s.cfg.UploadDir)
 	if uploadDir == "" {
 		uploadDir = "data/uploads"
 	}
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
+		logAITrace(0, "")
 		return Paper{}, err
 	}
 	stored := uniqueStoredFileName(originalFileName)
 	if err := os.WriteFile(filepath.Join(uploadDir, stored), fileBytes, 0644); err != nil {
+		logAITrace(0, "")
 		return Paper{}, err
 	}
 	fileURL := "/uploads/" + stored
 
-	res, err := s.db.ExecContext(ctx, `
+	writeCtx, writeCancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer writeCancel()
+	res, err := s.db.ExecContext(writeCtx, `
 INSERT INTO exam_paper
   (student_id, subject_id, file_url, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
 `, studentID, subjectID, fileURL, fileType, now, studentID, now, studentID)
 	if err != nil {
+		logAITrace(0, fileURL)
 		return Paper{}, err
 	}
 	paperID, _ := res.LastInsertId()
 
-	s.writeAILog(context.Background(), meta, studentID, uint64(paperID), subject, stage, originalFileName, fileURL, analysisOut, analyzeResult.Trace)
+	logAITrace(uint64(paperID), fileURL)
 
 	snapshotRaw, _ := json.Marshal(analysisOut.ModelSnapshot)
 	weakRaw, _ := json.Marshal(analysisOut.WeakPoints)
@@ -369,13 +390,13 @@ VALUES (?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
 		"weak_points": analysisOut.WeakPoints,
 	})
 
-	_, _ = s.db.ExecContext(ctx, `
+	_, _ = s.db.ExecContext(writeCtx, `
 INSERT INTO paper_analysis
   (paper_id, ai_model_snapshot, raw_content, ai_response, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 2, ?, ?, ?, ?, 0)
 `, paperID, string(snapshotRaw), analysisOut.RawContent, string(aiResponseRaw), now, studentID, now, studentID)
 
-	_, _ = s.db.ExecContext(ctx, `
+	_, _ = s.db.ExecContext(writeCtx, `
 INSERT INTO improvement_plan
   (paper_id, plan_content, weak_points, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
