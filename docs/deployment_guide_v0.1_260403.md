@@ -45,6 +45,12 @@ cp .env.example .env
 
 按环境编辑 `.env`（至少检查 **`MYSQL_*`**、**`ADMIN_BOOTSTRAP_*`**、**`CORS_ALLOWED_ORIGINS`**，见 §5）。
 
+**测试 / QA**：可使用仓库内模板 **`.env.qa`**（占位密码需自行替换），启动时：
+
+```bash
+docker compose --env-file .env.qa up -d --build
+```
+
 ### 3.2 启动
 
 ```bash
