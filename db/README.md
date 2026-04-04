@@ -1,0 +1,28 @@
+# 数据库脚本（MySQL）
+
+所有与 **DDL / 迁移 / 开发种子数据** 相关的 SQL 统一放在本目录，避免分散在 `docs/`、`scripts/` 等多处。
+
+## 目录
+
+| 路径 | 用途 |
+|------|------|
+| **`schema/`** | **基线建库**：新开环境时整份执行，当前为 `mysql_schema_v0.1_260403.sql`（含全部表定义）。 |
+| **`migrations/`** | **增量迁移**：已有库在基线之后追加的变更（按日期命名，可重复执行的安全语句如 `IF NOT EXISTS`）。 |
+| **`seed/`** | **开发/测试种子数据**（如默认管理员、科目样例）；**勿**把生产密钥提交进仓库。 |
+
+## 推荐执行顺序
+
+1. 创建空库与用户后：  
+   `mysql ... < db/schema/mysql_schema_v0.1_260403.sql`
+2. （仅当库在引入某迁移**之前**就已建好）按需执行：  
+   `mysql ... < db/migrations/<日期>_<描述>.sql`
+3. 开发/联调可选：  
+   `mysql ... < db/seed/dev_seed.sql`
+
+Docker Compose 与升级步骤见 **`docs/deployment_guide_v0.1_260403.md`**、**`docs/DEPLOY_AND_UPGRADE_v0.1_260404.md`**（命令中的路径已指向 `db/`）。
+
+## 与文档的对应关系
+
+- 发版请先读 [**docs/README.md**](../docs/README.md) 与 [**docs/DEPLOY_AND_UPGRADE_v0.1_260404.md**](../docs/DEPLOY_AND_UPGRADE_v0.1_260404.md)。
+- API、AI 调用日志等行为说明仍在 **`docs/`**；表字段语义以 **`db/schema`** 为准。
+- 若新增迁移，请同时：更新 **`db/migrations`**、并在 **`db/schema`** 的基线文件中合并相同 DDL（方便全新环境一条脚本到位），或在 README 中注明「仅增量、未回填 schema」的例外（不推荐长期并存）。

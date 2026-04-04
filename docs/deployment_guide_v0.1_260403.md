@@ -5,8 +5,10 @@
 
 **相关文档**:
 
+- [**文档索引与阅读顺序**](./README.md)
+- [**v0.1 增量：部署与升级说明**](./DEPLOY_AND_UPGRADE_v0.1_260404.md)（含 AI 调用日志、SQL 目录调整等）
 - [架构与部署设计](./architecture_deployment_v0.1_260403.md)
-- [MySQL 建表脚本](./mysql_schema_v0.1_260403.sql)
+- [MySQL 建表脚本](../db/schema/mysql_schema_v0.1_260403.sql)（**所有 SQL 见仓库 [`db/`](../db/README.md)**）
 - [API 文档](./api_v0.1_260403.md)
 - 后端运行说明：仓库内 [`backend/README.md`](../backend/README.md)
 
@@ -66,11 +68,19 @@ Compose 中后端默认 **`ANALYSIS_ADAPTER=http`**（见根目录 `docker-compo
 在 **MySQL 已就绪** 后执行（变量与 `.env` 一致时可直接复制）：
 
 ```bash
-docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < docs/mysql_schema_v0.1_260403.sql
-docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < scripts/dev_seed.sql
+docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/schema/mysql_schema_v0.1_260403.sql
+docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/seed/dev_seed.sql
 ```
 
-**种子数据说明**（`scripts/dev_seed.sql`）：
+**若库在引入 `ai_call_log` 之前已建成**：补执行增量脚本（仅新建表，`IF NOT EXISTS` 可重复执行）：
+
+```bash
+docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/migrations/20260404_ai_call_log.sql
+```
+
+说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md) §3。
+
+**种子数据说明**（`db/seed/dev_seed.sql`）：
 
 - 默认管理员（bcrypt）、阶段、科目、`ai_model` 中的 DeepSeek 占位行等。
 - **`app_secret` 为占位符** `__REPLACE_WITH_DEEPSEEK_API_KEY__`：执行前在本地替换为真实 Key，或在导入后用管理端 **AI 模型** 界面更新；**不要把真实密钥提交到 Git**。
@@ -127,7 +137,7 @@ server {
 
 适用于已有 MySQL、单独部署 API 的场景。
 
-1. 在 MySQL 中创建库与用户，执行 `docs/mysql_schema_v0.1_260403.sql` 与（可选）`scripts/dev_seed.sql`。
+1. 在 MySQL 中创建库与用户，执行 `db/schema/mysql_schema_v0.1_260403.sql` 与（可选）`db/seed/dev_seed.sql`。
 2. 设置环境变量 **`DB_DSN`**，例如：  
    `user:pass@tcp(数据库主机:3306)/stepup?charset=utf8mb4&parseTime=True&loc=Local`
 3. 本地构建并运行：
@@ -186,7 +196,7 @@ Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默
 ## 7. 升级与回滚（简要）
 
 1. 拉取新镜像或新二进制，**先备份数据库**。
-2. 若有新 DDL，在维护窗口执行对应迁移脚本（当前仓库以单文件 `mysql_schema_v0.1_260403.sql` 为基线；后续若引入迁移工具，以工具版本为准）。
+2. 若有新 DDL，在维护窗口执行对应迁移脚本（当前仓库以 `db/schema/mysql_schema_v0.1_260403.sql` 为基线；增量见 `db/migrations/`；后续若引入迁移工具，以工具版本为准）。
 3. 滚动重启 `backend` → 验证 `readyz` 与核心业务路径。
 4. 异常时回滚上一个镜像/二进制版本，必要时恢复数据库备份。
 
@@ -204,7 +214,7 @@ A：将浏览器地址栏的 Origin（含协议与端口）加入 **`CORS_ALLOWE
 A：确认 **`ANALYSIS_ADAPTER=http`**、库内有 **激活** `ai_model` 且 **URL 可解析**；若用真实 LLM，确认 **`app_secret` 已配置** 且能访问公网 API；失败时实现会回退 mock，可查后端日志与网络。
 
 **Q：种子里的 DeepSeek 不生效？**  
-A：确认已执行 `dev_seed.sql` 且 `app_secret` 不是占位符；或 `WHERE NOT EXISTS` 已跳过插入，需 `UPDATE ai_model ...`。
+A：确认已执行 `db/seed/dev_seed.sql` 且 `app_secret` 不是占位符；或 `WHERE NOT EXISTS` 已跳过插入，需 `UPDATE ai_model ...`。
 
 ---
 

@@ -18,6 +18,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
@@ -49,6 +50,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db), auditWriter)
 	adminStudentPapersHandler := admin.NewStudentPapersHandler(adminpapers.New(db))
 	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
+	adminAICallLogsHandler := admin.NewAICallLogsHandler(ailog.NewListService(db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
@@ -100,4 +102,5 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("PATCH /api/v1/admin/prompts/{promptId}", middleware.RequireAdminAuth(adminAuthService, adminPromptsHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", middleware.RequireAdminAuth(adminAuthService, adminAuditLogsHandler.List))
+	mux.HandleFunc("GET /api/v1/admin/ai-call-logs", middleware.RequireAdminAuth(adminAuthService, adminAICallLogsHandler.List))
 }

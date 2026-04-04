@@ -2,7 +2,8 @@
 
 **日期**: 2026-04-03  
 **版本**: v0.1  
-**来源需求**: `user_requirement_v0.1_260403.md`
+**来源需求**: `user_requirement_v0.1_260403.md`  
+**工程文档入口**: [docs/README.md](./README.md)
 
 ---
 

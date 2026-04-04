@@ -72,6 +72,17 @@
     models: [],
     prompts: [],
     audits: [],
+    aiLogs: [],
+    aiLogFilters: {
+      limit: 50,
+      offset: 0,
+      ai_model_id: '',
+      action: '',
+      result_status: '',
+      adapter_kind: '',
+      from: '',
+      to: '',
+    },
   };
 
   async function api(path, opts = {}) {
@@ -201,6 +212,7 @@
       ['models', 'AI 模型'],
       ['prompts', 'Prompt'],
       ['audit', '审计日志'],
+      ['ai_logs', 'AI 调用日志'],
     ];
     const menu = nav
       .map(
@@ -301,6 +313,23 @@
         const d = await api('/api/v1/admin/audit-logs?limit=200');
         state.audits = d.items || [];
         pane.innerHTML = renderAudit();
+        return;
+      }
+      if (state.view === 'ai_logs') {
+        const q = new URLSearchParams();
+        const f = state.aiLogFilters;
+        q.set('limit', String(f.limit || 50));
+        q.set('offset', String(f.offset || 0));
+        if (f.ai_model_id) q.set('ai_model_id', f.ai_model_id);
+        if (f.action) q.set('action', f.action);
+        if (f.result_status) q.set('result_status', f.result_status);
+        if (f.adapter_kind) q.set('adapter_kind', f.adapter_kind);
+        if (f.from) q.set('from', f.from);
+        if (f.to) q.set('to', f.to);
+        const d = await api('/api/v1/admin/ai-call-logs?' + q.toString());
+        state.aiLogs = d.items || [];
+        pane.innerHTML = renderAICallLogs();
+        bindAICallLogs(pane);
       }
     } catch (e) {
       pane.innerHTML = `<p class="muted">加载失败：${escapeHtml(e.data && e.data.code ? e.data.code : e.message)}</p>`;
@@ -789,6 +818,113 @@
       } catch (e) {
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
+    });
+  }
+
+  function renderAICallLogs() {
+    const f = state.aiLogFilters;
+    const rows = state.aiLogs
+      .map(
+        (e) =>
+          `<tr>
+        <td>${e.id}</td>
+        <td>${escapeHtml(e.created_at || '')}</td>
+        <td>${e.ai_model_id ?? '—'}</td>
+        <td>${escapeHtml(e.model_name_snapshot || '')}</td>
+        <td>${escapeHtml(e.action || '')}</td>
+        <td>${escapeHtml(e.adapter_kind || '')}</td>
+        <td>${escapeHtml(e.result_status || '')}</td>
+        <td>${e.http_status ?? '—'}</td>
+        <td>${e.latency_ms != null ? e.latency_ms : '—'}</td>
+        <td>${escapeHtml(e.error_phase || '')}</td>
+        <td style="max-width:200px;word-break:break-all">${escapeHtml((e.error_message || '').slice(0, 200))}</td>
+        <td>${escapeHtml(e.endpoint_host || '')}</td>
+        <td>${escapeHtml(e.chat_model || '')}</td>
+        <td>${e.fallback_to_mock ? '是' : '否'}</td>
+        <td>${e.paper_id ?? '—'}</td>
+        <td>${e.student_id ?? '—'}</td>
+        <td><pre class="raw" style="max-height:80px;margin:0;font-size:11px">${escapeHtml(JSON.stringify(e.request_meta))}</pre></td>
+        <td><pre class="raw" style="max-height:80px;margin:0;font-size:11px">${escapeHtml(JSON.stringify(e.response_meta))}</pre></td>
+      </tr>`
+      )
+      .join('');
+    return `
+      <h2>AI 调用日志</h2>
+      <p class="muted">学生上传试卷触发的模型调用（不含 API Key 与完整请求/响应体）。</p>
+      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-width:1100px;align-items:end;margin-bottom:12px">
+        <div>
+          <label>模型 ID</label>
+          <input type="text" id="ailogModel" placeholder="ai_model.id" value="${escapeHtml(f.ai_model_id)}" />
+        </div>
+        <div>
+          <label>动作</label>
+          <input type="text" id="ailogAction" placeholder="paper_analyze" value="${escapeHtml(f.action)}" />
+        </div>
+        <div>
+          <label>结果</label>
+          <select id="ailogStatus">
+            <option value="">全部</option>
+            <option value="success" ${f.result_status === 'success' ? 'selected' : ''}>success</option>
+            <option value="fallback_mock" ${f.result_status === 'fallback_mock' ? 'selected' : ''}>fallback_mock</option>
+            <option value="mock_only" ${f.result_status === 'mock_only' ? 'selected' : ''}>mock_only</option>
+          </select>
+        </div>
+        <div>
+          <label>适配器</label>
+          <input type="text" id="ailogAdp" placeholder="http_chat..." value="${escapeHtml(f.adapter_kind)}" />
+        </div>
+        <div>
+          <label>开始日期</label>
+          <input type="text" id="ailogFrom" placeholder="2026-04-01 或 RFC3339" value="${escapeHtml(f.from)}" />
+        </div>
+        <div>
+          <label>结束日期</label>
+          <input type="text" id="ailogTo" placeholder="2026-04-03" value="${escapeHtml(f.to)}" />
+        </div>
+        <div>
+          <label>每页</label>
+          <input type="number" id="ailogLimit" min="1" max="200" value="${Number(f.limit) || 50}" />
+        </div>
+        <div class="row" style="gap:8px">
+          <button type="button" class="btn" id="ailogQuery">查询</button>
+          <button type="button" class="btn secondary small" id="ailogPrev" ${f.offset <= 0 ? 'disabled' : ''}>上一页</button>
+          <button type="button" class="btn secondary small" id="ailogNext">下一页</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="data">
+        <thead><tr>
+          <th>ID</th><th>时间</th><th>模型ID</th><th>模型名快照</th><th>动作</th><th>适配器</th><th>结果</th><th>HTTP</th><th>耗时ms</th>
+          <th>错误阶段</th><th>错误摘要</th><th>Endpoint</th><th>chat模型</th><th>回退mock</th><th>试卷</th><th>学生</th><th>请求meta</th><th>响应meta</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="18">暂无</td></tr>'}</tbody>
+      </table></div>`;
+  }
+
+  function bindAICallLogs(pane) {
+    const readFilters = (offsetVal) => ({
+      limit: Math.min(200, Math.max(1, Number(pane.querySelector('#ailogLimit').value) || 50)),
+      offset: Math.max(0, offsetVal),
+      ai_model_id: pane.querySelector('#ailogModel').value.trim(),
+      action: pane.querySelector('#ailogAction').value.trim(),
+      result_status: pane.querySelector('#ailogStatus').value,
+      adapter_kind: pane.querySelector('#ailogAdp').value.trim(),
+      from: pane.querySelector('#ailogFrom').value.trim(),
+      to: pane.querySelector('#ailogTo').value.trim(),
+    });
+    pane.querySelector('#ailogQuery').addEventListener('click', () => {
+      state.aiLogFilters = readFilters(0);
+      mount(document.getElementById('app'));
+    });
+    pane.querySelector('#ailogPrev').addEventListener('click', () => {
+      const lim = state.aiLogFilters.limit || 50;
+      state.aiLogFilters = readFilters(Math.max(0, (state.aiLogFilters.offset || 0) - lim));
+      mount(document.getElementById('app'));
+    });
+    pane.querySelector('#ailogNext').addEventListener('click', () => {
+      const lim = state.aiLogFilters.limit || 50;
+      state.aiLogFilters = readFilters((state.aiLogFilters.offset || 0) + lim);
+      mount(document.getElementById('app'));
     });
   }
 

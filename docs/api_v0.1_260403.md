@@ -1,7 +1,8 @@
 # StepUp API 文档 v0.1（已实现部分）
 
 **日期**: 2026-04-03  
-**Base URL（本地）**: `http://localhost:8080`
+**Base URL（本地）**: `http://localhost:8080`  
+**部署 / 升级**: [文档索引](./README.md)、[DEPLOY_AND_UPGRADE_v0.1_260404.md](./DEPLOY_AND_UPGRADE_v0.1_260404.md)
 
 ---
 
@@ -12,6 +13,7 @@
 - `admin` 和 `student` token 不通用。
 - **试卷 HTTP 分析**（环境变量 `ANALYSIS_ADAPTER=http`）：在 **`DB_DSN` 已配置** 时，分析请求发往 MySQL **`ai_model`** 中 **当前激活** 模型（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若无激活模型则用 **`AI_ENDPOINT`**；再无可则用 mock。`paper_analysis` 中保存的模型信息为 `name` + `url`，不含密钥。
 - **审计**：同上，仅在 **`DB_DSN` 已配置** 时向 **`audit_log`** 追加记录；`GET /api/v1/admin/audit-logs` 为只读查询。快照字段不落密码 / `app_secret` 正文；AI 模型 PATCH 若包含 `app_secret` 更新，动作为 **`credential_change`**；改学生密码为 **`password_change`**。
+- **AI 调用轨迹**：在 **`DB_DSN` 已配置** 且已建 **`ai_call_log`** 表时，学生上传触发 **`paper_analyze`** 后写入一条调用记录（适配器类型、HTTP 状态、耗时、错误摘要、`endpoint` 主机、`chat` 模型 id、是否回退 mock、关联 `paper_id`/`student_id` 等）；**不落** API Key 与完整请求/响应正文。管理端 `GET /api/v1/admin/ai-call-logs` 支持筛选与分页；详见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md)。
 
 ---
 
@@ -291,6 +293,27 @@ Header: `Authorization: Bearer <admin_token>`
 
 - `GET /api/v1/admin/audit-logs?limit=100` — 只读列表，`limit` 默认 `100`，最大 `500`，按 `id` 降序。
 - **写入范围（v0.1）**：管理员登录、学生登录、学生创建试卷（上传）、管理端对上述学生 / 科目 / 阶段 / AI 模型 / Prompt 资源的 **POST 创建** 与 **PATCH 更新**（含密码 / secret 类事件的特殊 `action`，见 §1）。需数据库；无 `DB_DSN` 时不写审计表。
+
+### 3.12 AI 调用日志（管理端）
+
+需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节或增量 `db/migrations/20260404_ai_call_log.sql`）。
+
+`GET /api/v1/admin/ai-call-logs`
+
+| Query | 说明 |
+|--------|------|
+| `limit` | 默认 `50`，最大 `200` |
+| `offset` | 分页偏移，默认 `0` |
+| `ai_model_id` | 精确匹配 `ai_model.id` |
+| `action` | 精确匹配，当前多为 `paper_analyze` |
+| `result_status` | `success` \| `fallback_mock` \| `mock_only` |
+| `adapter_kind` | 如 `http_chat_completions`、`mock_builtin` 等 |
+| `from` | 起始时间：`RFC3339` 或日期 `2006-01-02`（按本地日边界 00:00） |
+| `to` | 结束时间：日期形式时包含当日直到 **23:59:59.999** |
+
+响应：`{ "items": [ { "id", "created_at", "ai_model_id", "model_name_snapshot", "action", "adapter_kind", "result_status", "http_status", "latency_ms", "error_phase", "error_message", "endpoint_host", "chat_model", "fallback_to_mock", "paper_id", "student_id", "request_meta", "response_meta" } ] }`。
+
+无库或表不存在时：查询可能返回 `503` / `500`；写入侧在表缺失时静默跳过（不影响上传主流程）。
 
 ---
 

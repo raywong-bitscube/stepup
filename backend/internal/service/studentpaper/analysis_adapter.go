@@ -14,21 +14,45 @@ type AnalyzeOutput struct {
 	RawContent      string
 }
 
+// AnalyzeTrace describes how the adapter produced AnalyzeOutput (for ai_call_log).
+type AnalyzeTrace struct {
+	AdapterKind    string
+	ResultStatus   string // success | mock_only | fallback_mock
+	HTTPStatus     int
+	LatencyMS      int64
+	ErrorPhase     string
+	ErrorMessage   string
+	EndpointHost   string
+	ChatModel      string
+	FallbackToMock bool
+}
+
+type AnalyzeResult struct {
+	Out   AnalyzeOutput
+	Trace AnalyzeTrace
+}
+
 type AnalysisAdapter interface {
-	Analyze(input AnalyzeInput) AnalyzeOutput
+	Analyze(input AnalyzeInput) AnalyzeResult
 }
 
 type MockAnalysisAdapter struct{}
 
-func (m MockAnalysisAdapter) Analyze(input AnalyzeInput) AnalyzeOutput {
-	return AnalyzeOutput{
-		ModelSnapshot: map[string]any{
-			"name": "mock-model-v0.1",
-			"url":  "https://mock-ai.local/analyze",
+func (m MockAnalysisAdapter) Analyze(input AnalyzeInput) AnalyzeResult {
+	return AnalyzeResult{
+		Out: AnalyzeOutput{
+			ModelSnapshot: map[string]any{
+				"name": "mock-model-v0.1",
+				"url":  "https://mock-ai.local/analyze",
+			},
+			Summary:         "本次试卷基础题稳定，综合题存在建模与条件提取问题。",
+			WeakPoints:      []string{"受力分析", "图像题条件提取", "单位换算"},
+			ImprovementPlan: []string{"D1-D2: 力学基础与受力分析专项", "D3-D4: 图像题分层训练", "D5-D6: 限时综合训练", "D7: 错题复盘与回测"},
+			RawContent:      "mock-o-cr-content",
 		},
-		Summary:         "本次试卷基础题稳定，综合题存在建模与条件提取问题。",
-		WeakPoints:      []string{"受力分析", "图像题条件提取", "单位换算"},
-		ImprovementPlan: []string{"D1-D2: 力学基础与受力分析专项", "D3-D4: 图像题分层训练", "D5-D6: 限时综合训练", "D7: 错题复盘与回测"},
-		RawContent:      "mock-o-cr-content",
+		Trace: AnalyzeTrace{
+			AdapterKind:  "mock_builtin",
+			ResultStatus: "mock_only",
+		},
 	}
 }

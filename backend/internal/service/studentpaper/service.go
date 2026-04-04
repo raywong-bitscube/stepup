@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 )
 
 type Paper struct {
@@ -38,6 +39,7 @@ type Analysis struct {
 type Service struct {
 	cfg      config.Config
 	db       *sql.DB
+	aiLog    *ailog.Writer
 	mu       sync.RWMutex
 	nextID   uint64
 	papers   map[uint64]Paper
@@ -48,6 +50,7 @@ func New(cfg config.Config, db *sql.DB) *Service {
 	return &Service{
 		cfg:      cfg,
 		db:       db,
+		aiLog:    ailog.NewWriter(db),
 		nextID:   1,
 		papers:   map[uint64]Paper{},
 		analysis: map[uint64]Analysis{},
@@ -56,6 +59,7 @@ func New(cfg config.Config, db *sql.DB) *Service {
 
 // activeModel holds DB-backed endpoint metadata (no secrets) for paper_analysis snapshot.
 type activeModel struct {
+	ID   uint64
 	Name string
 	URL  string
 }
@@ -65,18 +69,20 @@ func (s *Service) resolveAdapter(ctx context.Context) (AnalysisAdapter, *activeM
 		return MockAnalysisAdapter{}, nil
 	}
 	if s.db != nil {
+		var modelID uint64
 		var name, url, appKey, appSecret string
 		err := s.db.QueryRowContext(ctx, `
-SELECT name, url, app_key, app_secret
+SELECT id, name, url, app_key, app_secret
 FROM ai_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
-`).Scan(&name, &url, &appKey, &appSecret)
+`).Scan(&modelID, &name, &url, &appKey, &appSecret)
 		if err == nil {
 			url = strings.TrimSpace(url)
 			if url != "" {
 				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout, appSecret, appKey), &activeModel{
+					ID:   modelID,
 					Name: strings.TrimSpace(name),
 					URL:  url,
 				}
@@ -97,6 +103,59 @@ func applyModelSnapshot(out AnalyzeOutput, meta *activeModel) AnalyzeOutput {
 		}
 	}
 	return out
+}
+
+func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, paperID uint64, subject, stage, fileName string, out AnalyzeOutput, tr AnalyzeTrace) {
+	if s.aiLog == nil {
+		return
+	}
+	var aid *uint64
+	nameSnap := ""
+	if meta != nil {
+		if meta.ID != 0 {
+			v := meta.ID
+			aid = &v
+		}
+		nameSnap = meta.Name
+	}
+	reqM, _ := json.Marshal(map[string]string{
+		"subject":   subject,
+		"stage":     stage,
+		"file_name": fileName,
+	})
+	respM, _ := json.Marshal(map[string]any{
+		"summary_len":     len(out.Summary),
+		"weak_points_n":   len(out.WeakPoints),
+		"plan_n":          len(out.ImprovementPlan),
+		"raw_content_len": len(out.RawContent),
+	})
+	var httpSt *int
+	if tr.HTTPStatus != 0 {
+		v := tr.HTTPStatus
+		httpSt = &v
+	}
+	lat := tr.LatencyMS
+	latPtr := &lat
+	pID := paperID
+	sID := studentID
+	s.aiLog.Write(ctx, ailog.InsertRow{
+		AIModelID:        aid,
+		ModelNameSnap:    nameSnap,
+		Action:           "paper_analyze",
+		AdapterKind:      tr.AdapterKind,
+		ResultStatus:     tr.ResultStatus,
+		HTTPStatus:       httpSt,
+		LatencyMS:        latPtr,
+		ErrorPhase:       tr.ErrorPhase,
+		ErrorMessage:     tr.ErrorMessage,
+		EndpointHost:     tr.EndpointHost,
+		ChatModel:        tr.ChatModel,
+		FallbackToMock:   tr.FallbackToMock,
+		PaperID:          &pID,
+		StudentID:        &sID,
+		RequestMetaJSON:  reqM,
+		ResponseMetaJSON: respM,
+	})
 }
 
 func (s *Service) Create(identifier, subject, stage, fileName string, fileSize int64) Paper {
@@ -124,12 +183,12 @@ func (s *Service) Create(identifier, subject, stage, fileName string, fileSize i
 		FileSize:   fileSize,
 		CreatedAt:  time.Now(),
 	}
-	out := adapter.Analyze(AnalyzeInput{
+	result := adapter.Analyze(AnalyzeInput{
 		Subject:  subject,
 		Stage:    stage,
 		FileName: fileName,
 	})
-	out = applyModelSnapshot(out, meta)
+	out := applyModelSnapshot(result.Out, meta)
 	s.analysis[id] = Analysis{
 		PaperID:         id,
 		Status:          "completed",
@@ -237,12 +296,12 @@ LIMIT 1
 	fileType := detectFileType(fileName)
 	fileURL := "/uploads/" + fileName
 	adapter, meta := s.resolveAdapter(ctx)
-	analysisOut := adapter.Analyze(AnalyzeInput{
+	analyzeResult := adapter.Analyze(AnalyzeInput{
 		Subject:  subject,
 		Stage:    stage,
 		FileName: fileName,
 	})
-	analysisOut = applyModelSnapshot(analysisOut, meta)
+	analysisOut := applyModelSnapshot(analyzeResult.Out, meta)
 
 	res, err := s.db.ExecContext(ctx, `
 INSERT INTO exam_paper
@@ -253,6 +312,8 @@ VALUES (?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
 		return Paper{}, err
 	}
 	paperID, _ := res.LastInsertId()
+
+	s.writeAILog(context.Background(), meta, studentID, uint64(paperID), subject, stage, fileName, analysisOut, analyzeResult.Trace)
 
 	snapshotRaw, _ := json.Marshal(analysisOut.ModelSnapshot)
 	weakRaw, _ := json.Marshal(analysisOut.WeakPoints)

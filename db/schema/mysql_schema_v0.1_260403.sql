@@ -1,4 +1,5 @@
 -- StepUp v0.1 MySQL Schema
+-- 路径：db/schema/（全量基线）；增量变更另见 db/migrations/
 -- Generated from:
 --   docs/user_requirement_v0.1_260403.md
 --   docs/entity_analyze_v0.1_260403.md
@@ -312,7 +313,41 @@ CREATE TABLE IF NOT EXISTS verification_code (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
--- 13) audit_log
+-- 13) ai_call_log（AI 外部调用轨迹，不含密钥与完整请求体）
+-- =====================================
+CREATE TABLE IF NOT EXISTS ai_call_log (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ai_model_id BIGINT UNSIGNED NULL COMMENT '当时他行 id，模型删除后可空',
+  model_name_snapshot VARCHAR(128) NOT NULL DEFAULT '',
+  action VARCHAR(64) NOT NULL DEFAULT 'paper_analyze',
+  adapter_kind VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'mock_builtin, http_chat_completions, http_mock_ai_protocol, http_unconfigured',
+  result_status VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'success, mock_only, fallback_mock',
+  http_status INT NULL,
+  latency_ms INT UNSIGNED NULL,
+  error_phase VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'timeout, network, http_status, decode, parse, empty_body, ...',
+  error_message VARCHAR(512) NOT NULL DEFAULT '',
+  endpoint_host VARCHAR(255) NOT NULL DEFAULT '',
+  chat_model VARCHAR(128) NOT NULL DEFAULT '',
+  fallback_to_mock TINYINT(1) NOT NULL DEFAULT 0,
+  paper_id BIGINT UNSIGNED NULL,
+  student_id BIGINT UNSIGNED NULL,
+  request_meta JSON NULL COMMENT 'subject, stage, file_name',
+  response_meta JSON NULL COMMENT 'summary_len, weak_points_n, ...',
+  PRIMARY KEY (id),
+  KEY idx_ai_call_log_created (created_at),
+  KEY idx_ai_call_log_model (ai_model_id),
+  KEY idx_ai_call_log_action (action),
+  KEY idx_ai_call_log_status (result_status),
+  KEY idx_ai_call_log_adapter (adapter_kind),
+  KEY idx_ai_call_log_paper (paper_id),
+  KEY idx_ai_call_log_student (student_id),
+  CONSTRAINT fk_ai_call_log_model FOREIGN KEY (ai_model_id) REFERENCES ai_model (id) ON DELETE SET NULL,
+  CONSTRAINT fk_ai_call_log_paper FOREIGN KEY (paper_id) REFERENCES exam_paper (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================
+-- 14) audit_log
 -- =====================================
 CREATE TABLE IF NOT EXISTS audit_log (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
