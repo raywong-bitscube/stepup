@@ -4,15 +4,43 @@
   const LS_TOKEN = 'stepup_admin_token';
   const LS_API = 'stepup_api_base';
 
+  /** 与部署约定一致时可不配置 meta：`?api=` / localStorage / meta / 登录框端口 仍可覆盖。 */
+  const PAGE_PORT_TO_API_PORT = { '7010': '7012', '7011': '7012' };
+
+  function apiBaseSameHostPort(portRaw) {
+    const pr = String(portRaw || '')
+      .trim()
+      .replace(/^:/, '');
+    if (!/^\d+$/.test(pr)) return '';
+    return location.protocol + '//' + location.hostname + ':' + pr;
+  }
+
   function apiBase() {
     const q = new URLSearchParams(location.search).get('api');
-    if (q) return q.replace(/\/$/, '');
+    if (q) {
+      const qt = q.trim();
+      if (/^:?(\d+)$/.test(qt)) {
+        const u = apiBaseSameHostPort(qt);
+        if (u) return u.replace(/\/$/, '');
+      }
+      return qt.replace(/\/$/, '');
+    }
     const s = localStorage.getItem(LS_API);
     if (s) return s.replace(/\/$/, '');
     const meta = document.querySelector('meta[name="stepup-api-base"]');
     if (meta) {
       const mc = (meta.getAttribute('content') || '').trim();
       if (mc) return mc.replace(/\/$/, '');
+    }
+    const metaPort = document.querySelector('meta[name="stepup-api-port"]');
+    if (metaPort) {
+      const u = apiBaseSameHostPort(metaPort.getAttribute('content'));
+      if (u) return u.replace(/\/$/, '');
+    }
+    const apiPortHint = PAGE_PORT_TO_API_PORT[location.port || ''];
+    if (apiPortHint) {
+      const u = apiBaseSameHostPort(apiPortHint);
+      if (u) return u.replace(/\/$/, '');
     }
     const p = location.pathname || '';
     if (p.startsWith('/admin')) return location.origin;
@@ -21,7 +49,6 @@
     const isLocal = host === 'localhost' || host === '127.0.0.1';
     if (isLocal && port === '3001') return 'http://localhost:8080';
     if (isLocal && port === '8080') return location.origin;
-    // 公网/内网 IP 或域名：默认与当前页面同源（需 Nginx 把 /api 反代到 Go）；否则用 meta 或登录框填写后端根地址
     if (!isLocal) return location.origin;
     return 'http://localhost:8080';
   }
@@ -114,9 +141,9 @@
           ${flash}
           <div class="form-grid" style="margin-top:12px">
             <div>
-              <label>API 根地址</label>
-              <input type="text" id="apiBase" placeholder="与页面同域且已反代 /api 时可留当前值" value="${escapeHtml(apiBase())}" />
-              <p class="muted" style="font-size:12px;margin:4px 0 0">开发：Compose 下管理页在 3001 时默认填 <code>http://localhost:8080</code>。部署：若页面在 <code>:7011</code> 而后端在 <code>:8080</code>，请改成后端完整地址，或在 Nginx 同端口反代 <code>/api</code> 后保存当前值。</p>
+              <label>API 根地址（可选）</label>
+              <input type="text" id="apiBase" placeholder="留空则用自动推断" value="${escapeHtml(apiBase())}" />
+              <p class="muted" style="font-size:12px;margin:4px 0 0">默认已按当前访问地址选好 API。一般<strong>不用改</strong>，直接输密码登录即可。仅当 API 不在默认端口时，可改为完整地址（如 <code>http://主机:7012</code>）或只填端口 <code>7012</code>。清空并登录表示去掉已保存的地址、重新用自动推断。</p>
             </div>
             <div>
               <label>用户名</label>
@@ -137,8 +164,15 @@
     b.addEventListener('click', async () => {
       const u = root.querySelector('#user').value.trim();
       const p = root.querySelector('#pass').value;
-      const ab = root.querySelector('#apiBase').value.trim();
-      if (ab) localStorage.setItem(LS_API, ab.replace(/\/$/, ''));
+      let ab = root.querySelector('#apiBase').value.trim();
+      if (/^:?(\d+)$/.test(ab)) {
+        const built = apiBaseSameHostPort(ab);
+        if (built) ab = built.replace(/\/$/, '');
+      } else if (ab) {
+        ab = ab.replace(/\/$/, '');
+      }
+      if (ab) localStorage.setItem(LS_API, ab);
+      else localStorage.removeItem(LS_API);
       try {
         const data = await api('/api/v1/admin/auth/login', {
           method: 'POST',

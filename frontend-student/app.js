@@ -4,15 +4,43 @@
   const LS_TOKEN = 'stepup_student_token';
   const LS_API = 'stepup_api_base';
 
+  /** 与部署约定一致时可不配置 meta：`?api=` / localStorage / meta 仍可覆盖。 */
+  const PAGE_PORT_TO_API_PORT = { '7010': '7012', '7011': '7012' };
+
+  function apiBaseSameHostPort(portRaw) {
+    const pr = String(portRaw || '')
+      .trim()
+      .replace(/^:/, '');
+    if (!/^\d+$/.test(pr)) return '';
+    return location.protocol + '//' + location.hostname + ':' + pr;
+  }
+
   function apiBase() {
     const q = new URLSearchParams(location.search).get('api');
-    if (q) return q.replace(/\/$/, '');
+    if (q) {
+      const qt = q.trim();
+      if (/^:?(\d+)$/.test(qt)) {
+        const u = apiBaseSameHostPort(qt);
+        if (u) return u.replace(/\/$/, '');
+      }
+      return qt.replace(/\/$/, '');
+    }
     const s = localStorage.getItem(LS_API);
     if (s) return s.replace(/\/$/, '');
     const meta = document.querySelector('meta[name="stepup-api-base"]');
     if (meta) {
       const mc = (meta.getAttribute('content') || '').trim();
       if (mc) return mc.replace(/\/$/, '');
+    }
+    const metaPort = document.querySelector('meta[name="stepup-api-port"]');
+    if (metaPort) {
+      const u = apiBaseSameHostPort(metaPort.getAttribute('content'));
+      if (u) return u.replace(/\/$/, '');
+    }
+    const apiPortHint = PAGE_PORT_TO_API_PORT[location.port || ''];
+    if (apiPortHint) {
+      const u = apiBaseSameHostPort(apiPortHint);
+      if (u) return u.replace(/\/$/, '');
     }
     const p = location.pathname || '';
     if (p.startsWith('/student')) return location.origin;

@@ -97,6 +97,30 @@ curl -sS "http://localhost:${BACKEND_PORT:-8080}/readyz"
 
 同域访问 `/admin/`、`/student/` 时一般无 CORS 问题；若仍使用独立端口前端，后端的 **`CORS_ALLOWED_ORIGINS`** 必须包含对应 **Origin**（见根目录 `.env.example` 与 §5）。
 
+### 3.6 同一台机：学生 / 管理 / API 分端口（示例 7010 / 7011 / 7012）
+
+典型拓扑：**学生静态** `7010`，**管理静态** `7011`，**Nginx 对外 API** `7012` → `proxy_pass http://127.0.0.1:8080`（Go 监听本机 8080）。浏览器里学生页、管理页的 **Origin** 是 `:7010`、`:7011`，请求 API 须打到 `:7012`，不能再用页面 `location.origin`。
+
+1. **`CORS_ALLOWED_ORIGINS`**（逗号分隔）必须包含学生页与管理页的完整 Origin，例如：  
+   `http://<主机名或 IP>:7010,http://<主机名或 IP>:7011`  
+   （一般**不必**写 `:7012`，除非有页面也挂在 API 同一端口。）
+2. **前端**：`app.js` 内约定 **页面端口 `7010` / `7011` 时自动指向同主机 API 端口 `7012`**，**无需改 `index.html`**。若你使用其它端口组合，可选用任选其一覆盖：`?api=`、`localStorage`、`meta name="stepup-api-base"` / `stepup-api-port`，或管理端登录框填 API 端口。
+3. **Nginx**（片段示意，路径需完整转发到后端，含 `/api/`、`/healthz` 等按需）：
+
+```nginx
+server {
+    listen 7012;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
 ---
 
 ## 4. 方式 B：仅后端 + 自建 MySQL（无 Compose）
