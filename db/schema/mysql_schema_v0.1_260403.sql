@@ -1,8 +1,8 @@
 -- StepUp v0.1 MySQL Schema
 -- 路径：db/schema/（全量基线）；增量变更另见 db/migrations/
 -- Generated from:
---   docs/user_requirement_v0.1_260403.md
---   docs/entity_analyze_v0.1_260403.md
+--   docs/core/user_requirement_v0.1_260403.md
+--   docs/core/entity_analyze_v0.1_260403.md
 --
 -- Conventions:
 -- 1) Core business data uses soft delete: is_deleted/deleted_at/deleted_by

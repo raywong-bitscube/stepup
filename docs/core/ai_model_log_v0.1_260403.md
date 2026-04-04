@@ -3,7 +3,7 @@
 **日期**: 2026-04-04  
 **状态**: 已实现（与当前后端 / 管理端对齐）
 
-**关联文档**: [文档索引](./README.md)、[部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md)、[`api_v0.1_260403.md`](./api_v0.1_260403.md)、[`db/schema/mysql_schema_v0.1_260403.sql`](../db/schema/mysql_schema_v0.1_260403.sql)、[`feature_design_v0.1_260403.md`](./feature_design_v0.1_260403.md)、[`db/README.md`](../db/README.md)
+**关联文档**: [文档索引](../README.md)、[部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)、[`api_v0.1_260403.md`](./api_v0.1_260403.md)、[`db/schema/mysql_schema_v0.1_260403.sql`](../../db/schema/mysql_schema_v0.1_260403.sql)、[`feature_design_v0.1_260403.md`](./feature_design_v0.1_260403.md)、[`db/README.md`](../../db/README.md)
 
 ---
 
@@ -69,12 +69,13 @@
 
 | 文档 | 修订内容 |
 |------|-----------|
-| `docs/README.md` / `DEPLOY_AND_UPGRADE_v0.1_260404.md` | 文档索引与发版升级指南 |
-| `db/schema/mysql_schema_v0.1_260403.sql` | 新增 `ai_call_log`，原 `audit_log` 顺延为第 14 节（SQL 统一见 [`db/README.md`](../db/README.md)） |
+| `docs/README.md`、`docs/core/README.md`、`docs/releases/README.md` | 文档索引与目录说明 |
+| `docs/releases/DEPLOY_AND_UPGRADE_*.md` | 具体发版增量与升级步骤 |
+| `db/schema/mysql_schema_v0.1_260403.sql` | 新增 `ai_call_log`，原 `audit_log` 顺延为第 14 节（SQL 统一见 [`db/README.md`](../../db/README.md)） |
 | `db/migrations/20260404_ai_call_log.sql` | 增量建表 |
-| `docs/api_v0.1_260403.md` | §1 说明、`§3.12` 接口 |
-| `docs/deployment_guide_v0.1_260403.md` | 初始化 / 升级时提及 `ai_call_log` |
-| `docs/feature_design_v0.1_260403.md` | 功能表增加「AI 调用日志」|
+| `docs/core/api_v0.1_260403.md` | §1 说明、`§3.12` 接口 |
+| `docs/core/deployment_guide_v0.1_260403.md` | 初始化 / 升级时提及 `ai_call_log` |
+| `docs/core/feature_design_v0.1_260403.md` | 功能表增加「AI 调用日志」|
 | `backend/README.md` | 简述 `ai_call_log` 与 `ANALYSIS_ADAPTER` 行为关系 |
 
 ---

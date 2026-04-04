@@ -3,11 +3,11 @@
 **日期**: 2026-04-03  
 **版本**: v0.1  
 **关联文档**:
-- [文档索引](./README.md)、[部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md)
+- [文档索引](../README.md)、[部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)
 - `user_requirement_v0.1_260403.md`
 - `entity_analyze_v0.1_260403.md`
-- `db/schema/mysql_schema_v0.1_260403.sql`（见 [`db/README.md`](../db/README.md)）
-- `ai_model_log_v0.1_260403.md`（AI 调用日志需求与设计）
+- `db/schema/mysql_schema_v0.1_260403.sql`（见 [`db/README.md`](../../db/README.md)）
+- `docs/core/ai_model_log_v0.1_260403.md`（AI 调用日志需求与设计）
 
 ---
 

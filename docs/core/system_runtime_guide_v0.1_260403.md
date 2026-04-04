@@ -3,7 +3,7 @@
 **日期**: 2026-04-03  
 **目标读者**: 熟悉 Java / PHP / Python Web 开发，但不熟 Go 与当前项目实现细节。  
 **版本范围**: 当前仓库 `v0.1`（Go backend + 两个静态前端占位页 + MySQL + 可选 mock-ai）。  
-**发版 / 升级**: [docs/README.md](./README.md)、[部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md)
+**发版 / 升级**: [docs/README.md](../README.md)、[部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)
 
 ---
 

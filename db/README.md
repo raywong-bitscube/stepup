@@ -19,10 +19,10 @@
 3. 开发/联调可选：  
    `mysql ... < db/seed/dev_seed.sql`
 
-Docker Compose 与升级步骤见 **`docs/deployment_guide_v0.1_260403.md`**、**`docs/DEPLOY_AND_UPGRADE_v0.1_260404.md`**（命令中的路径已指向 `db/`）。
+Docker Compose 与升级步骤见 **`docs/core/deployment_guide_v0.1_260403.md`**、**`docs/releases/DEPLOY_AND_UPGRADE_v0.1_260404.md`**（命令中的路径已指向 `db/`）。
 
 ## 与文档的对应关系
 
-- 发版请先读 [**docs/README.md**](../docs/README.md) 与 [**docs/DEPLOY_AND_UPGRADE_v0.1_260404.md**](../docs/DEPLOY_AND_UPGRADE_v0.1_260404.md)。
-- API、AI 调用日志等行为说明仍在 **`docs/`**；表字段语义以 **`db/schema`** 为准。
+- 发版请先读 [**docs/README.md**](../docs/README.md) 与 [**docs/releases/**](../docs/releases/) 下当期增量说明。
+- 需求、API、部署等基线说明在 **`docs/core/`**；表字段语义以 **`db/schema`** 为准。
 - 若新增迁移，请同时：更新 **`db/migrations`**、并在 **`db/schema`** 的基线文件中合并相同 DDL（方便全新环境一条脚本到位），或在 README 中注明「仅增量、未回填 schema」的例外（不推荐长期并存）。

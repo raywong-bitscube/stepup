@@ -3,7 +3,7 @@
 **日期**: 2026-04-03  
 **版本**: v0.1  
 **适用阶段**: 开发环境 + 生产首发  
-**文档导航**: [docs/README.md](./README.md) · [部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md) · [部署指南](./deployment_guide_v0.1_260403.md)
+**文档导航**: [docs/README.md](../README.md) · [部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md) · [部署指南](./deployment_guide_v0.1_260403.md)
 
 ---
 

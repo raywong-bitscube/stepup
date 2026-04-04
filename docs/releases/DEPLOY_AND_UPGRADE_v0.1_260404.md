@@ -2,7 +2,7 @@
 
 **日期**: 2026-04-04  
 **适用**: 自本提交起准备发往 **测试 / QA** 或同级环境时对照执行。  
-**关联**: [文档索引](./README.md)、[部署指南](./deployment_guide_v0.1_260403.md)、[`db/README.md`](../db/README.md)
+**关联**: [文档索引](../README.md)、[部署指南](../core/deployment_guide_v0.1_260403.md)、[`db/README.md`](../../db/README.md)
 
 ---
 
@@ -16,7 +16,7 @@
 | **SQL 目录** | 所有 MySQL 脚本统一到仓库 **`db/`**（`schema/`、`migrations/`、`seed/`）；**不再**使用 `docs/*.sql`、`scripts/dev_seed.sql` 等旧路径。 |
 | **前端（部署拓扑）** | 学生 / 管理静态与 API 分端口时：`app.js` 内约定 **页面端口 7010 / 7011 → 同主机 API 7012**（可用 `?api=` / `localStorage` 覆盖）；管理登录页 **API 根地址** 可选。 |
 
-详细需求与字段语义见 [**ai_model_log_v0.1_260403.md**](./ai_model_log_v0.1_260403.md)；接口见 [**api_v0.1_260403.md**](./api_v0.1_260403.md) §3.12。
+详细需求与字段语义见 [**ai_model_log_v0.1_260403.md**](../core/ai_model_log_v0.1_260403.md)；接口见 [**api_v0.1_260403.md**](../core/api_v0.1_260403.md) §3.12。
 
 ---
 
@@ -77,7 +77,7 @@
 
 ## 4. 全新测试环境（空库）最短路径
 
-与 [部署指南 §3](./deployment_guide_v0.1_260403.md) 一致，核心三条：
+与 [部署指南 §3](../core/deployment_guide_v0.1_260403.md) 一致，核心三条：
 
 ```bash
 docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/schema/mysql_schema_v0.1_260403.sql
@@ -91,4 +91,4 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 ## 5. 文档维护说明
 
 - **本文件**：记录 **与该发版相关的增量设计与升级步骤**；大段落基础设施仍以 **deployment_guide / architecture** 为准。  
-- **以后发版**：可复制本文件为新日期版本，或在本文件追加 §6「历史」；索引入口始终为 [**docs/README.md**](./README.md)。
+- **以后发版**：可复制本文件为新日期版本，或在本文件追加 §6「历史」；索引入口始终为 [**docs/README.md**](../README.md)；增量文档登记见 [**releases/README.md**](./README.md)。

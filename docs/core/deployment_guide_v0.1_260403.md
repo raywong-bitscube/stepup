@@ -5,12 +5,12 @@
 
 **相关文档**:
 
-- [**文档索引与阅读顺序**](./README.md)
-- [**v0.1 增量：部署与升级说明**](./DEPLOY_AND_UPGRADE_v0.1_260404.md)（含 AI 调用日志、SQL 目录调整等）
+- [**文档索引与阅读顺序**](../README.md)
+- [**v0.1 增量：部署与升级说明**](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)（含 AI 调用日志、SQL 目录调整等）
 - [架构与部署设计](./architecture_deployment_v0.1_260403.md)
-- [MySQL 建表脚本](../db/schema/mysql_schema_v0.1_260403.sql)（**所有 SQL 见仓库 [`db/`](../db/README.md)**）
+- [MySQL 建表脚本](../../db/schema/mysql_schema_v0.1_260403.sql)（**所有 SQL 见仓库 [`db/`](../../db/README.md)**）
 - [API 文档](./api_v0.1_260403.md)
-- 后端运行说明：仓库内 [`backend/README.md`](../backend/README.md)
+- 后端运行说明：仓库内 [`backend/README.md`](../../backend/README.md)
 
 ---
 
@@ -53,7 +53,7 @@ cp .env.example .env
 docker compose --env-file .env.qa up -d --build
 ```
 
-若在测试机 **直接运行 Go 二进制**（`go run` / 编译后的 `server`），请用 **`backend/.env.qa`** 配置 `DB_DSN` 等（与根目录 `.env.qa` 中数据库账号可保持一致），详见 [`backend/README.md`](../backend/README.md)。
+若在测试机 **直接运行 Go 二进制**（`go run` / 编译后的 `server`），请用 **`backend/.env.qa`** 配置 `DB_DSN` 等（与根目录 `.env.qa` 中数据库账号可保持一致），详见 [`backend/README.md`](../../backend/README.md)。
 
 ### 3.2 启动
 
@@ -78,7 +78,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/migrations/20260404_ai_call_log.sql
 ```
 
-说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](./DEPLOY_AND_UPGRADE_v0.1_260404.md) §3。
+说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md) §3。
 
 **种子数据说明**（`db/seed/dev_seed.sql`）：
 
@@ -172,7 +172,7 @@ export CORS_ALLOWED_ORIGINS='https://app.example.com,https://admin.example.com'
 | `ADMIN_SESSION_TTL_HOURS` | 管理端会话时长 |
 | `CORS_ALLOWED_ORIGINS` | **逗号分隔**的前端 Origin 白名单；缺省常为 localhost，上线 **必须** 改为真实域名 |
 
-**分析行为**（`ANALYSIS_ADAPTER=http`）：优先使用 **`ai_model` 中 `status=1` 且未删除** 的最新一条的 **`url`**；若该行 **`app_secret` 非空**，则按 **OpenAI 兼容 `chat/completions`** 调用；`app_secret` 为空则按项目 **mock-ai** JSON 协议请求（适合 `AI_ENDPOINT` 指向 `mock-ai`）。详见 [`backend/README.md`](../backend/README.md)。
+**分析行为**（`ANALYSIS_ADAPTER=http`）：优先使用 **`ai_model` 中 `status=1` 且未删除** 的最新一条的 **`url`**；若该行 **`app_secret` 非空**，则按 **OpenAI 兼容 `chat/completions`** 调用；`app_secret` 为空则按项目 **mock-ai** JSON 协议请求（适合 `AI_ENDPOINT` 指向 `mock-ai`）。详见 [`backend/README.md`](../../backend/README.md)。
 
 Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默认值；**跨域名部署** 请在 `docker-compose.yml` 的 `backend.environment` 中增加该变量，或通过扩展 `docker-compose.override.yml` 注入。
 

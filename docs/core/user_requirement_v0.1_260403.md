@@ -2,7 +2,7 @@
 
 **日期**: 2026-04-03  
 **版本**: v0.1  
-**工程文档入口**: [docs/README.md](./README.md)（部署 / 升级 / API 索引）
+**工程文档入口**: [docs/README.md](../README.md)（部署 / 升级 / API 索引）
 
 ---
 

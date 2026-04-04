@@ -2,7 +2,7 @@
 
 **日期**: 2026-04-03  
 **Base URL（本地）**: `http://localhost:8080`  
-**部署 / 升级**: [文档索引](./README.md)、[DEPLOY_AND_UPGRADE_v0.1_260404.md](./DEPLOY_AND_UPGRADE_v0.1_260404.md)
+**部署 / 升级**: [文档索引](../README.md)、[DEPLOY_AND_UPGRADE_v0.1_260404.md](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)
 
 ---
 
