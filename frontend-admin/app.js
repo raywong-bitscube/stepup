@@ -87,15 +87,54 @@
     const req = String(e.request_body || '').trim();
     const res = String(e.response_body || '').trim();
     const meta = String(aiLogMetaJSON(e) || '').trim();
+    const latSec =
+      e.latency_ms != null && e.latency_ms !== ''
+        ? (Number(e.latency_ms) / 1000).toFixed(3)
+        : '';
+    const errHtml = aiLogErrLine(e);
+    const errCell =
+      errHtml && errHtml !== '—' ? errHtml : '<span class="muted">—</span>';
+    const mockTxt = e.fallback_to_mock ? '是' : '否';
     const cell = (label, text) => {
       const t = String(text || '').trim();
       const inner = t ? escapeHtml(t) : '<span class="muted">—</span>';
       return `<tr><th scope="row">${escapeHtml(label)}</th><td class="ai-detail-td"><pre class="ai-detail-pre">${inner}</pre></td></tr>`;
     };
     return `<table class="data ai-log-detail-inner" role="presentation"><tbody>
+      ${cell('适配器', e.adapter_kind || '')}
+      ${cell('用时(秒)', latSec)}
+      <tr><th scope="row">错误</th><td class="ai-detail-td"><div class="ai-detail-text">${errCell}</div></td></tr>
+      ${cell('Endpoint', e.endpoint_host || '')}
+      ${cell('mock 回退', mockTxt)}
       ${cell('请求 JSON', req)}
       ${cell('响应原文', res)}
       ${cell('结构化 Meta', meta)}
+    </tbody></table>`;
+  }
+
+  function formatAuditSnapshotJson(snap) {
+    if (snap == null || snap === '') return '';
+    try {
+      const o = typeof snap === 'object' && snap !== null ? snap : JSON.parse(String(snap));
+      return JSON.stringify(o, null, 2);
+    } catch {
+      return String(snap);
+    }
+  }
+
+  function renderAuditDetailPanel(e) {
+    const snapText = formatAuditSnapshotJson(e.snapshot);
+    const cell = (label, text) => {
+      const t = String(text || '').trim();
+      const inner = t ? escapeHtml(t) : '<span class="muted">—</span>';
+      return `<tr><th scope="row">${escapeHtml(label)}</th><td class="ai-detail-td"><pre class="ai-detail-pre">${inner}</pre></td></tr>`;
+    };
+    const ip = e.ip_address ? String(e.ip_address).trim() : '';
+    const extra = e.created_by != null ? String(e.created_by) : '';
+    return `<table class="data ai-log-detail-inner" role="presentation"><tbody>
+      ${cell('IP', ip)}
+      ${cell('记录人 ID', extra)}
+      ${cell('snapshot', snapText)}
     </tbody></table>`;
   }
 
@@ -110,6 +149,7 @@
     models: [],
     prompts: [],
     audits: [],
+    auditFilters: { limit: 50, offset: 0 },
     aiLogs: [],
     aiLogFilters: {
       limit: 50,
@@ -348,9 +388,13 @@
         return;
       }
       if (state.view === 'audit') {
-        const d = await api('/api/v1/admin/audit-logs?limit=200');
+        const af = state.auditFilters;
+        const lim = af.limit || 50;
+        const off = af.offset || 0;
+        const d = await api('/api/v1/admin/audit-logs?limit=' + lim + '&offset=' + off);
         state.audits = d.items || [];
         pane.innerHTML = renderAudit();
+        bindAuditLogs(pane);
         return;
       }
       if (state.view === 'ai_logs') {
@@ -856,24 +900,20 @@
 
   function renderAICallLogs() {
     const f = state.aiLogFilters;
+    const lim = Number(f.limit) || 50;
+    const nextDisabled = state.aiLogs.length < lim;
     const rows = state.aiLogs
       .flatMap((e) => {
         const id = e.id;
-        const head = `<tr class="ai-log-main">
+        const head = `<tr class="ai-log-main" data-ailog-id="${id}" role="button" tabindex="0" aria-expanded="false" title="点击展开/收起详情">
         <td>${id}</td>
         <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.created_at || '')}</td>
         <td class="ai-wrap">${escapeHtml(e.model_name_snapshot || '')}</td>
         <td>${escapeHtml(e.action || '')}</td>
-        <td class="ai-wrap">${escapeHtml(e.adapter_kind || '')}</td>
         <td>${escapeHtml(e.outcome || '')}</td>
-        <td>${e.latency_ms != null ? e.latency_ms : '—'}</td>
-        <td class="ai-wrap" style="font-size:12px">${aiLogErrLine(e)}</td>
-        <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.endpoint_host || '')}</td>
         <td class="ai-wrap">${escapeHtml(e.chat_model || '')}</td>
-        <td>${e.fallback_to_mock ? '是' : '否'}</td>
-        <td><button type="button" class="btn secondary small" data-ailog-toggle="${id}" aria-expanded="false">展开详情</button></td>
       </tr>`;
-        const detail = `<tr class="ai-log-detail" data-ailog-detail="${id}" hidden><td colspan="12">${renderAICallDetailPanel(
+        const detail = `<tr class="ai-log-detail" data-ailog-detail="${id}" hidden><td colspan="6">${renderAICallDetailPanel(
           e
         )}</td></tr>`;
         return [head, detail];
@@ -881,8 +921,10 @@
       .join('');
     return `
       <h2>AI 调用日志</h2>
-      <p class="muted">展示脱敏后的出站 JSON 与上游响应（内联图片 base64 已替换为占位符）；密钥永不记录。筛选仍可用模型 id，列表中已省略模型/试卷/学生 id 与重复 HTTP 列。</p>
-      <div class="form-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr));max-width:1100px;align-items:end;margin-bottom:12px">
+      <p class="muted">脱敏请求/响应见展开区；适配器、用时(秒)、错误、Endpoint、mock 回退亦在展开区。点击行展开/收起。</p>
+      <div class="ai-log-bar">
+        <div class="ai-log-filters">
+          <div class="ai-log-filter-grid">
         <div>
           <label>筛选：模型 id</label>
           <input type="text" id="ailogModel" placeholder="ai_model.id" value="${escapeHtml(f.ai_model_id)}" />
@@ -914,21 +956,22 @@
         </div>
         <div>
           <label>每页</label>
-          <input type="number" id="ailogLimit" min="1" max="200" value="${Number(f.limit) || 50}" />
+          <input type="number" id="ailogLimit" min="1" max="200" value="${lim}" />
         </div>
-        <div class="row" style="gap:8px">
+          </div>
+        </div>
+        <div class="ai-log-pager">
           <button type="button" class="btn" id="ailogQuery">查询</button>
           <button type="button" class="btn secondary small" id="ailogPrev" ${f.offset <= 0 ? 'disabled' : ''}>上一页</button>
-          <button type="button" class="btn secondary small" id="ailogNext">下一页</button>
+          <button type="button" class="btn secondary small" id="ailogNext" ${nextDisabled ? 'disabled' : ''}>下一页</button>
         </div>
       </div>
       <div class="table-wrap-ai">
       <table class="data ai-logs">
         <thead><tr>
-          <th>ID</th><th>时间</th><th>模型名</th><th>动作</th><th>适配器</th><th>状态</th><th>ms</th>
-          <th>错误</th><th>Endpoint</th><th>chat</th><th>mock</th><th>详情</th>
+          <th>ID</th><th>时间</th><th>模型名</th><th>动作</th><th>状态</th><th>chat</th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="12">暂无</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="6">暂无</td></tr>'}</tbody>
       </table></div>`;
   }
 
@@ -957,36 +1000,124 @@
       state.aiLogFilters = readFilters((state.aiLogFilters.offset || 0) + lim);
       mount(document.getElementById('app'));
     });
-    pane.querySelector('table.ai-logs tbody')?.addEventListener('click', (ev) => {
-      const btn = ev.target.closest('button[data-ailog-toggle]');
-      if (!btn) return;
-      const id = btn.getAttribute('data-ailog-toggle');
+    const toggleAiRow = (mainTr) => {
+      const id = mainTr.getAttribute('data-ailog-id');
+      if (!id) return;
       const detail = pane.querySelector(`tr.ai-log-detail[data-ailog-detail="${CSS.escape(String(id))}"]`);
       if (!detail) return;
       const open = !detail.hidden;
       detail.hidden = open;
-      btn.setAttribute('aria-expanded', String(!open));
-      btn.textContent = open ? '展开详情' : '收起详情';
+      mainTr.setAttribute('aria-expanded', String(!open));
+      mainTr.classList.toggle('ai-log-open', !open);
+      try {
+        mainTr.focus({ preventScroll: true });
+      } catch (_) {}
+    };
+    pane.querySelector('table.ai-logs tbody')?.addEventListener('click', (ev) => {
+      const mainTr = ev.target.closest('tr.ai-log-main');
+      if (!mainTr) return;
+      toggleAiRow(mainTr);
+    });
+    pane.querySelector('table.ai-logs tbody')?.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const mainTr = ev.target.closest('tr.ai-log-main');
+      if (!mainTr) return;
+      ev.preventDefault();
+      toggleAiRow(mainTr);
     });
   }
 
   function renderAudit() {
+    const f = state.auditFilters;
+    const lim = Number(f.limit) || 50;
+    const nextDisabled = state.audits.length < lim;
     const rows = state.audits
-      .map(
-        (e) =>
-          `<tr><td>${e.id}</td><td>${escapeHtml(e.user_type)}</td><td>${e.user_id ?? '—'}</td><td>${escapeHtml(
-            e.action
-          )}</td><td>${escapeHtml(e.entity_type)}</td><td>${e.entity_id ?? '—'}</td>
-        <td><pre class="raw" style="max-height:120px;margin:0">${escapeHtml(JSON.stringify(e.snapshot))}</pre></td>
-        <td>${escapeHtml(e.created_at || '')}</td></tr>`
-      )
+      .flatMap((e) => {
+        const id = e.id;
+        const head = `<tr class="audit-log-main" data-audit-id="${id}" role="button" tabindex="0" aria-expanded="false" title="点击展开/收起详情">
+        <td>${id}</td>
+        <td>${escapeHtml(e.user_type)}</td>
+        <td>${e.user_id ?? '—'}</td>
+        <td>${escapeHtml(e.action)}</td>
+        <td>${escapeHtml(e.entity_type)}</td>
+        <td>${e.entity_id ?? '—'}</td>
+        <td>${escapeHtml(e.created_at || '')}</td>
+      </tr>`;
+        const detail = `<tr class="audit-log-detail" data-audit-detail="${id}" hidden><td colspan="7">${renderAuditDetailPanel(
+          e
+        )}</td></tr>`;
+        return [head, detail];
+      })
       .join('');
     return `
       <h2>审计日志</h2>
-      <p class="muted">最近 200 条（脱敏快照）。</p>
-      <div style="overflow-x:auto">
-      <table class="data"><thead><tr><th>ID</th><th>用户类型</th><th>用户ID</th><th>动作</th><th>实体</th><th>实体ID</th><th>snapshot</th><th>时间</th></tr></thead><tbody>${rows ||
-        '<tr><td colspan="8">暂无</td></tr>'}</tbody></table></div>`;
+      <p class="muted">脱敏快照在展开区；点击行展开/收起。</p>
+      <div class="ai-log-bar">
+        <div class="ai-log-filters">
+          <div class="ai-log-filter-grid">
+            <div>
+              <label>每页</label>
+              <input type="number" id="auditLimit" min="1" max="500" value="${lim}" />
+            </div>
+          </div>
+        </div>
+        <div class="ai-log-pager">
+          <button type="button" class="btn" id="auditQuery">查询</button>
+          <button type="button" class="btn secondary small" id="auditPrev" ${f.offset <= 0 ? 'disabled' : ''}>上一页</button>
+          <button type="button" class="btn secondary small" id="auditNext" ${nextDisabled ? 'disabled' : ''}>下一页</button>
+        </div>
+      </div>
+      <div class="table-wrap-ai">
+      <table class="data audit-logs">
+        <thead><tr><th>ID</th><th>用户类型</th><th>用户ID</th><th>动作</th><th>实体</th><th>实体ID</th><th>时间</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7">暂无</td></tr>'}</tbody>
+      </table></div>`;
+  }
+
+  function bindAuditLogs(pane) {
+    const readAudit = (offsetVal) => ({
+      limit: Math.min(500, Math.max(1, Number(pane.querySelector('#auditLimit').value) || 50)),
+      offset: Math.max(0, offsetVal),
+    });
+    pane.querySelector('#auditQuery').addEventListener('click', () => {
+      state.auditFilters = readAudit(0);
+      mount(document.getElementById('app'));
+    });
+    pane.querySelector('#auditPrev').addEventListener('click', () => {
+      const lim = state.auditFilters.limit || 50;
+      state.auditFilters = readAudit(Math.max(0, (state.auditFilters.offset || 0) - lim));
+      mount(document.getElementById('app'));
+    });
+    pane.querySelector('#auditNext').addEventListener('click', () => {
+      const lim = state.auditFilters.limit || 50;
+      state.auditFilters = readAudit((state.auditFilters.offset || 0) + lim);
+      mount(document.getElementById('app'));
+    });
+    const toggleAudit = (mainTr) => {
+      const id = mainTr.getAttribute('data-audit-id');
+      if (!id) return;
+      const detail = pane.querySelector(`tr.audit-log-detail[data-audit-detail="${CSS.escape(String(id))}"]`);
+      if (!detail) return;
+      const open = !detail.hidden;
+      detail.hidden = open;
+      mainTr.setAttribute('aria-expanded', String(!open));
+      mainTr.classList.toggle('ai-log-open', !open);
+      try {
+        mainTr.focus({ preventScroll: true });
+      } catch (_) {}
+    };
+    pane.querySelector('table.audit-logs tbody')?.addEventListener('click', (ev) => {
+      const tr = ev.target.closest('tr.audit-log-main');
+      if (!tr) return;
+      toggleAudit(tr);
+    });
+    pane.querySelector('table.audit-logs tbody')?.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      const tr = ev.target.closest('tr.audit-log-main');
+      if (!tr) return;
+      ev.preventDefault();
+      toggleAudit(tr);
+    });
   }
 
   function boot() {

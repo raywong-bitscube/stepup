@@ -34,12 +34,15 @@ func New(db *sql.DB) *Service {
 	return &Service{db: db}
 }
 
-func (s *Service) List(ctx context.Context, limit int) ([]Entry, error) {
+func (s *Service) List(ctx context.Context, limit, offset int) ([]Entry, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
 	}
 	if limit <= 0 || limit > 500 {
 		return nil, ErrInvalidInput
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -48,8 +51,8 @@ func (s *Service) List(ctx context.Context, limit int) ([]Entry, error) {
 SELECT id, user_id, user_type, action, entity_type, entity_id, snapshot, ip_address, created_at, created_by
 FROM audit_log
 ORDER BY id DESC
-LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, limit)
+LIMIT ? OFFSET ?`
+	rows, err := s.db.QueryContext(ctx, q, limit, offset)
 	if err != nil {
 		return nil, err
 	}

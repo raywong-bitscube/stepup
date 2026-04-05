@@ -136,6 +136,28 @@ pre.raw {
   font-size: 12px;
   max-height: 240px;
 }
+.ai-log-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ai-log-pager {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.ai-log-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  max-width: 1000px;
+  align-items: end;
+}
 .table-wrap-ai {
   overflow-x: auto;
   width: 100%;
@@ -145,7 +167,7 @@ pre.raw {
   background: var(--card);
 }
 table.data.ai-logs {
-  min-width: 1080px;
+  min-width: 520px;
   table-layout: auto;
 }
 table.data.ai-logs th,
@@ -162,6 +184,29 @@ table.data.ai-logs tr.ai-log-detail td {
   vertical-align: top;
   background: #f1f5f9;
   border-top: 1px dashed var(--border);
+}
+table.data.audit-logs tr.audit-log-detail td {
+  padding: 0 !important;
+  vertical-align: top;
+  background: #f1f5f9;
+  border-top: 1px dashed var(--border);
+}
+tr.ai-log-main,
+tr.audit-log-main {
+  cursor: pointer;
+}
+tr.ai-log-main:hover,
+tr.audit-log-main:hover {
+  background: #f1f5f9;
+}
+tr.ai-log-main.ai-log-open,
+tr.audit-log-main.ai-log-open {
+  background: #e2e8f0;
+}
+.ai-detail-text {
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 table.data.ai-log-detail-inner {
   width: 100%;

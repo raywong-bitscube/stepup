@@ -294,7 +294,7 @@ Header: `Authorization: Bearer <admin_token>`
 
 ### 3.11 审计日志（管理端）
 
-- `GET /api/v1/admin/audit-logs?limit=100` — 只读列表，`limit` 默认 `100`，最大 `500`，按 `id` 降序。
+- `GET /api/v1/admin/audit-logs?limit=100&offset=0` — 只读列表，`limit` 默认 `100`，最大 `500`；`offset` 分页偏移，默认 `0`。响应含 `items`、`limit`、`offset`，按 `id` 降序。
 - **写入范围（v0.1）**：管理员登录、学生登录、学生创建试卷（上传）、管理端对上述学生 / 科目 / 阶段 / AI 模型的 **POST 创建** 与 **PATCH 更新**、Prompt 模板仅 **PATCH 更新**（含密码 / secret 类事件的特殊 `action`，见 §1）。需数据库；无 `DB_DSN` 时不写审计表。
 
 ### 3.12 AI 调用日志（管理端）

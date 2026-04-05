@@ -32,9 +32,21 @@ func parseAuditLimit(raw string) int {
 	return n
 }
 
+func parseAuditOffset(raw string) int {
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
 func (h *AuditLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	limit := parseAuditLimit(r.URL.Query().Get("limit"))
-	items, err := h.service.List(r.Context(), limit)
+	offset := parseAuditOffset(r.URL.Query().Get("offset"))
+	items, err := h.service.List(r.Context(), limit, offset)
 	if errors.Is(err, adminaudit.ErrNoDatabase) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
 		return
@@ -76,5 +88,9 @@ func (h *AuditLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]any{"items": out})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"items":  out,
+		"limit":  limit,
+		"offset": offset,
+	})
 }
