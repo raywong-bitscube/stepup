@@ -36,8 +36,8 @@ services:
       DB_DSN: "${MYSQL_USER:-stepup_user}:${MYSQL_PASSWORD:-stepup_pass}@tcp(mysql:3306)/${MYSQL_DATABASE:-stepup}?charset=utf8mb4&parseTime=True&loc=Local"
       STATIC_DIR: ${STATIC_DIR:-/srv/static}
       UPLOAD_DIR: ${UPLOAD_DIR:-/srv/uploads}
-      # 用公网/LAN IP 打开学生/管理页时，须在 .env 中覆盖并写入两个页面 Origin（:3000+:3001 或 :7010+:7011），勿只配其一。
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:8080,http://localhost:7010,http://127.0.0.1:7010,http://localhost:7011,http://127.0.0.1:7011,http://localhost:7012,http://127.0.0.1:7012}
+      # 默认含 `*`：任意浏览器 Origin（http/https）回显允许，免写死 IP。生产请在 .env 设严格白名单并去掉 `*`。
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*,http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:8080,http://localhost:7010,http://127.0.0.1:7010,http://localhost:7011,http://127.0.0.1:7011,http://localhost:7012,http://127.0.0.1:7012}
       ADMIN_BOOTSTRAP_USERNAME: ${ADMIN_BOOTSTRAP_USERNAME:-admin}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-admin123}
       SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-30}

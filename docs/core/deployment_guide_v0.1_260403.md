@@ -209,7 +209,7 @@ Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默
 A：后端未连上 MySQL，检查 `DB_DSN`、网络、账号权限与防火墙。
 
 **Q：前端报 CORS 错误（`No 'Access-Control-Allow-Origin' header`）？**  
-A：将 **页面** 的 Origin（地址栏「协议 + 主机 + 端口」，无路径、无末尾 `/`）逐字加入 **`CORS_ALLOWED_ORIGINS`**（逗号分隔），**重启 backend** 使环境变量生效。学生静态 `:7010`、管理 `:7011`、API 经 Nginx `:7012` 时，白名单要写 **`http://…:7010` 与 `http://…:7011`**（若用公网/LAN IP 打开页面，主机部分须与地址栏一致，例如 `http://36.x.x.x:7011`），一般不必写 `:7012`。**仅限内网/测试** 时，可在白名单中加一项 **`*`**，后端会对 `http://` / `https://` Origin 回显允许（实现见 `middleware/cors.go`）；**公网生产**仍建议逐条列真实 Origin。若仍失败，用浏览器开发工具看请求是否到达 Go（Nginx 对 4xx/5xx 的响应有时不带 CORS 头，需先排除上游错误或 OPTIONS 未转发）。
+A：**Docker Compose / 代码默认** 已在 `CORS_ALLOWED_ORIGINS` 中包含 **`*`**（回显 Origin），一般 **LAN IP + `:7011`/`:7010`** 无需再手写白名单；若仍报错，先确认已 **重建并重启 backend**、环境变量没有把 `*` 覆盖掉。若 API 经 **Nginx** 暴露在 `:7012`，须保证 **OPTIONS 预检** 也转发到 Go（或由 Nginx 返回带 `Access-Control-Allow-*` 的响应），否则浏览器仍报无 CORS 头。也可改为显式白名单：将 **页面** Origin（`http://主机:7010` 与 `http://主机:7011`）逐字写入 **`CORS_ALLOWED_ORIGINS`**，**重启 backend**。**公网生产** 请去掉 `*`，只保留可信 Origin。
 
 **Q：试卷分析总是 mock 结果？**  
 A：确认 **`ANALYSIS_ADAPTER=http`**、库内有 **激活** `ai_model` 且 **URL 可解析**；若用真实 LLM，确认 **`app_secret` 已配置** 且能访问公网 API；失败时实现会回退 mock，可查后端日志与网络。
