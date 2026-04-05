@@ -135,6 +135,9 @@
     return map[subjectName] || [PAPER_ANALYZE];
   }
 
+  /** 登录后主界面异步加载代数；`mount` 递增，用于丢弃过期的 Promise 回调，避免失败后反复 `mount` 造成死循环。 */
+  let mainLoadGen = 0;
+
   const state = {
     token: localStorage.getItem(LS_TOKEN),
     authTab: 'login',
@@ -173,6 +176,84 @@
     return data;
   }
 
+  function failedFetchHint(msg) {
+    return msg === 'Failed to fetch'
+      ? '（请确认 API 已启动；若学生页与 API 不同源，后端 `CORS_ALLOWED_ORIGINS` 须包含本页 Origin，如 `http://<IP>:7010` 或 `:3000`，登录页可见「API」地址。）'
+      : '';
+  }
+
+  function showPapersLoadError(root, e, gen) {
+    const msg = (e.data && e.data.code) || e.message || String(e);
+    const hint = failedFetchHint(msg);
+    const pane = root.querySelector('#paperPane');
+    if (!pane) return;
+    pane.innerHTML = `<p class="muted">试卷列表加载失败：${escapeHtml(msg + hint)}</p><button type="button" class="btn" id="btnRetryPapers" style="margin-top:10px">重试</button>`;
+    pane.querySelector('#btnRetryPapers').addEventListener('click', async () => {
+      if (gen !== mainLoadGen) return;
+      pane.innerHTML = '<p class="muted">加载中…</p>';
+      try {
+        await refreshPapers(root);
+      } catch (e2) {
+        if (gen !== mainLoadGen) return;
+        showPapersLoadError(root, e2, gen);
+      }
+    });
+  }
+
+  function showShellLoadError(root, e) {
+    const msg = (e.data && e.data.code) || e.message || String(e);
+    const hint = failedFetchHint(msg);
+    const line = root.querySelector('#sessionLine');
+    if (line) line.textContent = '无法加载工作台';
+    const hub = root.querySelector('#hubCard');
+    if (hub) {
+      hub.innerHTML = `<p class="muted">数据加载失败，请检查网络与后端服务。</p>
+        <p class="flash err" style="margin-top:10px">${escapeHtml(msg + hint)}</p>
+        <button type="button" class="btn" id="btnRetryShell" style="margin-top:12px">重试</button>`;
+      hub.querySelector('#btnRetryShell').addEventListener('click', () => {
+        mainLoadGen++;
+        startMainShell(root, mainLoadGen);
+      });
+    }
+    const pane = root.querySelector('#paperPane');
+    if (pane) pane.innerHTML = '<p class="muted">试卷列表未加载。</p>';
+  }
+
+  function startMainShell(root, gen) {
+    const hubEl = root.querySelector('#hubCard');
+    if (hubEl) hubEl.innerHTML = '<p class="muted">加载中…</p>';
+    const paperPane = root.querySelector('#paperPane');
+    if (paperPane) paperPane.innerHTML = '<p class="muted">加载试卷列表…</p>';
+
+    Promise.all([loadSession(root), loadCatalog()])
+      .then(async () => {
+        if (gen !== mainLoadGen) return;
+        try {
+          const hub = root.querySelector('#hubCard');
+          if (!hub) return;
+          hub.innerHTML = renderHub();
+          bindHub(root, hub);
+          if (state.hubSubject && state.hubFeature === 'paper_analyze') {
+            const fb = hub.querySelector('#featureBody');
+            if (fb) bindUpload(root, fb);
+          }
+          try {
+            await refreshPapers(root);
+          } catch (e) {
+            if (gen !== mainLoadGen) return;
+            showPapersLoadError(root, e, gen);
+          }
+        } catch (e) {
+          if (gen !== mainLoadGen) return;
+          showShellLoadError(root, e);
+        }
+      })
+      .catch((e) => {
+        if (gen !== mainLoadGen) return;
+        showShellLoadError(root, e);
+      });
+  }
+
   function mount(root) {
     const flash = state.flash
       ? `<div class="flash ${state.flash.kind}">${escapeHtml(state.flash.msg)}</div>`
@@ -198,6 +279,8 @@
       renderAuthBody(root.querySelector('#authBody'));
       return;
     }
+    mainLoadGen++;
+    const gen = mainLoadGen;
     root.innerHTML = `
       <div class="wrap">
         <div class="card toolbar">
@@ -216,26 +299,7 @@
         </div>
       </div>`;
     bindMain(root);
-    Promise.all([loadSession(root), loadCatalog()])
-      .then(() => {
-        const hub = root.querySelector('#hubCard');
-        hub.innerHTML = renderHub();
-        bindHub(root, hub);
-        if (state.hubSubject && state.hubFeature === 'paper_analyze') {
-          const fb = hub.querySelector('#featureBody');
-          if (fb) bindUpload(root, fb);
-        }
-        return refreshPapers(root);
-      })
-      .catch((e) => {
-        const msg = (e.data && e.data.code) || e.message || String(e);
-        const hint =
-          msg === 'Failed to fetch'
-            ? '（请确认 API 已启动；若学生页与 API 不同源，后端 `CORS_ALLOWED_ORIGINS` 须包含本页 Origin，如 `http://<IP>:7010` 或 `:3000`，工具栏见登录页「API」地址。）'
-            : '';
-        state.flash = { kind: 'err', msg: msg + hint };
-        mount(root);
-      });
+    startMainShell(root, gen);
   }
 
   async function loadSession(root) {
