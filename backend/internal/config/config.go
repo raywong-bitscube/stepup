@@ -43,7 +43,13 @@ func Load() Config {
 		AdminBootstrapUsername: getenv("ADMIN_BOOTSTRAP_USERNAME", "admin"),
 		AdminBootstrapPassword: getenv("ADMIN_BOOTSTRAP_PASSWORD", "admin123"),
 		SessionTTL:             loadSessionTTL(),
-		CORSAllowedOrigins:     splitCSV(getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:8080,http://127.0.0.1:8080")),
+		CORSAllowedOrigins: splitCSV(getenv("CORS_ALLOWED_ORIGINS", strings.Join([]string{
+			"http://localhost:3000", "http://localhost:3001",
+			"http://localhost:8080", "http://127.0.0.1:8080",
+			"http://localhost:7010", "http://127.0.0.1:7010",
+			"http://localhost:7011", "http://127.0.0.1:7011",
+			"http://localhost:7012", "http://127.0.0.1:7012",
+		}, ","))),
 		StaticDir:              strings.TrimSpace(getenv("STATIC_DIR", "")),
 		UploadDir:              strings.TrimSpace(getenv("UPLOAD_DIR", "data/uploads")),
 	}

@@ -365,7 +365,12 @@
         bindAICallLogs(pane);
       }
     } catch (e) {
-      pane.innerHTML = `<p class="muted">加载失败：${escapeHtml(e.data && e.data.code ? e.data.code : e.message)}</p>`;
+      const msg = e.data && e.data.code ? e.data.code : e.message || String(e);
+      const hint =
+        msg === 'Failed to fetch'
+          ? '（请确认 API 已启动且地址正确；若页面与 API 不同端口，后端需将当前页面的 Origin 加入 <code>CORS_ALLOWED_ORIGINS</code>，见工具栏「API: …」所示根地址。）'
+          : '';
+      pane.innerHTML = `<p class="muted">加载失败：${escapeHtml(msg)}${hint}</p>`;
     }
   }
 
