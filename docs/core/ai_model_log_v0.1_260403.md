@@ -82,4 +82,5 @@
 
 ## 6. 版本
 
-- **v0.1**：仅 `paper_analyze` 一条动作类型；后续若增加「异步分析任务 / 重试 / 其他 AI 入口」，可扩展 `action` 与写入点，并保持本表字段兼容。
+- **v0.1**：主要 `paper_analyze`；**作文提纲练习** 写入 `essay_outline_generate_topic`、`essay_outline_ocr_topic`、`essay_outline_review`（同上字段语义，`paper_id` 为空）。
+- 后续若增加「异步分析任务 / 重试 / 其他 AI 入口」，可继续扩展 `action` 与写入点，并保持本表字段兼容。

@@ -21,6 +21,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/studentessayoutline"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
 
@@ -55,6 +56,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
+	studentEssayHandler := student.NewEssayOutlineHandler(studentessayoutline.New(cfg, db))
 
 	// Admin routes
 	mux.HandleFunc("POST /api/v1/admin/auth/login", adminAuthHandler.Login)
@@ -76,6 +78,10 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("GET /api/v1/student/papers", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.List))
 	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/analysis", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Analysis))
 	mux.HandleFunc("GET /api/v1/student/papers/{paperId}/plan", middleware.RequireStudentAuth(studentAuthService, studentPaperHandler.Plan))
+
+	mux.HandleFunc("POST /api/v1/student/essay-outline/generate-topic", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.GenerateTopic))
+	mux.HandleFunc("POST /api/v1/student/essay-outline/ocr-topic", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.OCRTopic))
+	mux.HandleFunc("POST /api/v1/student/essay-outline/review", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.Review))
 
 	// Admin management routes
 	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))

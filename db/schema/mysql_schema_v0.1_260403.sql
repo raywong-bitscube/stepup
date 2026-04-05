@@ -314,6 +314,36 @@ CREATE TABLE IF NOT EXISTS verification_code (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
+-- 12b) essay_outline_practice（语文作文提纲练习提交记录）
+-- =====================================
+CREATE TABLE IF NOT EXISTS essay_outline_practice (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  student_id BIGINT UNSIGNED NOT NULL,
+  subject_id BIGINT UNSIGNED NULL COMMENT '语文等，可空',
+  topic_text TEXT NOT NULL,
+  topic_label VARCHAR(128) NOT NULL COMMENT '如 议论文 · 材料作文 或 自定义',
+  topic_source VARCHAR(32) NOT NULL COMMENT 'ai_category | custom_text | ocr_image',
+  genre VARCHAR(32) NULL,
+  task_type VARCHAR(32) NULL,
+  outline_text LONGTEXT NOT NULL,
+  review_json JSON NULL COMMENT 'summary, stars, suggestions, highlights',
+  raw_review_response LONGTEXT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (id),
+  KEY idx_essay_outline_student (student_id),
+  KEY idx_essay_outline_created (created_at),
+  KEY idx_essay_outline_is_deleted (is_deleted),
+  CONSTRAINT fk_essay_outline_student FOREIGN KEY (student_id) REFERENCES student (id),
+  CONSTRAINT fk_essay_outline_subject FOREIGN KEY (subject_id) REFERENCES subject (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================
 -- 13) ai_call_log（AI 外部调用轨迹；不落 API Key；request_body 为脱敏后的 chat JSON）
 -- =====================================
 CREATE TABLE IF NOT EXISTS ai_call_log (

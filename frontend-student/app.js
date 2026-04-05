@@ -105,8 +105,8 @@
         {
           id: 'essay_outline',
           title: '作文提纲练习',
-          desc: '立意、结构与论据提纲训练（即将开放）',
-          available: false,
+          desc: 'AI 命题或自拟题目，提交提纲获结构化解说与星级评分',
+          available: true,
         },
       ],
       英语: [
@@ -143,6 +143,22 @@
   /** 登录后主界面异步加载代数；`mount` 递增，用于丢弃过期的 Promise 回调，避免失败后反复 `mount` 造成死循环。 */
   let mainLoadGen = 0;
 
+  const ESSAY_GENRES = ['记叙文', '议论文', '散文', '应用文', '说明文'];
+  const ESSAY_TASKS = ['命题作文', '材料作文', '话题作文', '任务驱动型作文'];
+
+  function defaultEssayOutline() {
+    return {
+      topicMode: 'category',
+      topicText: '',
+      topicLabel: '',
+      topicSource: '',
+      genre: '议论文',
+      taskType: '材料作文',
+      outlineText: '',
+      lastReview: null,
+    };
+  }
+
   const state = {
     token: localStorage.getItem(LS_TOKEN),
     authTab: 'login',
@@ -154,6 +170,7 @@
     uploading: false,
     hubSubject: null,
     hubFeature: null,
+    essayOutline: defaultEssayOutline(),
   };
 
   async function api(path, opts = {}) {
@@ -185,6 +202,7 @@
         state.session = null;
         state.hubSubject = null;
         state.hubFeature = null;
+        state.essayOutline = defaultEssayOutline();
         state.flash = { kind: 'info', msg: '登录已失效或无权访问，请重新登录' };
         const appRoot = document.getElementById('app');
         if (appRoot) mount(appRoot);
@@ -264,6 +282,10 @@
           if (state.hubSubject && state.hubFeature === 'paper_analyze') {
             const fb = hub.querySelector('#featureBody');
             if (fb) bindUpload(root, fb);
+          }
+          if (state.hubSubject && state.hubFeature === 'essay_outline') {
+            const fb = hub.querySelector('#featureBody');
+            if (fb) bindEssayOutline(root, fb);
           }
           try {
             await refreshPapers(root);
@@ -503,6 +525,8 @@
     let panel = '';
     if (state.hubFeature === 'paper_analyze') {
       panel = `<div class="feature-panel" id="featureBody">${renderUploadForm()}</div>`;
+    } else if (state.hubFeature === 'essay_outline') {
+      panel = `<div class="feature-panel" id="featureBody">${renderEssayOutlinePanel()}</div>`;
     }
     return `
       <div class="hub-nav">
@@ -536,6 +560,239 @@
         state.hubFeature = b.getAttribute('data-fid');
         mount(document.getElementById('app'));
       });
+    });
+  }
+
+  function renderEssayStars(n) {
+    const x = Math.max(0, Math.min(5, Number(n) || 0));
+    let h = '';
+    for (let i = 1; i <= 5; i++) {
+      h += i <= x ? '<span class="star on">★</span>' : '<span class="star off">☆</span>';
+    }
+    return h;
+  }
+
+  function renderEssayReviewCards(review) {
+    if (!review) return '<p class="muted">提交提纲后将在此展示 AI 点评。</p>';
+    const stars = review.stars || {};
+    const sum = escapeHtml(review.summary || '');
+    const sug = (review.suggestions || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+    return `
+      <div class="essay-review-grid">
+        <div class="essay-card">
+          <h4>总体评价</h4>
+          <p class="essay-review-p">${sum || '—'}</p>
+        </div>
+        <div class="essay-card">
+          <h4>维度评分（1–5 星）</h4>
+          <div class="star-dim"><span class="dim-name">题目匹配度</span><span class="dim-stars">${renderEssayStars(
+            stars.match
+          )}</span></div>
+          <div class="star-dim"><span class="dim-name">结构合理性</span><span class="dim-stars">${renderEssayStars(
+            stars.structure
+          )}</span></div>
+          <div class="star-dim"><span class="dim-name">素材适配性</span><span class="dim-stars">${renderEssayStars(
+            stars.material
+          )}</span></div>
+        </div>
+        <div class="essay-card essay-card-span">
+          <h4>详细建议</h4>
+          <ul class="bullets">${sug || '<li class="muted">—</li>'}</ul>
+        </div>
+      </div>`;
+  }
+
+  function renderEssayOutlinePanel() {
+    const eo = state.essayOutline;
+    const mode = eo.topicMode || 'category';
+    const genreRadios = ESSAY_GENRES.map((g) => {
+      const c = eo.genre === g ? ' checked' : '';
+      return `<label class="radio-chip"><input type="radio" name="eo_genre" value="${escapeHtml(g)}"${c}/> ${escapeHtml(g)}</label>`;
+    }).join('');
+    const taskRadios = ESSAY_TASKS.map((t) => {
+      const c = eo.taskType === t ? ' checked' : '';
+      return `<label class="radio-chip"><input type="radio" name="eo_task" value="${escapeHtml(t)}"${c}/> ${escapeHtml(t)}</label>`;
+    }).join('');
+    const topicBody = escapeHtml(eo.topicText || '');
+    const labelBody = escapeHtml(eo.topicLabel || '');
+    const outlineBody = escapeHtml(eo.outlineText || '');
+    const catHidden = mode !== 'category' ? ' hidden' : '';
+    const cusHidden = mode !== 'custom' ? ' hidden' : '';
+    const tabCatOn = mode === 'category' ? ' on' : '';
+    const tabCusOn = mode === 'custom' ? ' on' : '';
+    return `
+      <h3 style="margin:0 0 8px">作文提纲练习</h3>
+      <p class="muted" style="margin:0 0 12px">面向高考导向：可选 <strong>文体 + 命题方式</strong> 由 AI 出题，或 <strong>自拟 / 拍照识别</strong> 题目；写完提纲后提交获结构化点评。</p>
+      <div class="eo-mode-tabs">
+        <button type="button" class="btn-tab${tabCatOn}" id="eoTabCategory">分类选题</button>
+        <button type="button" class="btn-tab${tabCusOn}" id="eoTabCustom">自定义题目</button>
+      </div>
+      <div class="eo-section${catHidden}" id="eoSectionCategory">
+        <p class="muted" style="margin:8px 0">文体形式</p>
+        <div class="radio-row">${genreRadios}</div>
+        <p class="muted" style="margin:12px 0 0">命题方式</p>
+        <div class="radio-row">${taskRadios}</div>
+        <button type="button" class="btn secondary" id="eoBtnGen" style="margin-top:12px">生成题目</button>
+      </div>
+      <div class="eo-section${cusHidden}" id="eoSectionCustom">
+        <p class="muted" style="margin:8px 0">在下方「题目正文」中直接输入或粘贴；亦可上传题目截图（JPG/PNG）识别。</p>
+        <div class="row" style="grid-template-columns:1fr 1fr; align-items:end">
+          <div>
+            <label>题目图片</label>
+            <input type="file" id="eoOcrFile" accept="image/jpeg,image/png,image/jpg" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button type="button" class="btn secondary" id="eoBtnOcr" style="margin-top:0;width:100%">识别图片中的题目</button>
+          </div>
+        </div>
+      </div>
+      <div class="essay-topic-card" style="margin-top:16px">
+        <h4 style="margin:0 0 8px">题目正文</h4>
+        <textarea id="eoTopicText" rows="5" placeholder="题目全文（分类选题生成后将自动填入，可自行微调）">${topicBody}</textarea>
+        <label style="margin-top:8px;display:block;font-size:12px;color:var(--muted)">题型标签（如：议论文 · 材料作文；自拟题为「自定义」）</label>
+        <input type="text" id="eoTopicLabel" placeholder="自定义" value="${labelBody}" style="margin-top:4px" />
+      </div>
+      <div style="margin-top:16px">
+        <h4 style="margin:0 0 8px">我的提纲</h4>
+        <textarea id="eoOutline" rows="10" placeholder="可写标题、中心论点、分论点与论据、记叙线索与细节等">${outlineBody}</textarea>
+        <button type="button" class="btn" id="eoBtnReview" style="margin-top:10px">提交点评</button>
+      </div>
+      <div id="eoReviewHost" style="margin-top:16px">${renderEssayReviewCards(eo.lastReview)}</div>`;
+  }
+
+  function bindEssayOutline(root, container) {
+    const eo = state.essayOutline;
+    const sectionCat = container.querySelector('#eoSectionCategory');
+    const sectionCus = container.querySelector('#eoSectionCustom');
+    const tabCat = container.querySelector('#eoTabCategory');
+    const tabCus = container.querySelector('#eoTabCustom');
+    function applyMode() {
+      const m = state.essayOutline.topicMode || 'category';
+      if (sectionCat) sectionCat.hidden = m !== 'category';
+      if (sectionCus) sectionCus.hidden = m !== 'custom';
+      if (tabCat) tabCat.classList.toggle('on', m === 'category');
+      if (tabCus) tabCus.classList.toggle('on', m === 'custom');
+    }
+    applyMode();
+    tabCat?.addEventListener('click', () => {
+      state.essayOutline.topicMode = 'category';
+      applyMode();
+    });
+    tabCus?.addEventListener('click', () => {
+      state.essayOutline.topicMode = 'custom';
+      if (!state.essayOutline.topicSource || state.essayOutline.topicSource === 'ai_category') {
+        state.essayOutline.topicLabel = state.essayOutline.topicLabel || '自定义';
+      }
+      applyMode();
+    });
+
+    const syncTopicFromDom = () => {
+      const tt = container.querySelector('#eoTopicText');
+      const tl = container.querySelector('#eoTopicLabel');
+      const ol = container.querySelector('#eoOutline');
+      if (tt) state.essayOutline.topicText = tt.value.trim();
+      if (tl) state.essayOutline.topicLabel = tl.value.trim() || '自定义';
+      if (ol) state.essayOutline.outlineText = ol.value.trim();
+    };
+
+    container.querySelector('#eoBtnGen')?.addEventListener('click', async () => {
+      const genre = container.querySelector('input[name="eo_genre"]:checked')?.value;
+      const task = container.querySelector('input[name="eo_task"]:checked')?.value;
+      if (!genre || !task) {
+        alert('请选择文体与命题方式。');
+        return;
+      }
+      const btn = container.querySelector('#eoBtnGen');
+      btn.disabled = true;
+      btn.textContent = '生成中…';
+      try {
+        const data = await api('/api/v1/student/essay-outline/generate-topic', {
+          method: 'POST',
+          jsonBody: { genre, task_type: task },
+        });
+        state.essayOutline.genre = genre;
+        state.essayOutline.taskType = task;
+        state.essayOutline.topicText = (data && data.topic_text) || '';
+        state.essayOutline.topicLabel = (data && data.label) || '';
+        state.essayOutline.topicSource = 'ai_category';
+        state.essayOutline.lastReview = null;
+        mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('生成失败：' + (e.data && e.data.code ? e.data.code : e.message));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '生成题目';
+      }
+    });
+
+    container.querySelector('#eoBtnOcr')?.addEventListener('click', async () => {
+      const inp = container.querySelector('#eoOcrFile');
+      const file = inp && inp.files && inp.files[0];
+      if (!file) {
+        alert('请选择 JPG/PNG 图片。');
+        return;
+      }
+      const btn = container.querySelector('#eoBtnOcr');
+      btn.disabled = true;
+      btn.textContent = '识别中…';
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      try {
+        const data = await api('/api/v1/student/essay-outline/ocr-topic', { method: 'POST', form: fd });
+        state.essayOutline.topicText = (data && data.topic_text) || '';
+        state.essayOutline.topicLabel = (data && data.label) || '自定义';
+        state.essayOutline.topicSource = 'ocr_image';
+        state.essayOutline.lastReview = null;
+        mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('识别失败：' + (e.data && e.data.code ? e.data.code : e.message));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '识别图片中的题目';
+      }
+    });
+
+    container.querySelector('#eoBtnReview')?.addEventListener('click', async () => {
+      syncTopicFromDom();
+      const m = state.essayOutline.topicMode || 'category';
+      let src = state.essayOutline.topicSource;
+      if (m === 'custom') {
+        src = 'custom_text';
+      }
+      if (!src) src = 'custom_text';
+      if (!state.essayOutline.topicText) {
+        alert('请填写题目正文。');
+        return;
+      }
+      if (!state.essayOutline.outlineText) {
+        alert('请填写提纲内容。');
+        return;
+      }
+      const btn = container.querySelector('#eoBtnReview');
+      btn.disabled = true;
+      btn.textContent = '点评中…';
+      try {
+        const body = {
+          topic_text: state.essayOutline.topicText,
+          topic_label: state.essayOutline.topicLabel || '自定义',
+          topic_source: src || 'custom_text',
+          outline_text: state.essayOutline.outlineText,
+          genre: state.essayOutline.genre || '',
+          task_type: state.essayOutline.taskType || '',
+        };
+        const data = await api('/api/v1/student/essay-outline/review', { method: 'POST', jsonBody: body });
+        state.essayOutline.lastReview = data.review || null;
+        mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('提交失败：' + (e.data && e.data.code ? e.data.code : e.message));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '提交点评';
+      }
     });
   }
 
@@ -721,6 +978,7 @@
       state.session = null;
       state.hubSubject = null;
       state.hubFeature = null;
+      state.essayOutline = defaultEssayOutline();
       mount(document.getElementById('app'));
     });
   }

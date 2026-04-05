@@ -457,6 +457,66 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 
 `GET /api/v1/student/papers/{paperId}/plan`
 
+### 5.5 作文提纲练习（语文）
+
+需 **`DB_DSN`**（落库 `essay_outline_practice`）及已执行迁移 `db/migrations/2026-04-05#04_essay_outline_practice.sql`（或当前基线 schema）。AI 行为与 §1 试卷分析相同优先级（`ANALYSIS_ADAPTER`、`ai_model` 激活项）。详见 [`feature_essay_outline_v0.1_260403.md`](./feature_essay_outline_v0.1_260403.md)。
+
+#### 5.5.1 生成题目
+
+`POST /api/v1/student/essay-outline/generate-topic`
+
+```json
+{ "genre": "议论文", "task_type": "材料作文" }
+```
+
+文体枚举：`记叙文` `议论文` `散文` `应用文` `说明文`。命题枚举：`命题作文` `材料作文` `话题作文` `任务驱动型作文`。
+
+成功：
+
+```json
+{ "topic_text": "……", "label": "议论文 · 材料作文", "raw": "……" }
+```
+
+#### 5.5.2 图片 OCR 题目
+
+`POST /api/v1/student/essay-outline/ocr-topic`，`multipart/form-data` 字段 **`file`**（JPG/PNG，建议 ≤12MB）。
+
+成功：`topic_text`、`label`（默认可为 `自定义`）。
+
+#### 5.5.3 提交提纲点评
+
+`POST /api/v1/student/essay-outline/review`
+
+```json
+{
+  "topic_text": "题目全文",
+  "topic_label": "议论文 · 材料作文",
+  "topic_source": "ai_category",
+  "genre": "议论文",
+  "task_type": "材料作文",
+  "outline_text": "提纲全文"
+}
+```
+
+`topic_source`：`ai_category`（需与合法 genre/task 一致）| `custom_text` | `ocr_image`。
+
+成功：
+
+```json
+{
+  "id": 1,
+  "review": {
+    "summary": "……",
+    "stars": { "match": 4, "structure": 3, "material": 4 },
+    "suggestions": ["……"],
+    "highlights": ["……"]
+  },
+  "raw_review": "……"
+}
+```
+
+`ai_call_log.action`：`essay_outline_generate_topic` / `essay_outline_ocr_topic` / `essay_outline_review`。
+
 ---
 
 ## 6) 错误码（当前）
@@ -475,7 +535,9 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 - `INVALID_MULTIPART`
 - `NOT_FOUND`
 - `CONFLICT`
-- `DATABASE_REQUIRED`（管理端依赖 MySQL 的接口在未配置数据库时）
+- `DATABASE_REQUIRED`（管理端依赖 MySQL 的接口在未配置数据库时；`essay-outline/review` 亦同）
+- `GENERATE_FAILED` / `OCR_FAILED` / `REVIEW_FAILED`（作文提纲 AI 或落库异常）
+- `INVALID_IMAGE`（OCR 接口非图片或非法输入）
 - `DATABASE_UNAVAILABLE` / `DATABASE_UNREACHABLE`（`/readyz` 在配置 `DB_DSN` 时）
 - `NOT_IMPLEMENTED`（尚未完成的接口）
 
