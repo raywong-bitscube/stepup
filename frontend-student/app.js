@@ -558,6 +558,90 @@
     return fs;
   }
 
+  function setFileInputFiles(input, files) {
+    const dt = new DataTransfer();
+    files.forEach((f) => {
+      if (f) dt.items.add(f);
+    });
+    input.files = dt.files;
+  }
+
+  /** 剪贴板中的图片或 PDF；无合法文件名时用 paste-时间戳 命名。 */
+  function normalizePastedFile(file) {
+    if (!file || file.size == null) return null;
+    const type = String(file.type || '').toLowerCase();
+    const nameLow = String(file.name || '').toLowerCase();
+    const isPdf = type === 'application/pdf' || nameLow.endsWith('.pdf');
+    const isImage = type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(nameLow);
+    if (!isPdf && !isImage) return null;
+    const generic = !file.name || /^image\.(png|jpeg|jpg|gif|webp)$/i.test(file.name);
+    if (generic) {
+      const ext = isPdf
+        ? 'pdf'
+        : type.includes('png')
+          ? 'png'
+          : type.includes('jpeg') || type.includes('jpg')
+            ? 'jpg'
+            : type.includes('webp')
+              ? 'webp'
+              : type.includes('gif')
+                ? 'gif'
+                : 'png';
+      const mime = file.type || (isPdf ? 'application/pdf' : 'image/png');
+      return new File([file], 'paste-' + Date.now() + '.' + ext, { type: mime });
+    }
+    return file;
+  }
+
+  function clipboardFilesFromDataTransfer(dt) {
+    if (!dt) return [];
+    const out = [];
+    const seen = new Set();
+    const push = (f) => {
+      const n = normalizePastedFile(f);
+      if (!n) return;
+      const k = n.name + ':' + n.size + ':' + n.lastModified;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(n);
+    };
+    if (dt.files && dt.files.length) {
+      for (let i = 0; i < dt.files.length; i++) push(dt.files[i]);
+    }
+    if (dt.items && dt.items.length) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file') push(it.getAsFile());
+      }
+    }
+    return out;
+  }
+
+  function mergeFilesIntoInput(input, incoming) {
+    const cur = Array.from(input.files || []);
+    const combined = cur.concat(incoming);
+    const ok = collectUploadFiles(combined);
+    if (!ok) return false;
+    setFileInputFiles(input, ok);
+    return true;
+  }
+
+  function updateFileMetaLine(fileInput, metaEl) {
+    const fs = fileInput.files;
+    if (!fs || !fs.length) {
+      metaEl.textContent = '未选择文件（可点击此区域后 Ctrl+V / ⌘V 粘贴）';
+      return;
+    }
+    const names = Array.from(fs)
+      .map((f) => f.name)
+      .join('、');
+    let total = 0;
+    Array.from(fs).forEach((f) => {
+      total += f.size;
+    });
+    metaEl.textContent = `已选 ${fs.length} 个文件 · 合计 ${formatBytes(total)} · ${names.length > 120 ? names.slice(0, 120) + '…' : names}`;
+  }
+
   function optStages() {
     const xs = state.catalog.stages || [];
     if (!xs.length) return '<option value="高中">高中</option>';
@@ -568,13 +652,13 @@
     const sub = state.hubSubject ? escapeHtml(state.hubSubject) : '—';
     return `
       <h3 style="margin:0 0 8px">试卷 AI 分析</h3>
-      <p class="muted" style="margin:0 0 12px">当前科目：<strong>${sub}</strong>。可选 <strong>1 个 PDF</strong>，或 <strong>最多 10 张图片</strong>（多图将一并送给模型识图分析）。单张图不超过 25MB。</p>
+      <p class="muted" style="margin:0 0 12px">当前科目：<strong>${sub}</strong>。可选 <strong>1 个 PDF</strong>，或 <strong>最多 10 张图片</strong>（多图将一并送给模型识图分析）。单张图不超过 25MB。点击下面虚线框聚焦后，可用 <strong>Ctrl+V / ⌘V</strong> 粘贴截图、图片或 PDF。</p>
       <div class="row" style="grid-template-columns:1fr">
         <div><label>阶段</label><select id="stg">${optStages()}</select></div>
       </div>
-      <div class="drop">
+      <div class="drop" id="pasteDrop" tabindex="0" title="点击后 Ctrl+V / ⌘V 粘贴文件">
         <input type="file" id="file" multiple accept=".pdf,application/pdf,image/*" />
-        <p class="muted" id="fileMeta" style="margin:8px 0 0">未选择文件</p>
+        <p class="muted" id="fileMeta" style="margin:8px 0 0">未选择文件（可点击此区域后 Ctrl+V / ⌘V 粘贴）</p>
       </div>
       <button type="button" class="btn" id="bUp">提交并开始分析</button>`;
   }
@@ -584,20 +668,14 @@
     const meta = container.querySelector('#fileMeta');
     const btn = container.querySelector('#bUp');
     if (!fileInput || !btn) return;
-    fileInput.addEventListener('change', () => {
-      const fs = fileInput.files;
-      if (!fs || !fs.length) {
-        meta.textContent = '未选择文件';
-        return;
-      }
-      const names = Array.from(fs)
-        .map((f) => f.name)
-        .join('、');
-      let total = 0;
-      Array.from(fs).forEach((f) => {
-        total += f.size;
-      });
-      meta.textContent = `已选 ${fs.length} 个文件 · 合计 ${formatBytes(total)} · ${names.length > 120 ? names.slice(0, 120) + '…' : names}`;
+    const refreshMeta = () => updateFileMetaLine(fileInput, meta);
+    fileInput.addEventListener('change', refreshMeta);
+    container.addEventListener('paste', (e) => {
+      const incoming = clipboardFilesFromDataTransfer(e.clipboardData);
+      if (!incoming.length) return;
+      e.preventDefault();
+      if (!mergeFilesIntoInput(fileInput, incoming)) return;
+      refreshMeta();
     });
     btn.addEventListener('click', async () => {
       if (!state.hubSubject) {

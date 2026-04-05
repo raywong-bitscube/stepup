@@ -98,6 +98,13 @@ pre.block {
   color: var(--muted);
   margin-top: 10px;
 }
+.drop:focus {
+  outline: none;
+}
+.drop:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(54, 98, 255, 0.25);
+}
 .form-grid { display: grid; gap: 12px; }
 .btn:disabled { opacity: 0.65; cursor: not-allowed; }
 .detail h4 {
