@@ -140,7 +140,7 @@ server {
    `export DB_DSN='...'` 等，然后 `go run ./backend/cmd/server`（默认监听 `0.0.0.0:8080`）。  
    - **`CORS_ALLOWED_ORIGINS`**：不设时代码默认已含 **`*`**，会对 `http://`/`https://` Origin 回显允许，**一般无需为每个 IP 写白名单**。若你曾导出过**不含 `*`** 的旧值，清空或改为含 `*` / 显式列出 `http://<IP>:7010,http://<IP>:7011` 后重启进程。
 2. **Nginx**：静态 `root` 指到 `frontend-student`、`frontend-admin` 部署目录；**API 的 `location` 必须对 GET/POST/OPTIONS 等统一 `proxy_pass` 到 Go**，不要在 API server 里对 `OPTIONS` 单独 `return 204` 却又**不写** `Access-Control-Allow-*`，否则浏览器预检失败（表现与 CORS 全关一样）。
-3. **可直接复制的示例**：仓库 **[`deploy/nginx_go_static_split_ports.conf.example`](../../deploy/nginx_go_static_split_ports.conf.example)**（改 `root` 路径、`upstream` 端口若 Go 非 8080）。
+3. **可直接复制的示例**：仓库 **[`docs/deploy/nginx_go_static_split_ports.conf.example`](../deploy/nginx_go_static_split_ports.conf.example)**（改 `root` 路径、`upstream` 端口若 Go 非 8080）。
 4. **大文件上传**：API `server` 里已设 `client_max_body_size` 与超时，若仍 413/超时，检查**外层**是否还有其它 Nginx/`limit_request_body`。
 
 ---
