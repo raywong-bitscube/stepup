@@ -170,7 +170,7 @@ export CORS_ALLOWED_ORIGINS='https://app.example.com,https://admin.example.com'
 | `AI_REQUEST_TIMEOUT_SECONDS` | 分析 HTTP 超时（默认 **180** 秒，识图建议 ≥120） |
 | `ADMIN_BOOTSTRAP_USERNAME` / `ADMIN_BOOTSTRAP_PASSWORD` | 首次 bootstrap 管理员；**测试环境务必改为强密码** |
 | `SESSION_TTL_MINUTES` | **管理端 + 学生端** 登录会话时长（分钟），默认 **30**；未设置时仍可读 legacy `ADMIN_SESSION_TTL_HOURS`（小时） |
-| `CORS_ALLOWED_ORIGINS` | **逗号分隔**的前端 Origin 白名单；缺省常为 localhost，上线 **必须** 改为真实域名 |
+| `CORS_ALLOWED_ORIGINS` | **逗号分隔**的前端 Origin 白名单；缺省常为 localhost；可含 **`*`**（回显 Origin，见 §8 FAQ）。上线 **必须** 改为真实域名或严格列表 |
 
 **分析行为**（`ANALYSIS_ADAPTER=http`）：优先使用 **`ai_model` 中 `status=1` 且未删除** 的最新一条的 **`url`**；若该行 **`app_secret` 非空**，则按 **OpenAI 兼容 `chat/completions`** 调用；`app_secret` 为空则按项目 **mock-ai** JSON 协议请求（适合 `AI_ENDPOINT` 指向 `mock-ai`）。详见 [`backend/README.md`](../../backend/README.md)。
 
@@ -208,7 +208,7 @@ Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默
 A：后端未连上 MySQL，检查 `DB_DSN`、网络、账号权限与防火墙。
 
 **Q：前端报 CORS 错误（`No 'Access-Control-Allow-Origin' header`）？**  
-A：将 **页面** 的 Origin（地址栏「协议 + 主机 + 端口」，无路径、无末尾 `/`）逐字加入 **`CORS_ALLOWED_ORIGINS`**（逗号分隔），**重启 backend** 使环境变量生效。学生静态 `:7010`、管理 `:7011`、API 经 Nginx `:7012` 时，白名单要写 **`http://…:7010` 与 `http://…:7011`**，一般不必写 `:7012`。若仍失败，用浏览器开发工具看请求是否到达 Go（Nginx 对 4xx/5xx 的响应有时不带 CORS 头，需先排除上游错误或 OPTIONS 未转发）。
+A：将 **页面** 的 Origin（地址栏「协议 + 主机 + 端口」，无路径、无末尾 `/`）逐字加入 **`CORS_ALLOWED_ORIGINS`**（逗号分隔），**重启 backend** 使环境变量生效。学生静态 `:7010`、管理 `:7011`、API 经 Nginx `:7012` 时，白名单要写 **`http://…:7010` 与 `http://…:7011`**（若用公网/LAN IP 打开页面，主机部分须与地址栏一致，例如 `http://36.x.x.x:7011`），一般不必写 `:7012`。**仅限内网/测试** 时，可在白名单中加一项 **`*`**，后端会对 `http://` / `https://` Origin 回显允许（实现见 `middleware/cors.go`）；**公网生产**仍建议逐条列真实 Origin。若仍失败，用浏览器开发工具看请求是否到达 Go（Nginx 对 4xx/5xx 的响应有时不带 CORS 头，需先排除上游错误或 OPTIONS 未转发）。
 
 **Q：试卷分析总是 mock 结果？**  
 A：确认 **`ANALYSIS_ADAPTER=http`**、库内有 **激活** `ai_model` 且 **URL 可解析**；若用真实 LLM，确认 **`app_secret` 已配置** 且能访问公网 API；失败时实现会回退 mock，可查后端日志与网络。

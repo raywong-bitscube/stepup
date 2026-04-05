@@ -12,7 +12,7 @@ go run ./backend/cmd/server
 
 Server default address: `0.0.0.0:8080`
 
-仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS）。**Docker 构建的后端镜像**会将两套页面装入容器 **`STATIC_DIR`（默认 `/srv/static`）**，并由 Go 进程挂载到 **`/admin/`**、**`/student/`**（与 API 同端口，免跨域）。Compose 仍可选启动独立 Nginx 容器映射 `:3001` / `:3000`。环境变量 **`CORS_ALLOWED_ORIGINS`** 在分端口访问时需包含前端 Origin；默认已含 `localhost:3000`/`3001`/`8080` 及文档常用 **`7010`/`7011`/`7012`**（含 `127.0.0.1`）。页面支持 **`?api=`** 与 `localStorage` 覆盖 API 根地址。
+仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS）。**Docker 构建的后端镜像**会将两套页面装入容器 **`STATIC_DIR`（默认 `/srv/static`）**，并由 Go 进程挂载到 **`/admin/`**、**`/student/`**（与 API 同端口，免跨域）。Compose 仍可选启动独立 Nginx 容器映射 `:3001` / `:3000`。环境变量 **`CORS_ALLOWED_ORIGINS`** 在分端口访问时需包含前端 **Origin**（与地址栏一致，含端口）；默认已含 `localhost` / `127.0.0.1` 的 **`3000`/`3001`/`8080`/`7010`/`7011`/`7012`**。**用公网或局域网 IP 打开页面时**须追加 `http://<IP>:7010`、`http://<IP>:7011` 等，或（仅内网/测试）在列表中加一项 **`*`** 表示对任意 `http(s)` Origin 回显允许（实现见 `middleware/cors.go`）。页面支持 **`?api=`** 与 `localStorage` 覆盖 API 根地址。
 
 ## Quick Start (with Docker Compose)
 
@@ -44,7 +44,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `HTTP_HOST` - `0.0.0.0` by default
 - `HTTP_PORT` - `8080` by default
 - `DB_DSN` - MySQL DSN (e.g. `user:pass@tcp(127.0.0.1:3306)/stepup?parseTime=true&loc=Local`); when unset, auth and papers stay in-memory
-- `CORS_ALLOWED_ORIGINS` - `http://localhost:3000,http://localhost:3001`
+- `CORS_ALLOWED_ORIGINS` - 逗号分隔 Origin；可含 `*`（回显 Origin，见上文，勿滥用）
 - `ANALYSIS_ADAPTER` - `mock` (default) or `http`
 - `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
 - `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls (default **180**; vision / slow networks may need more)
