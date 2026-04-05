@@ -132,6 +132,17 @@ server {
 }
 ```
 
+### 3.7 Go 本机进程 + Nginx 静态 / 反代（不用 Docker）
+
+典型与本仓库前端约定一致：**学生静态 `7010`、管理静态 `7011`、API `7012` 反代到本机 Go `8080`**。
+
+1. **启动 Go**（仓库根目录）：  
+   `export DB_DSN='...'` 等，然后 `go run ./backend/cmd/server`（默认监听 `0.0.0.0:8080`）。  
+   - **`CORS_ALLOWED_ORIGINS`**：不设时代码默认已含 **`*`**，会对 `http://`/`https://` Origin 回显允许，**一般无需为每个 IP 写白名单**。若你曾导出过**不含 `*`** 的旧值，清空或改为含 `*` / 显式列出 `http://<IP>:7010,http://<IP>:7011` 后重启进程。
+2. **Nginx**：静态 `root` 指到 `frontend-student`、`frontend-admin` 部署目录；**API 的 `location` 必须对 GET/POST/OPTIONS 等统一 `proxy_pass` 到 Go**，不要在 API server 里对 `OPTIONS` 单独 `return 204` 却又**不写** `Access-Control-Allow-*`，否则浏览器预检失败（表现与 CORS 全关一样）。
+3. **可直接复制的示例**：仓库 **[`deploy/nginx_go_static_split_ports.conf.example`](../../deploy/nginx_go_static_split_ports.conf.example)**（改 `root` 路径、`upstream` 端口若 Go 非 8080）。
+4. **大文件上传**：API `server` 里已设 `client_max_body_size` 与超时，若仍 413/超时，检查**外层**是否还有其它 Nginx/`limit_request_body`。
+
 ---
 
 ## 4. 方式 B：仅后端 + 自建 MySQL（无 Compose）
@@ -151,6 +162,8 @@ export ANALYSIS_ADAPTER=http   # 若需走 HTTP / 库内模型
 export CORS_ALLOWED_ORIGINS='https://app.example.com,https://admin.example.com'
 ./stepup-server
 ```
+
+（内网预览可不设 `CORS_ALLOWED_ORIGINS`，使用代码默认——首项 **`*`**；**公网生产**务必改成**不含 `*`** 的严格列表。）
 
 或使用根目录 / `backend/Dockerfile` 构建镜像，在编排中注入相同环境变量。
 

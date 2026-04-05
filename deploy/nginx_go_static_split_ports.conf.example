@@ -1,0 +1,65 @@
+# StepUp：Go 直接监听本机 8080，Nginx 只管静态页 + 反代 API（7010 / 7011 / 7012）。
+# 用法：把下面 root 改成你机器上 frontend-student / frontend-admin 目录的绝对路径，
+#      含 `include` 到 nginx 或复制到 sites-available 后 `nginx -t && reload`。
+#
+# CORS：由 Go（CORS 中间件）在响应里加 Access-Control-Allow-*。须让浏览器的 OPTIONS 预检
+# 到达 Go——本配置对 / 使用统一 proxy_pass，不会拦截 OPTIONS。
+# 请勿在 API server 上对 OPTIONS 写 `return 204` 却不带 CORS 头。
+#
+# 启动后端示例：
+#   export DB_DSN='...'
+#   # 可不设：代码默认 CORS 首项为 *，会回显 Origin（内网/预览）；生产请改为严格白名单
+#   go run ./backend/cmd/server
+#
+# 上传试卷较大时 client_max_body_size 与 proxy_*_timeout 已放宽，可按需再调。
+
+upstream stepup_backend {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
+# 学生静态 —— 浏览器 Origin 形如 http://HOST:7010
+server {
+    listen 7010;
+    server_name _;
+    root /ABS/PATH/TO/stepup/frontend-student;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# 管理静态 —— 浏览器 Origin 形如 http://HOST:7011
+server {
+    listen 7011;
+    server_name _;
+    root /ABS/PATH/TO/stepup/frontend-admin;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# API —— 前端 app.js 将 7010/7011 指向本端口 7012
+server {
+    listen 7012;
+    server_name _;
+    client_max_body_size 128m;
+
+    location / {
+        proxy_pass http://stepup_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        # 保证预检带上的 Origin 等头到达 Go（缺省多数也会转发，写明更直观）
+        proxy_pass_request_headers on;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+    }
+}

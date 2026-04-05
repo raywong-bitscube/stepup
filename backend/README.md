@@ -12,6 +12,8 @@ go run ./backend/cmd/server
 
 Server default address: `0.0.0.0:8080`
 
+**不用 Docker、前端由本机 Nginx 提供时**：Go 只负责 API（例如本机 `8080`），Nginx 开 `7010`/`7011` 静态 + `7012` 反代到 `127.0.0.1:8080`，须让 **OPTIONS 预检** 进到 Go（或由 Nginx 完整返回 CORS 头）。示例配置见 **[`deploy/nginx_go_static_split_ports.conf.example`](../deploy/nginx_go_static_split_ports.conf.example)**，说明见 [**部署指南** §3.7](../docs/core/deployment_guide_v0.1_260403.md)。
+
 仓库内 **`frontend-admin`**、**`frontend-student`** 为静态站点（HTML/CSS/JS）。**Docker 构建的后端镜像**会将两套页面装入容器 **`STATIC_DIR`（默认 `/srv/static`）**，并由 Go 进程挂载到 **`/admin/`**、**`/student/`**（与 API 同端口，免跨域）。Compose 仍可选启动独立 Nginx 容器映射 `:3001` / `:3000`。环境变量 **`CORS_ALLOWED_ORIGINS`**：默认（**未设置**时）在代码与 Compose 中均以 **`*`** 开头，对浏览器 **`http://`/`https://` Origin 回显允许**，用 **局域网/公网 IP + 分端口** 时可不显式写每个 IP。**公网生产**请覆盖该变量并**去掉 `*`**，只保留可信 Origin（实现见 `middleware/cors.go`）。页面支持 **`?api=`** 与 `localStorage` 覆盖 API 根地址。
 
 ## Quick Start (with Docker Compose)
