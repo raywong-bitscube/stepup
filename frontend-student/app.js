@@ -66,6 +66,11 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** 已在 api() 内清除会话并切换登录页时，后续 catch 勿再写工作台错误 UI 或 alert。 */
+  function authRedirectHandled(e) {
+    return !!(e && e.authRedirectDone);
+  }
+
   function formatBytes(n) {
     if (n == null || n === '' || Number(n) <= 0) return '—';
     const x = Number(n);
@@ -168,6 +173,27 @@
       data = { raw: text };
     }
     if (!res.ok) {
+      if (
+        res.status === 401 &&
+        state.token &&
+        !opts.skipAuth &&
+        !opts.skipAuthRedirect
+      ) {
+        state.token = null;
+        localStorage.removeItem(LS_TOKEN);
+        state.selectedPaperId = null;
+        state.session = null;
+        state.hubSubject = null;
+        state.hubFeature = null;
+        state.flash = { kind: 'info', msg: '登录已失效或无权访问，请重新登录' };
+        const appRoot = document.getElementById('app');
+        if (appRoot) mount(appRoot);
+        const err = new Error(data && data.code ? data.code : 'UNAUTHORIZED');
+        err.status = 401;
+        err.data = data;
+        err.authRedirectDone = true;
+        throw err;
+      }
       const err = new Error(data && data.code ? data.code : 'HTTP_' + res.status);
       err.status = res.status;
       err.data = data;
@@ -183,6 +209,7 @@
   }
 
   function showPapersLoadError(root, e, gen) {
+    if (authRedirectHandled(e)) return;
     const msg = (e.data && e.data.code) || e.message || String(e);
     const hint = failedFetchHint(msg);
     const pane = root.querySelector('#paperPane');
@@ -201,6 +228,7 @@
   }
 
   function showShellLoadError(root, e) {
+    if (authRedirectHandled(e)) return;
     const msg = (e.data && e.data.code) || e.message || String(e);
     const hint = failedFetchHint(msg);
     const line = root.querySelector('#sessionLine');
@@ -241,15 +269,18 @@
             await refreshPapers(root);
           } catch (e) {
             if (gen !== mainLoadGen) return;
+            if (authRedirectHandled(e)) return;
             showPapersLoadError(root, e, gen);
           }
         } catch (e) {
           if (gen !== mainLoadGen) return;
+          if (authRedirectHandled(e)) return;
           showShellLoadError(root, e);
         }
       })
       .catch((e) => {
         if (gen !== mainLoadGen) return;
+        if (authRedirectHandled(e)) return;
         showShellLoadError(root, e);
       });
   }
@@ -311,7 +342,8 @@
         const ex = d.expires_at ? formatWhen(d.expires_at) : '—';
         line.textContent = '当前账号：' + (d.user.identifier || '') + ' · 会话至 ' + ex;
       }
-    } catch {
+    } catch (e) {
+      if (authRedirectHandled(e)) throw e;
       const line = root.querySelector('#sessionLine');
       if (line) line.textContent = '无法获取会话信息';
     }
@@ -433,7 +465,8 @@
       const d = await api('/api/v1/catalog', { skipAuth: true });
       state.catalog.subjects = d.subjects || [];
       state.catalog.stages = d.stages || [];
-    } catch {
+    } catch (e) {
+      if (authRedirectHandled(e)) throw e;
       state.catalog.subjects = [];
       state.catalog.stages = [];
     }
@@ -590,6 +623,7 @@
         state.uploading = false;
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         state.uploading = false;
         btn.disabled = false;
         btn.textContent = '提交并开始分析';
@@ -667,6 +701,7 @@
           <ol class="steps">${plan.map((x) => '<li>' + escapeHtml(x) + '</li>').join('') || '<li class="muted">—</li>'}</ol>
         </div>`;
     } catch (e) {
+      if (authRedirectHandled(e)) return;
       pane.innerHTML =
         '<p class="muted">无法加载详情：' + escapeHtml(e.data && e.data.code ? e.data.code : e.message) + '</p>';
     }

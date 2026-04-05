@@ -66,6 +66,17 @@
       .replace(/"/g, '&quot;');
   }
 
+  function isAdminLoginPOST(path, opts) {
+    const p = String(path || '').split('?')[0];
+    const m = (opts.method || 'GET').toUpperCase();
+    return p === '/api/v1/admin/auth/login' && m === 'POST';
+  }
+
+  /** 已在 api() 内清除会话并切换登录页时，后续 catch 勿再报错或写 pane。 */
+  function authRedirectHandled(e) {
+    return !!(e && e.authRedirectDone);
+  }
+
   function aiLogErrLine(e) {
     const p = String(e.error_phase || '').trim();
     const m = String(e.error_message || '').trim();
@@ -184,6 +195,23 @@
       data = { raw: text };
     }
     if (!res.ok) {
+      if (
+        res.status === 401 &&
+        state.token &&
+        !opts.skipAuthRedirect &&
+        !isAdminLoginPOST(path, opts)
+      ) {
+        state.token = null;
+        localStorage.removeItem(LS_TOKEN);
+        state.flash = { kind: 'info', msg: '登录已失效或无权访问，请重新登录' };
+        const appRoot = document.getElementById('app');
+        if (appRoot) mount(appRoot);
+        const err = new Error(data && data.code ? data.code : 'UNAUTHORIZED');
+        err.status = 401;
+        err.data = data;
+        err.authRedirectDone = true;
+        throw err;
+      }
       const err = new Error(data && data.code ? data.code : 'HTTP_' + res.status);
       err.status = res.status;
       err.data = data;
@@ -201,7 +229,8 @@
       const d = await api('/api/v1/catalog');
       state.catalog.subjects = d.subjects || [];
       state.catalog.stages = d.stages || [];
-    } catch {
+    } catch (e) {
+      if (authRedirectHandled(e)) throw e;
       state.catalog.subjects = [];
       state.catalog.stages = [];
     }
@@ -215,7 +244,10 @@
     }
     root.innerHTML = renderAppShell();
     bindApp(root);
-    refreshView(root).catch((e) => setFlash('err', e.message || String(e)));
+    refreshView(root).catch((e) => {
+      if (authRedirectHandled(e)) return;
+      setFlash('err', e.message || String(e));
+    });
   }
 
   function renderLogin() {
@@ -414,6 +446,7 @@
         bindAICallLogs(pane);
       }
     } catch (e) {
+      if (authRedirectHandled(e)) return;
       const msg = e.data && e.data.code ? e.data.code : e.message || String(e);
       const hint =
         msg === 'Failed to fetch'
@@ -543,6 +576,7 @@
         close();
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
@@ -588,11 +622,13 @@
                 (a.weak_points || []).join(', ')
             );
           } catch (e) {
+            if (authRedirectHandled(e)) return;
             alert('加载分析失败: ' + (e.data && e.data.code ? e.data.code : e.message));
           }
         });
       });
     } catch (e) {
+      if (authRedirectHandled(e)) return;
       root.querySelector('#pload').textContent = '加载失败';
     }
   }
@@ -665,6 +701,7 @@
         close();
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
@@ -738,6 +775,7 @@
         close();
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
@@ -780,6 +818,7 @@
             await api('/api/v1/admin/ai-models/' + id, { method: 'PATCH', jsonBody: { status: 1 } });
             mount(document.getElementById('app'));
           } catch (e) {
+            if (authRedirectHandled(e)) return;
             alert(e.data && e.data.code ? e.data.code : e.message);
           }
         });
@@ -828,6 +867,7 @@
         close();
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
@@ -893,6 +933,7 @@
         close();
         mount(document.getElementById('app'));
       } catch (e) {
+        if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
