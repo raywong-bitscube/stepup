@@ -6,6 +6,8 @@
 
   /** 与部署约定一致时可不配置 meta：`?api=` / localStorage / meta 仍可覆盖。 */
   const PAGE_PORT_TO_API_PORT = { '7010': '7012', '7011': '7012' };
+  /** 与根目录 `.env.example` 中 `BACKEND_PORT` 默认一致；非常规映射请用 `?api=` 或 meta。 */
+  const DEFAULT_HOST_BACKEND_PORT = '8080';
 
   function apiBaseSameHostPort(portRaw) {
     const pr = String(portRaw || '')
@@ -49,6 +51,9 @@
     const isLocal = host === 'localhost' || host === '127.0.0.1';
     if (isLocal && port === '3000') return 'http://localhost:8080';
     if (isLocal && port === '8080') return location.origin;
+    if (!isLocal && (port === '3000' || port === '3001')) {
+      return (location.protocol + '//' + host + ':' + DEFAULT_HOST_BACKEND_PORT).replace(/\/$/, '');
+    }
     if (!isLocal) return location.origin;
     return 'http://localhost:8080';
   }
@@ -223,7 +228,12 @@
         return refreshPapers(root);
       })
       .catch((e) => {
-        state.flash = { kind: 'err', msg: (e.data && e.data.code) || e.message || String(e) };
+        const msg = (e.data && e.data.code) || e.message || String(e);
+        const hint =
+          msg === 'Failed to fetch'
+            ? '（请确认 API 已启动；若学生页与 API 不同源，后端 `CORS_ALLOWED_ORIGINS` 须包含本页 Origin，如 `http://<IP>:7010` 或 `:3000`，工具栏见登录页「API」地址。）'
+            : '';
+        state.flash = { kind: 'err', msg: msg + hint };
         mount(root);
       });
   }

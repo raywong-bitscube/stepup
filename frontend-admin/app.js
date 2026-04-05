@@ -6,6 +6,8 @@
 
   /** 与部署约定一致时可不配置 meta：`?api=` / localStorage / meta / 登录框端口 仍可覆盖。 */
   const PAGE_PORT_TO_API_PORT = { '7010': '7012', '7011': '7012' };
+  /** 与根目录 `.env.example` 中 `BACKEND_PORT` 默认一致。 */
+  const DEFAULT_HOST_BACKEND_PORT = '8080';
 
   function apiBaseSameHostPort(portRaw) {
     const pr = String(portRaw || '')
@@ -49,6 +51,9 @@
     const isLocal = host === 'localhost' || host === '127.0.0.1';
     if (isLocal && port === '3001') return 'http://localhost:8080';
     if (isLocal && port === '8080') return location.origin;
+    if (!isLocal && (port === '3000' || port === '3001')) {
+      return (location.protocol + '//' + host + ':' + DEFAULT_HOST_BACKEND_PORT).replace(/\/$/, '');
+    }
     if (!isLocal) return location.origin;
     return 'http://localhost:8080';
   }
