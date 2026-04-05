@@ -29,6 +29,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 
 	mux.HandleFunc("GET /healthz", health.Get)
 	mux.HandleFunc("GET /readyz", health.ReadyHandler(cfg.DBDSN != "", db))
+	// Go 1.22+ ServeMux: pattern "GET /" (no trailing slash) matches only path "/" exactly, not /admin/ or /student/.
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"service":"stepup","env":"` + cfg.AppEnv + `","ui":{"admin":"/admin/","student":"/student/"}}`))
