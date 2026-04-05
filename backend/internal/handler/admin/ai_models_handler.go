@@ -21,6 +21,21 @@ func NewAIModelsHandler(service *adminaimodels.Service, audit *auditlog.Writer) 
 	return &AIModelsHandler{service: service, audit: audit}
 }
 
+// pickChatModel returns JSON "model" if set, otherwise legacy "app_key".
+func pickChatModel(model, appKey string) string {
+	if s := strings.TrimSpace(model); s != "" {
+		return s
+	}
+	return strings.TrimSpace(appKey)
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 func (h *AIModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.List(r.Context())
 	if errors.Is(err, adminaimodels.ErrNoDatabase) {
@@ -35,7 +50,7 @@ func (h *AIModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 		ID        uint64      `json:"id"`
 		Name      string      `json:"name"`
 		URL       string      `json:"url"`
-		AppKey    string      `json:"app_key"`
+		Model     string      `json:"model"`
 		Status    int         `json:"status"`
 		CreatedAt RFC3339Time `json:"created_at"`
 	}
@@ -45,7 +60,7 @@ func (h *AIModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 			ID:        m.ID,
 			Name:      m.Name,
 			URL:       m.URL,
-			AppKey:    m.AppKey,
+			Model:     m.Model,
 			Status:    m.Status,
 			CreatedAt: RFC3339Time(m.CreatedAt),
 		})
@@ -58,7 +73,8 @@ func (h *AIModelsHandler) List(w http.ResponseWriter, r *http.Request) {
 type createAIModelRequest struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
-	AppKey    string `json:"app_key"`
+	Model     string `json:"model"`
+	AppKey    string `json:"app_key"` // legacy alias for model
 	AppSecret string `json:"app_secret"`
 	Status    *int   `json:"status"`
 }
@@ -72,7 +88,7 @@ func (h *AIModelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	nid, err := h.service.Create(r.Context(), adminaimodels.CreateInput{
 		Name:      req.Name,
 		URL:       req.URL,
-		AppKey:    req.AppKey,
+		Model:     pickChatModel(req.Model, req.AppKey),
 		AppSecret: req.AppSecret,
 		Status:    req.Status,
 	})
@@ -108,7 +124,8 @@ func (h *AIModelsHandler) Create(w http.ResponseWriter, r *http.Request) {
 type patchAIModelRequest struct {
 	Name      *string `json:"name"`
 	URL       *string `json:"url"`
-	AppKey    *string `json:"app_key"`
+	Model     *string `json:"model"`
+	AppKey    *string `json:"app_key"` // legacy alias for model
 	AppSecret *string `json:"app_secret"`
 	Status    *int    `json:"status"`
 }
@@ -125,10 +142,20 @@ func (h *AIModelsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_JSON"})
 		return
 	}
+	var modelPtr *string
+	if req.Model != nil || req.AppKey != nil {
+		v := pickChatModel(derefStr(req.Model), derefStr(req.AppKey))
+		if v != "" {
+			modelPtr = &v
+		} else if req.Model != nil || req.AppKey != nil {
+			empty := ""
+			modelPtr = &empty
+		}
+	}
 	err = h.service.Patch(r.Context(), id, adminaimodels.UpdateInput{
 		Name:      req.Name,
 		URL:       req.URL,
-		AppKey:    req.AppKey,
+		Model:     modelPtr,
 		AppSecret: req.AppSecret,
 		Status:    req.Status,
 	})
@@ -150,7 +177,8 @@ func (h *AIModelsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 					act = "credential_change"
 				}
 				snap, _ := json.Marshal(map[string]any{
-					"has_name": req.Name != nil, "has_url": req.URL != nil, "has_app_key": req.AppKey != nil,
+					"has_name": req.Name != nil, "has_url": req.URL != nil,
+					"has_model": (req.Model != nil || req.AppKey != nil),
 					"has_app_secret": req.AppSecret != nil, "has_status": req.Status != nil,
 				})
 				sid := id

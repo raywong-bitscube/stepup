@@ -280,7 +280,7 @@ Header: `Authorization: Bearer <admin_token>`
 列表、创建、更新均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`。
 
 - `GET /api/v1/admin/ai-models`：返回 `items`（**不含** `app_secret`）。
-- `POST /api/v1/admin/ai-models`：请求体 `name`、`url`、`app_key`、`app_secret` 必填；`status` 可选 `0|1`。将某一模型设为 `status=1` 时，会先将其余模型置为 `0`（同一时间仅一个激活模型）。
+- `POST /api/v1/admin/ai-models`：请求体 `name`、`url`、**`model`**、`app_secret` 必填；`status` 可选 `0|1`。为兼容旧客户端，仍可传 **`app_key`**（与 `model` 同源，优先 `model`）。将某一模型设为 `status=1` 时，会先将其余模型置为 `0`（同一时间仅一个激活模型）。
 - `PATCH /api/v1/admin/ai-models/{modelId}`：可选更新上述字段（至少一项）。将 `status` 设为 `1` 时同样会 deactivate 其他模型。
 
 ### 3.10 Prompt 模板（管理端）
@@ -299,7 +299,7 @@ Header: `Authorization: Bearer <admin_token>`
 
 ### 3.12 AI 调用日志（管理端）
 
-需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节；历史环境另执行 `db/migrations/20260408_ai_call_log_request_response_body.sql` 等增量脚本）。
+需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节；历史环境另执行 `db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql` 等增量脚本）。
 
 `GET /api/v1/admin/ai-call-logs`
 

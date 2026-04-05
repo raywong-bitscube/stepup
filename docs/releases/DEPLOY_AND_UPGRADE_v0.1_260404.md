@@ -32,14 +32,14 @@
 
 - **新库**：`db/schema/mysql_schema_v0.1_260403.sql`（含 **`ai_call_log`**，§13）。  
 - **旧库**：若此前已按旧版 schema 建库且 **没有** `ai_call_log`，执行  
-  `db/migrations/20260404_ai_call_log.sql`  
-  （仅 `CREATE TABLE IF NOT EXISTS`，**不**含 `USE`；适合与 Compose 中 **`MYSQL_DATABASE`** 任意库名对齐。）
+  `db/migrations/2026-04-04#01_ai_call_log.sql`  
+  （仅 `CREATE TABLE IF NOT EXISTS`，**不**含 `USE`；适合与 Compose 中 **`MYSQL_DATABASE`** 任意库名对齐。文件名含 `#`，shell 中请加引号。）
 
 ### 2.3 基线 schema 与库名
 
 - `db/schema/mysql_schema_v0.1_260403.sql` 含 **`CREATE DATABASE`** / **`USE stepup`**。  
 - 若测试库名 **不是** `stepup`（例如 `stepup_qa`）：用 CLI 指定库执行时，**仍会被脚本 `USE stepup` 切走**。建议二选一：  
-  - **优先**：老库用 **`db/migrations/20260404_ai_call_log.sql`** 只补表；或  
+  - **优先**：老库用 **`db/migrations/2026-04-04#01_ai_call_log.sql`** 只补表；或  
   - 临时在导入前编辑 schema，使 `USE` 与目标库名一致（团队自行规范，勿提交真实环境特有修改）。
 
 ---
@@ -56,7 +56,7 @@
    - 在目标库执行（库名按环境替换，示例为 Compose 变量）：  
      ```bash
      docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" \
-       < db/migrations/20260404_ai_call_log.sql
+       < "db/migrations/2026-04-04#01_ai_call_log.sql"
      ```  
    - **新搭测试库**：可直接执行 `db/schema/...` 再 `db/seed/...`，并注意 §2.3 库名问题。
 

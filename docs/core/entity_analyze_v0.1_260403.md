@@ -27,7 +27,7 @@
        │              │ id          │       │ id          │
        │              │ name        │       │ key         │
        │              │ url         │       │ description │
-       │              │ app_key     │       │ content     │
+       │              │ model       │       │ content     │
        │              │ app_secret  │       │ is_active   │
        │              │ is_active   │       │ created_at  │
        │              │ created_at  │       │ updated_at  │
@@ -197,8 +197,8 @@
 | id | uint | 主键 |
 | name | string | 模型名称 |
 | url | string | API URL |
-| app_key | string | API Key |
-| app_secret | string | API Secret |
+| model | string | 上游 OpenAI 兼容 API 的 chat **model** 名（如 `deepseek-chat`） |
+| app_secret | string | API Key（Bearer），不落盘到 `paper_analysis` |
 | is_active | bool | 是否激活（只能有一个 true） |
 | created_at | time | 创建时间 |
 | updated_at | time | 更新时间 |

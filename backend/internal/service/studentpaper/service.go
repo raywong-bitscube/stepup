@@ -72,18 +72,18 @@ func (s *Service) resolveAdapter(ctx context.Context) (AnalysisAdapter, *activeM
 	}
 	if s.db != nil {
 		var modelID uint64
-		var name, url, appKey, appSecret string
+		var name, url, chatModel, appSecret string
 		err := s.db.QueryRowContext(ctx, `
-SELECT id, name, url, app_key, app_secret
+SELECT id, name, url, model, app_secret
 FROM ai_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
-`).Scan(&modelID, &name, &url, &appKey, &appSecret)
+`).Scan(&modelID, &name, &url, &chatModel, &appSecret)
 		if err == nil {
 			url = strings.TrimSpace(url)
 			if url != "" {
-				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout, appSecret, appKey), &activeModel{
+				return NewHTTPAnalysisAdapter(url, s.cfg.AIRequestTimeout, appSecret, chatModel), &activeModel{
 					ID:   modelID,
 					Name: strings.TrimSpace(name),
 					URL:  url,

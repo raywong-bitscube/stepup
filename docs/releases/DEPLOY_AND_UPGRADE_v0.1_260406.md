@@ -15,7 +15,7 @@
 | **Prompt 模板** | 表 **`prompt_template`** 预置 key **`paper_analyze_chat_user`**（迁移/种子）；分析时的 user 文案由库中 `content` 驱动，占位符 **`%subject` `%stage` `%file_name`**（识图不依赖 `%file_content`）。 |
 | **管理端 Prompt** | **仅可编辑**，不提供新增/删除；已移除 **`POST /api/v1/admin/prompts`**；`PATCH` 不修改 `key`。 |
 | **AI 调用日志** | 表增加 **`request_body` / `response_body`**（截断约 400KB）；列表接口返回 **`outcome`**（合并业务结果与 HTTP），**不**在 `items` 中返回 `ai_model_id`、`paper_id`、`student_id`、`http_status`；管理端表格 **折叠** 展示请求/响应/Meta。 |
-| **默认 AI 模型** | 可选迁移 **`20260405_ai_model_kimi_moonshot.sql`**：切至 Moonshot/Kimi 端点（按环境替换密钥）。 |
+| **默认 AI 模型** | 可选迁移 **`2026-04-05#01_ai_model_kimi_moonshot.sql`**：切至 Moonshot/Kimi 端点（按环境替换密钥）。 |
 
 ---
 
@@ -24,20 +24,21 @@
 在目标库执行（示例与 260404 相同，库名按环境替换）：
 
 ```bash
+# 迁移文件名含「#」，请在 shell 中对路径加引号。
 # 若尚未执行 Kimi 默认模型切换（可选）
-mysql … < db/migrations/20260405_ai_model_kimi_moonshot.sql
+mysql … < "db/migrations/2026-04-05#01_ai_model_kimi_moonshot.sql"
 
 # 预置试卷分析 Prompt（无则插入）
-mysql … < db/migrations/20260406_prompt_paper_analyze_template.sql
+mysql … < "db/migrations/2026-04-06#01_prompt_paper_analyze_template.sql"
 
 # 若曾插入含 %file_content 的旧版 Prompt，对齐为当前默认文案（可选，见脚本条件）
-mysql … < db/migrations/20260407_prompt_paper_analyze_no_file_content.sql
+mysql … < "db/migrations/2026-04-07#01_prompt_paper_analyze_no_file_content.sql"
 
 # AI 日志：请求/响应正文列（本轮必须，否则新后端列表查询会失败）
-mysql … < db/migrations/20260408_ai_call_log_request_response_body.sql
+mysql … < "db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql"
 ```
 
-**全新建库**：直接使用当前 **`db/schema/mysql_schema_v0.1_260403.sql`**（已含 `ai_call_log` 新列与结构），再按需 **`db/seed/dev_seed.sql`**；上述迁移中 **仅** `20260405` / `20260406` 在种子已覆盖时可跳过（仍以团队约定为准）。
+**全新建库**：直接使用当前 **`db/schema/mysql_schema_v0.1_260403.sql`**（已含 `ai_call_log` 新列与结构），再按需 **`db/seed/dev_seed.sql`**；上述迁移中 **仅** `2026-04-05#01` / `2026-04-06#01` 在种子已覆盖时可跳过（仍以团队约定为准）。
 
 ---
 
@@ -45,7 +46,7 @@ mysql … < db/migrations/20260408_ai_call_log_request_response_body.sql
 
 - **Docker Compose**：`backend` 已增加 **`UPLOAD_DIR`**（默认 `/srv/uploads`）与卷 **`stepup_uploads`**；部署后确认容器内目录可写。  
 - **非容器**：设置 **`UPLOAD_DIR`** 为持久化目录，并保证进程有写权限。  
-- **分析**：`ANALYSIS_ADAPTER=http`，视觉模型在管理端 **`ai_model.app_key`** 中配置（如 `kimi-k2.5`）。**`AI_REQUEST_TIMEOUT_SECONDS`** 默认 **180**（识图建议不低于 120）。  
+- **分析**：`ANALYSIS_ADAPTER=http`，视觉模型在管理端 **`ai_model.model`** 中配置（如 `kimi-k2.5`）。**`AI_REQUEST_TIMEOUT_SECONDS`** 默认 **180**（识图建议不低于 120）。已有库若仍为 `app_key` 列，执行 `db/migrations/2026-04-04#02_ai_model_rename_app_key_to_model.sql`（路径请加引号）。  
 - **管理端静态**：须更新 **`frontend-admin`**（Prompt 页、AI 调用日志页）。
 
 ---

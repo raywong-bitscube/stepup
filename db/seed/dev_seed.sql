@@ -14,12 +14,14 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW(),
   updated_by = 0;
 
--- Subject: 物理 / 语文
+-- Subject: 物理 / 语文 / 数学 / 英语
 INSERT INTO subject
   (name, description, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES
   ('物理', '默认科目：物理', 1, NOW(), 0, NOW(), 0, 0),
-  ('语文', '默认科目：语文', 1, NOW(), 0, NOW(), 0, 0)
+  ('语文', '默认科目：语文', 1, NOW(), 0, NOW(), 0, 0),
+  ('数学', '默认科目：数学', 1, NOW(), 0, NOW(), 0, 0),
+  ('英语', '默认科目：英语', 1, NOW(), 0, NOW(), 0, 0)
 ON DUPLICATE KEY UPDATE
   description = VALUES(description),
   status = VALUES(status),
@@ -39,11 +41,11 @@ ON DUPLICATE KEY UPDATE
   updated_at = NOW(),
   updated_by = 0;
 
--- Kimi / Moonshot（OpenAI 兼容 chat/completions）。ANALYSIS_ADAPTER=http；app_key 为模型名，app_secret 为 API Key。
+-- Kimi / Moonshot（OpenAI 兼容 chat/completions）。ANALYSIS_ADAPTER=http；model 为上游 model 字段，app_secret 为 API Key。
 -- 国内常用 https://api.moonshot.cn/v1/chat/completions；国际可用 https://api.moonshot.ai/v1/chat/completions。
--- 执行前替换 app_secret；模型 id 可按控制台套餐改为 moonshot-v1-8k、moonshot-v1-32k、kimi-k2.5 等。
+-- 执行前替换 app_secret；model 可按控制台套餐改为 moonshot-v1-8k、moonshot-v1-32k、kimi-k2.5 等。
 INSERT INTO ai_model
-  (name, url, app_key, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
+  (name, url, model, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT
   'Kimi (Moonshot)',
   'https://api.moonshot.cn/v1/chat/completions',
@@ -62,7 +64,30 @@ WHERE NOT EXISTS (
     AND is_deleted = 0
 );
 
--- Prompt: 试卷分析 user 模板（占位符 %subject %stage %file_name）；与 db/migrations/20260406_prompt_paper_analyze_template.sql 一致
+-- Qwen（阿里云 Dashscope OpenAI 兼容）。默认未激活；将 status 改为 1 前需填写真实 API Key。
+-- HTTP 适配器将 POST 到 url 所示完整路径，须含 /chat/completions。
+INSERT INTO ai_model
+  (name, url, model, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
+SELECT
+  'qwen',
+  'https://coding.dashscope.aliyuncs.com/v1/chat/completions',
+  'qwen3.5-plus',
+  '__REPLACE_WITH_DASHSCOPE_API_KEY__',
+  0,
+  NOW(),
+  0,
+  NOW(),
+  0,
+  0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM ai_model
+  WHERE name = 'qwen'
+    AND url = 'https://coding.dashscope.aliyuncs.com/v1/chat/completions'
+    AND is_deleted = 0
+);
+
+-- Prompt: 试卷分析 user 模板（占位符 %subject %stage %file_name）；与 db/migrations/2026-04-06#01_prompt_paper_analyze_template.sql 一致
 INSERT INTO prompt_template
   (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT

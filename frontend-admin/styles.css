@@ -157,6 +157,50 @@ table.data.ai-logs td.ai-wrap {
   min-width: 220px;
   max-width: min(420px, 36vw);
 }
+table.data.ai-logs tr.ai-log-detail td {
+  padding: 0 !important;
+  vertical-align: top;
+  background: #f1f5f9;
+  border-top: 1px dashed var(--border);
+}
+table.data.ai-log-detail-inner {
+  width: 100%;
+  margin: 0;
+  table-layout: fixed;
+  border: 0;
+  background: transparent;
+}
+table.data.ai-log-detail-inner th[scope='row'] {
+  width: 9rem;
+  max-width: 9rem;
+  white-space: nowrap;
+  vertical-align: top;
+  padding: 10px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--muted);
+  background: #e8edf5;
+  border-bottom: 1px solid var(--border);
+}
+table.data.ai-log-detail-inner td.ai-detail-td {
+  white-space: normal;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+pre.ai-detail-pre {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 420px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.45;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  background: #f8fafc;
+  border: 0;
+}
 details.ai-fold {
   margin: 6px 0;
 }

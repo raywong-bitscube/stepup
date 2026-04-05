@@ -75,7 +75,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 **若库在引入 `ai_call_log` 之前已建成**：补执行增量脚本（仅新建表，`IF NOT EXISTS` 可重复执行）：
 
 ```bash
-docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/migrations/20260404_ai_call_log.sql
+docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < "db/migrations/2026-04-04#01_ai_call_log.sql"
 ```
 
 说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md) §3。
@@ -196,7 +196,7 @@ Compose 未集中列出 `CORS_ALLOWED_ORIGINS` 时，后端使用代码中的默
 ## 7. 升级与回滚（简要）
 
 1. 拉取新镜像或新二进制，**先备份数据库**。
-2. 若有新 DDL，在维护窗口执行对应迁移脚本（当前仓库以 `db/schema/mysql_schema_v0.1_260403.sql` 为基线；增量见 `db/migrations/`；后续若引入迁移工具，以工具版本为准）。
+2. 若有新 DDL，在维护窗口执行对应迁移脚本（当前仓库以 `db/schema/mysql_schema_v0.1_260403.sql` 为基线；增量见 `db/migrations/`，命名与执行顺序见 [`db/README.md`](../../db/README.md)；后续若引入迁移工具，以工具版本为准）。
 3. 滚动重启 `backend` → 验证 `readyz` 与核心业务路径。
 4. 异常时回滚上一个镜像/二进制版本，必要时恢复数据库备份。
 

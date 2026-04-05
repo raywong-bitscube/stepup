@@ -32,7 +32,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 
 When `DB_DSN` is set, the process opens **one** shared `*sql.DB` connection pool; admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
 
-**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表见 `db/schema/mysql_schema_v0.1_260403.sql` 与增量 `db/migrations/20260408_ai_call_log_request_response_body.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
+**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表见 `db/schema/mysql_schema_v0.1_260403.sql` 与增量 `db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
 
 ## Environment Variables
 
@@ -49,7 +49,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
 - `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls (default **180**; vision / slow networks may need more)
 
-**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用 MySQL **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，`app_key` 作为 **model** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
+**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用 MySQL **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，表字段 **`model`** 作为 JSON **`model`** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
 
 ## Current Scope
 

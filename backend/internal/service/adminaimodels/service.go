@@ -19,7 +19,7 @@ type PublicModel struct {
 	ID        uint64    `json:"id"`
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
-	AppKey    string    `json:"app_key"`
+	Model     string    `json:"model"`
 	Status    int       `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -39,7 +39,7 @@ func (s *Service) List(ctx context.Context) ([]PublicModel, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	const q = `
-SELECT id, name, url, app_key, status, created_at
+SELECT id, name, url, model, status, created_at
 FROM ai_model
 WHERE is_deleted = 0
 ORDER BY id DESC
@@ -52,7 +52,7 @@ LIMIT 500`
 	out := make([]PublicModel, 0, 32)
 	for rows.Next() {
 		var m PublicModel
-		if err := rows.Scan(&m.ID, &m.Name, &m.URL, &m.AppKey, &m.Status, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.URL, &m.Model, &m.Status, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)
@@ -63,7 +63,7 @@ LIMIT 500`
 type CreateInput struct {
 	Name      string
 	URL       string
-	AppKey    string
+	Model     string
 	AppSecret string
 	Status    *int
 }
@@ -74,9 +74,9 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	}
 	name := strings.TrimSpace(in.Name)
 	url := strings.TrimSpace(in.URL)
-	key := strings.TrimSpace(in.AppKey)
+	modelID := strings.TrimSpace(in.Model)
 	secret := strings.TrimSpace(in.AppSecret)
-	if name == "" || url == "" || key == "" || secret == "" {
+	if name == "" || url == "" || modelID == "" || secret == "" {
 		return 0, ErrInvalidInput
 	}
 	status := 0
@@ -107,9 +107,9 @@ WHERE is_deleted = 0
 	}
 	res, err := tx.ExecContext(ctx, `
 INSERT INTO ai_model
-  (name, url, app_key, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
+  (name, url, model, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
-`, name, url, key, secret, status, now, now)
+`, name, url, modelID, secret, status, now, now)
 	if err != nil {
 		return 0, err
 	}
@@ -123,7 +123,7 @@ VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
 type UpdateInput struct {
 	Name      *string
 	URL       *string
-	AppKey    *string
+	Model     *string
 	AppSecret *string
 	Status    *int
 }
@@ -156,12 +156,12 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 		sets = append(sets, "url = ?")
 		args = append(args, v)
 	}
-	if in.AppKey != nil {
-		v := strings.TrimSpace(*in.AppKey)
+	if in.Model != nil {
+		v := strings.TrimSpace(*in.Model)
 		if v == "" {
 			return ErrInvalidInput
 		}
-		sets = append(sets, "app_key = ?")
+		sets = append(sets, "model = ?")
 		args = append(args, v)
 	}
 	if in.AppSecret != nil {

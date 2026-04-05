@@ -61,12 +61,6 @@
       .replace(/"/g, '&quot;');
   }
 
-  function aiLogFold(label, text) {
-    const t = String(text || '').trim();
-    if (!t) return '<span class="muted">—</span>';
-    return `<details class="ai-fold"><summary>${escapeHtml(label)}</summary><pre class="ai-fold-pre">${escapeHtml(t)}</pre></details>`;
-  }
-
   function aiLogErrLine(e) {
     const p = String(e.error_phase || '').trim();
     const m = String(e.error_message || '').trim();
@@ -75,13 +69,29 @@
     return escapeHtml(line.length > 120 ? line.slice(0, 120) + '…' : line);
   }
 
-  function aiLogMetaBlock(e) {
+  function aiLogMetaJSON(e) {
     try {
-      const blob = JSON.stringify({ request_meta: e.request_meta, response_meta: e.response_meta }, null, 2);
-      return aiLogFold('结构化 Meta', blob);
+      return JSON.stringify({ request_meta: e.request_meta, response_meta: e.response_meta }, null, 2);
     } catch {
-      return '—';
+      return '';
     }
+  }
+
+  /** Full-width detail table for one log row (placed in colspan row below main row). */
+  function renderAICallDetailPanel(e) {
+    const req = String(e.request_body || '').trim();
+    const res = String(e.response_body || '').trim();
+    const meta = String(aiLogMetaJSON(e) || '').trim();
+    const cell = (label, text) => {
+      const t = String(text || '').trim();
+      const inner = t ? escapeHtml(t) : '<span class="muted">—</span>';
+      return `<tr><th scope="row">${escapeHtml(label)}</th><td class="ai-detail-td"><pre class="ai-detail-pre">${inner}</pre></td></tr>`;
+    };
+    return `<table class="data ai-log-detail-inner" role="presentation"><tbody>
+      ${cell('请求 JSON', req)}
+      ${cell('响应原文', res)}
+      ${cell('结构化 Meta', meta)}
+    </tbody></table>`;
   }
 
   const state = {
@@ -685,7 +695,7 @@
         (m) =>
           `<tr><td>${m.id}</td><td>${escapeHtml(m.name)}</td><td style="word-break:break-all">${escapeHtml(
             m.url
-          )}</td><td>${escapeHtml(m.app_key)}</td><td>${
+          )}</td><td>${escapeHtml(m.model != null && m.model !== '' ? m.model : m.app_key || '')}</td><td>${
             m.status === 1 ? '<span class="badge on">激活</span>' : '<span class="badge off">未激活</span>'
           }</td>
         <td>
@@ -701,7 +711,7 @@
     return `
       <div class="toolbar"><h2 style="margin:0">AI 模型</h2><button type="button" class="btn" id="btnAddModel">新建</button></div>
       <p class="muted">同时仅允许一个激活模型；列表不显示密钥。</p>
-      <table class="data"><thead><tr><th>ID</th><th>名称</th><th>URL</th><th>app_key</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
+      <table class="data"><thead><tr><th>ID</th><th>名称</th><th>URL</th><th>model</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
         '<tr><td colspan="6">暂无</td></tr>'}</tbody></table><div id="modalRoot"></div>`;
   }
 
@@ -732,7 +742,7 @@
       <div class="form-grid">
         <div><label>名称</label><input id="n" value="${edit ? escapeHtml(ex.name) : ''}" /></div>
         <div><label>URL</label><input id="u" value="${edit ? escapeHtml(ex.url) : ''}" /></div>
-        <div><label>app_key（模型名等）</label><input id="k" value="${edit ? escapeHtml(ex.app_key) : ''}" /></div>
+        <div><label>model（上游 chat model）</label><input id="k" value="${edit ? escapeHtml((ex.model != null && ex.model !== '' ? ex.model : ex.app_key) || '') : ''}" /></div>
         <div><label>app_secret（${edit ? '留空不改' : '必填'}）</label><input id="s" type="password" /></div>
         ${edit ? `<div><label>状态 1 激活</label><input id="st" type="number" value="${ex.status}" /></div>` : ''}
       </div>
@@ -750,7 +760,7 @@
         const body = {
           name: mr.querySelector('#n').value.trim(),
           url: mr.querySelector('#u').value.trim(),
-          app_key: mr.querySelector('#k').value.trim(),
+          model: mr.querySelector('#k').value.trim(),
         };
         const sec = mr.querySelector('#s').value;
         if (edit) {
@@ -837,10 +847,10 @@
   function renderAICallLogs() {
     const f = state.aiLogFilters;
     const rows = state.aiLogs
-      .map(
-        (e) =>
-          `<tr>
-        <td>${e.id}</td>
+      .flatMap((e) => {
+        const id = e.id;
+        const head = `<tr class="ai-log-main">
+        <td>${id}</td>
         <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.created_at || '')}</td>
         <td class="ai-wrap">${escapeHtml(e.model_name_snapshot || '')}</td>
         <td>${escapeHtml(e.action || '')}</td>
@@ -851,9 +861,13 @@
         <td class="ai-wrap" style="font-size:12px">${escapeHtml(e.endpoint_host || '')}</td>
         <td class="ai-wrap">${escapeHtml(e.chat_model || '')}</td>
         <td>${e.fallback_to_mock ? '是' : '否'}</td>
-        <td class="ai-wrap">${aiLogFold('请求 JSON', e.request_body)}${aiLogFold('响应原文', e.response_body)}${aiLogMetaBlock(e)}</td>
-      </tr>`
-      )
+        <td><button type="button" class="btn secondary small" data-ailog-toggle="${id}" aria-expanded="false">展开详情</button></td>
+      </tr>`;
+        const detail = `<tr class="ai-log-detail" data-ailog-detail="${id}" hidden><td colspan="12">${renderAICallDetailPanel(
+          e
+        )}</td></tr>`;
+        return [head, detail];
+      })
       .join('');
     return `
       <h2>AI 调用日志</h2>
@@ -902,7 +916,7 @@
       <table class="data ai-logs">
         <thead><tr>
           <th>ID</th><th>时间</th><th>模型名</th><th>动作</th><th>适配器</th><th>状态</th><th>ms</th>
-          <th>错误</th><th>Endpoint</th><th>chat</th><th>mock</th><th>请求 / 响应</th>
+          <th>错误</th><th>Endpoint</th><th>chat</th><th>mock</th><th>详情</th>
         </tr></thead>
         <tbody>${rows || '<tr><td colspan="12">暂无</td></tr>'}</tbody>
       </table></div>`;
@@ -932,6 +946,17 @@
       const lim = state.aiLogFilters.limit || 50;
       state.aiLogFilters = readFilters((state.aiLogFilters.offset || 0) + lim);
       mount(document.getElementById('app'));
+    });
+    pane.querySelector('table.ai-logs tbody')?.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('button[data-ailog-toggle]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-ailog-toggle');
+      const detail = pane.querySelector(`tr.ai-log-detail[data-ailog-detail="${CSS.escape(String(id))}"]`);
+      if (!detail) return;
+      const open = !detail.hidden;
+      detail.hidden = open;
+      btn.setAttribute('aria-expanded', String(!open));
+      btn.textContent = open ? '展开详情' : '收起详情';
     });
   }
 

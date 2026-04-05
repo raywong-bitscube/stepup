@@ -1,6 +1,6 @@
 -- 已存在 v0.1 库时追加 AI 调用日志表（与 db/schema/mysql_schema_v0.1_260403.sql 第 13 节一致）
 -- 用法示例（在仓库根目录）：
---   mysql -u... -p... stepup < db/migrations/20260404_ai_call_log.sql
+--   mysql -u... -p... stepup < "db/migrations/2026-04-04#01_ai_call_log.sql"
 
 SET NAMES utf8mb4;
 

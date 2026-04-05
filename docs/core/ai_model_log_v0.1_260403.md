@@ -35,7 +35,7 @@
 
 ### 2.1 表：`ai_call_log`
 
-见 `db/schema/mysql_schema_v0.1_260403.sql` **第 13 节** 与 `db/migrations/20260404_ai_call_log.sql`。
+见 `db/schema/mysql_schema_v0.1_260403.sql` **第 13 节** 与 `db/migrations/2026-04-04#01_ai_call_log.sql`。
 
 核心字段语义：
 
@@ -60,7 +60,7 @@
 ## 4. 运维说明
 
 - **新库**：直接使用更新后的 `db/schema/mysql_schema_v0.1_260403.sql` 初始化即可。
-- **已有库**：执行 `db/migrations/20260404_ai_call_log.sql`。
+- **已有库**：执行 `db/migrations/2026-04-04#01_ai_call_log.sql`（路径含 `#`，shell 中请加引号）。
 - 日志增长与索引：`created_at`、`ai_model_id`、`action`、`result_status` 已建索引；后续可按数据量做归档或分区（超出 v0.1）。
 
 ---
@@ -72,7 +72,7 @@
 | `docs/README.md`、`docs/core/README.md`、`docs/releases/README.md` | 文档索引与目录说明 |
 | `docs/releases/DEPLOY_AND_UPGRADE_*.md` | 具体发版增量与升级步骤 |
 | `db/schema/mysql_schema_v0.1_260403.sql` | 新增 `ai_call_log`，原 `audit_log` 顺延为第 14 节（SQL 统一见 [`db/README.md`](../../db/README.md)） |
-| `db/migrations/20260404_ai_call_log.sql` | 增量建表 |
+| `db/migrations/2026-04-04#01_ai_call_log.sql` | 增量建表 |
 | `docs/core/api_v0.1_260403.md` | §1 说明、`§3.12` 接口 |
 | `docs/core/deployment_guide_v0.1_260403.md` | 初始化 / 升级时提及 `ai_call_log` |
 | `docs/core/feature_design_v0.1_260403.md` | 功能表增加「AI 调用日志」|
