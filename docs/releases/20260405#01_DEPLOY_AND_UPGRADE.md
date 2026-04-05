@@ -1,7 +1,7 @@
 # StepUp v0.1 增量：多图试卷、科目与 Qwen 种子、迁移归并、发版文档命名
 
-**发版批次**: `20260403#01`  
-**日期**: 2026-04-03  
+**发版批次**: `20260405#01`（与文件名 `20260405#01_...` 一致）  
+**日期**: 2026-04-05（上线、验收按本日对照）  
 **适用**: 在已按 [20260404#02](./20260404%2302_DEPLOY_AND_UPGRADE.md)（或等效能力：识图、`UPLOAD_DIR`、`prompt_template`、`ai_call_log` 含 `request_body`/`response_body`）就绪的基础上，合入本批代码与数据库脚本。  
 **关联**: [文档索引](../README.md)、[`db/README.md`](../../db/README.md)、[API 学生试卷上传](../core/api_v0.1_260403.md)
 
@@ -17,7 +17,7 @@
 | **种子与科目** | 迁移 **`2026-04-05#02_seed_subjects_math_english_qwen.sql`**：插入科目 **数学**、**英语**；`ai_model` 增加 Dashscope 兼容 **qwen** 行（**默认未激活**，需替换 `app_secret` 后按需 `status=1`）。 |
 | **基线 schema** | **`db/schema/mysql_schema_v0.1_260403.sql`** 已含 **`extra_file_urls`**；**`db/seed/dev_seed.sql`** 与仓库内文档交叉链接随本轮调整。 |
 | **迁移归并** | 移除旧文件名 `2026-04-06#01`、`2026-04-07#01`、`2026-04-08#01`、`2026-04-10#01`；对应能力并入 **`2026-04-04#03`–`#05`** 与 **`2026-04-05#02`–`#03`**。已向目标库执行过旧名脚本的环境，一般只需补 **`2026-04-05#03`**（若尚无 `extra_file_urls`）及未覆盖的 **`2026-04-05#02`** 条件插入；请以脚本内 `IF NOT EXISTS` / 条件为准，避免重复破坏性语句。 |
-| **发版文档** | **`docs/releases`** 下说明文件命名为 **`YYYYMMDD#NN_DEPLOY_AND_UPGRADE.md`**；日期为发文当日 **`YYYYMMDD`**（与 `db/migrations` 文件名中的日期可以不同）；同级已登记 [20260404#01](./20260404%2301_DEPLOY_AND_UPGRADE.md)、[20260404#02](./20260404%2302_DEPLOY_AND_UPGRADE.md) 与本文件。Markdown 链到带 `#` 的文件名时用 **`%23`**。 |
+| **发版文档** | **`docs/releases`** 下说明文件命名为 **`YYYYMMDD#NN_DEPLOY_AND_UPGRADE.md`**；**`YYYYMMDD`** 多为定稿/登记日（与 `db/migrations` 前缀可不同）；同级已登记 [20260404#01](./20260404%2301_DEPLOY_AND_UPGRADE.md)、[20260404#02](./20260404%2302_DEPLOY_AND_UPGRADE.md) 与本文件。Markdown 链到带 `#` 的文件名时用 **`%23`**。 |
 
 ---
 
