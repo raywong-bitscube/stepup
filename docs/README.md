@@ -7,7 +7,7 @@
 | **[`docs/core/`](./core/)** | **v0.1 基线**：需求、架构、API、部署指南、运行时、实体与功能说明等（长期对照，随大版本更新文件名或目录）。 |
 | **[`docs/releases/`](./releases/)** | **发版增量**：某次上线的变更说明、升级 checklist、评审摘要（按日期/批次追加新文件，不必改基线文档日期）。 |
 
-**建议入口**：发往测试 / 预发请先读 [**releases/DEPLOY_AND_UPGRADE_v0.1_260404.md**](./releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)（首版 AI 日志等），再读 [**releases/DEPLOY_AND_UPGRADE_v0.1_260406.md**](./releases/DEPLOY_AND_UPGRADE_v0.1_260406.md)（识图、Prompt、日志正文等本轮增量），并按需展开 **core** 中文档。
+**建议入口**：发往测试 / 预发请按序阅读 [**releases/20260404#01**](./releases/20260404%2301_DEPLOY_AND_UPGRADE.md)（AI 日志与 `db/` 等）、[**#02**](./releases/20260404%2302_DEPLOY_AND_UPGRADE.md)（识图、Prompt、日志正文）、[**#03**](./releases/20260404%2303_DEPLOY_AND_UPGRADE.md)（多图上传、种子与迁移归并、发版文档命名），并按需展开 **core** 中文档。
 
 ---
 
@@ -15,7 +15,7 @@
 
 | 你想… | 建议阅读 |
 |--------|-----------|
-| **把本版本发到测试 / 预发** | [260404 增量](./releases/DEPLOY_AND_UPGRADE_v0.1_260404.md) + [260406 增量](./releases/DEPLOY_AND_UPGRADE_v0.1_260406.md) → [core/部署指南](./core/deployment_guide_v0.1_260403.md) |
+| **把本版本发到测试 / 预发** | [20260404#01](./releases/20260404%2301_DEPLOY_AND_UPGRADE.md) → [20260404#02](./releases/20260404%2302_DEPLOY_AND_UPGRADE.md) → [20260404#03](./releases/20260404%2303_DEPLOY_AND_UPGRADE.md)；再结合 [core/部署指南](./core/deployment_guide_v0.1_260403.md) |
 | **接 API、联调前端** | [core/API](./core/api_v0.1_260403.md) |
 | **理解运行时与数据流** | [core/系统运行说明](./core/system_runtime_guide_v0.1_260403.md) |
 | **产品与功能范围** | [core/需求](./core/user_requirement_v0.1_260403.md)、[core/功能清单](./core/feature_design_v0.1_260403.md) |
@@ -51,4 +51,4 @@
 3. `docker compose up -d --build`（或等价编排）。  
 4. `readyz` → 管理端登录 → 学生上传 → **AI 调用日志** 有记录。
 
-详细命令与排错见 [core/部署指南](./core/deployment_guide_v0.1_260403.md) 与 [releases/260404](./releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)、[releases/260406](./releases/DEPLOY_AND_UPGRADE_v0.1_260406.md)。
+详细命令与排错见 [core/部署指南](./core/deployment_guide_v0.1_260403.md) 与 [releases/20260404#01](./releases/20260404%2301_DEPLOY_AND_UPGRADE.md)、[#02](./releases/20260404%2302_DEPLOY_AND_UPGRADE.md)、[#03](./releases/20260404%2303_DEPLOY_AND_UPGRADE.md)。

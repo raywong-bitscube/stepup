@@ -87,7 +87,7 @@ WHERE NOT EXISTS (
     AND is_deleted = 0
 );
 
--- Prompt: 试卷分析 user 模板（占位符 %subject %stage %file_name）；与 db/migrations/2026-04-06#01_prompt_paper_analyze_template.sql 一致
+-- Prompt: 试卷分析 user 模板（占位符 %subject %stage %file_name）；与 db/migrations/2026-04-04#03_prompt_paper_analyze_template.sql 一致
 INSERT INTO prompt_template
   (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT

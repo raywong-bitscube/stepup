@@ -2,7 +2,7 @@
 
 **日期**: 2026-04-03  
 **Base URL（本地）**: `http://localhost:8080`  
-**部署 / 升级**: [文档索引](../README.md)、[DEPLOY_AND_UPGRADE_v0.1_260404.md](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)
+**部署 / 升级**: [文档索引](../README.md)、[20260404#01 发版说明](../releases/20260404%2301_DEPLOY_AND_UPGRADE.md)
 
 ---
 
@@ -299,7 +299,7 @@ Header: `Authorization: Bearer <admin_token>`
 
 ### 3.12 AI 调用日志（管理端）
 
-需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节；历史环境另执行 `db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql` 等增量脚本）。
+需 **`DB_DSN`**、已执行建表（见 `db/schema/mysql_schema_v0.1_260403.sql` 第 13 节；历史环境另执行 `db/migrations/2026-04-04#05_ai_call_log_request_response_body.sql` 等增量脚本）。
 
 `GET /api/v1/admin/ai-call-logs`
 
@@ -429,16 +429,20 @@ Content-Type: multipart/form-data
 表单字段：
 - `subject`：例如 `物理`
 - `stage`：例如 `高中`
-- `file`：PDF/JPG/PNG
+- **`files`**：可重复字段，**最多 10 个**；**全部为图片**时视为同一套试卷多页，模型将收到多张 `image_url`。**仅允许 1 个 PDF**，且 PDF **不可与其他文件混传**。（推荐学生端统一用 `files`。）
+- **`file`**：兼容旧客户端的单个文件，与 `files` 二选一（优先使用 `files` 段）。
 
-示例：
+单文件 ≤ **25MB**；整表 `multipart` 上限约 **120MB**。多图时其余文件路径写入 `exam_paper.extra_file_urls`（需已执行迁移 `db/migrations/2026-04-05#03_exam_paper_extra_file_urls.sql` 或当前基线 schema）。
+
+示例（多图）：
 
 ```bash
 curl -X POST "http://localhost:8080/api/v1/student/papers" \
   -H "Authorization: Bearer <student_token>" \
   -F "subject=物理" \
   -F "stage=高中" \
-  -F "file=@/path/to/paper.pdf"
+  -F "files=@/path/to/p1.jpg" \
+  -F "files=@/path/to/p2.jpg"
 ```
 
 ### 5.2 试卷列表
@@ -465,6 +469,9 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 - `CODE_USED`
 - `PASSWORD_UNSET`
 - `FILE_REQUIRED`
+- `TOO_MANY_FILES`（多于 10 个文件）
+- `PDF_REQUIRES_SINGLE_FILE`（PDF 与多文件混用或多项 PDF）
+- `INVALID_IMAGE_BATCH`（多图 batch 中存在非可分析图片或超 10MB 等）
 - `INVALID_MULTIPART`
 - `NOT_FOUND`
 - `CONFLICT`

@@ -1,11 +1,17 @@
 package studentpaper
 
+// VisionImage is one page sent as an OpenAI-style image_url part (raw bytes; adapter base64-encodes).
+type VisionImage struct {
+	MIME string
+	Data []byte
+}
+
 type AnalyzeInput struct {
 	Subject   string
 	Stage     string
-	FileName  string
-	ImageMIME string // optional; image/* when sending multimodal chat completions
-	ImageData []byte // optional; raw image bytes (e.g. JPEG/PNG)
+	FileName  string // label for prompts/logging (may summarize multiple uploads)
+	// VisionImages is optional; order preserved (e.g. exam pages). Empty => text-only or mock-AI protocol.
+	VisionImages []VisionImage
 	// ChatUserPrompt is the final user message for chat/completions (from prompt_template + placeholders).
 	ChatUserPrompt string
 }

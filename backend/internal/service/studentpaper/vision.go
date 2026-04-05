@@ -3,6 +3,7 @@ package studentpaper
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -91,4 +92,82 @@ func visionImageForModel(fileName, declaredMIME string, data []byte) (mimeType s
 		return "", nil
 	}
 	return mt, data
+}
+
+// MaxStudentExamImages is the maximum number of image files per upload batch.
+const MaxStudentExamImages = 10
+
+// UploadPart is one file from a student multipart upload.
+type UploadPart struct {
+	Filename    string
+	ContentType string
+	Bytes       []byte
+}
+
+var (
+	ErrStudentUploadEmpty       = errors.New("STUDENT_UPLOAD_EMPTY")
+	ErrStudentUploadTooMany     = errors.New("STUDENT_UPLOAD_TOO_MANY")
+	ErrStudentUploadPDFMultiple = errors.New("STUDENT_UPLOAD_PDF_REQUIRES_SINGLE_FILE")
+	ErrStudentUploadImageSet    = errors.New("STUDENT_UPLOAD_IMAGE_BATCH_INVALID")
+)
+
+// ValidateStudentUploadParts enforces: 1..10 files, at most one PDF (must be alone), multi-image batches are all vision-capable.
+func ValidateStudentUploadParts(parts []UploadPart) error {
+	if len(parts) == 0 {
+		return ErrStudentUploadEmpty
+	}
+	if len(parts) > MaxStudentExamImages {
+		return ErrStudentUploadTooMany
+	}
+	pdfN := 0
+	for _, p := range parts {
+		if strings.EqualFold(filepath.Ext(p.Filename), ".pdf") {
+			pdfN++
+		}
+	}
+	if pdfN > 1 {
+		return ErrStudentUploadPDFMultiple
+	}
+	if pdfN == 1 && len(parts) > 1 {
+		return ErrStudentUploadPDFMultiple
+	}
+	if pdfN == 0 {
+		imgs := VisionImagesFromParts(parts)
+		if len(imgs) != len(parts) {
+			return ErrStudentUploadImageSet
+		}
+	}
+	return nil
+}
+
+// VisionImagesFromParts builds multimodal image parts (skips non-images / oversize — caller should validate batches).
+func VisionImagesFromParts(parts []UploadPart) []VisionImage {
+	out := make([]VisionImage, 0, len(parts))
+	for _, p := range parts {
+		m, d := visionImageForModel(p.Filename, p.ContentType, p.Bytes)
+		if m != "" && len(d) > 0 {
+			out = append(out, VisionImage{MIME: m, Data: d})
+		}
+	}
+	return out
+}
+
+// FormatUploadLabel summarizes originals for list UI and prompts.
+func FormatUploadLabel(parts []UploadPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0].Filename
+	}
+	names := make([]string, 0, len(parts))
+	for _, p := range parts {
+		names = append(names, p.Filename)
+	}
+	s := strings.Join(names, "、")
+	const maxRune = 160
+	if len(s) > maxRune {
+		s = s[:maxRune] + "…"
+	}
+	return fmt.Sprintf("%d张：%s", len(parts), s)
 }

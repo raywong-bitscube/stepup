@@ -191,14 +191,22 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 	})
 }
 
-func (s *Service) Create(identifier, subject, stage, originalFileName string, fileSize int64, contentType string, fileBytes []byte) (Paper, error) {
+func (s *Service) Create(identifier, subject, stage string, parts []UploadPart) (Paper, error) {
+	if err := ValidateStudentUploadParts(parts); err != nil {
+		return Paper{}, err
+	}
+	label := FormatUploadLabel(parts)
+	var totalSize int64
+	for _, p := range parts {
+		totalSize += int64(len(p.Bytes))
+	}
+
 	if s.db != nil {
-		return s.createDB(identifier, subject, stage, originalFileName, fileSize, contentType, fileBytes)
+		return s.createDB(identifier, subject, stage, parts)
 	}
 
 	ctx := context.Background()
 	adapter, meta := s.resolveAdapter(ctx)
-	vmime, vdata := visionImageForModel(originalFileName, contentType, fileBytes)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -211,16 +219,15 @@ func (s *Service) Create(identifier, subject, stage, originalFileName string, fi
 		Identifier: identifier,
 		Subject:    subject,
 		Stage:      stage,
-		FileName:   originalFileName,
-		FileSize:   fileSize,
+		FileName:   label,
+		FileSize:   totalSize,
 		CreatedAt:  time.Now(),
 	}
 	ain := AnalyzeInput{
-		Subject:   subject,
-		Stage:     stage,
-		FileName:  originalFileName,
-		ImageMIME: vmime,
-		ImageData: vdata,
+		Subject:      subject,
+		Stage:        stage,
+		FileName:     label,
+		VisionImages: VisionImagesFromParts(parts),
 	}
 	ain.ChatUserPrompt = s.paperChatUserPrompt(ctx, ain)
 	result := adapter.Analyze(ain)
@@ -299,7 +306,7 @@ func (s *Service) GetPlan(identifier, paperIDRaw string) (map[string]any, error)
 	}, nil
 }
 
-func (s *Service) createDB(identifier, subject, stage, originalFileName string, fileSize int64, contentType string, fileBytes []byte) (Paper, error) {
+func (s *Service) createDB(identifier, subject, stage string, parts []UploadPart) (Paper, error) {
 	// Short deadline only for pre-analyze DB lookups. AI Analyze may take AIRequestTimeout (e.g. 30s+);
 	// reusing one 5s context caused Insert to fail with context canceled after long vision calls.
 	lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -330,17 +337,16 @@ LIMIT 1
 		return Paper{}, err
 	}
 
-	vmime, vdata := visionImageForModel(originalFileName, contentType, fileBytes)
+	label := FormatUploadLabel(parts)
 
 	now := time.Now()
-	fileType := detectFileType(originalFileName)
+	fileType := detectFileType(parts[0].Filename)
 	adapter, meta := s.resolveAdapter(lookupCtx)
 	ain := AnalyzeInput{
-		Subject:   subject,
-		Stage:     stage,
-		FileName:  originalFileName,
-		ImageMIME: vmime,
-		ImageData: vdata,
+		Subject:      subject,
+		Stage:        stage,
+		FileName:     label,
+		VisionImages: VisionImagesFromParts(parts),
 	}
 	ain.ChatUserPrompt = s.paperChatUserPrompt(lookupCtx, ain)
 	lookupCancel()
@@ -349,7 +355,7 @@ LIMIT 1
 	analysisOut := applyModelSnapshot(analyzeResult.Out, meta)
 
 	logAITrace := func(paperID uint64, filePath string) {
-		s.writeAILog(context.Background(), meta, studentID, paperID, subject, stage, originalFileName, filePath, analysisOut, analyzeResult.Trace)
+		s.writeAILog(context.Background(), meta, studentID, paperID, subject, stage, label, filePath, analysisOut, analyzeResult.Trace)
 	}
 
 	uploadDir := strings.TrimSpace(s.cfg.UploadDir)
@@ -360,20 +366,35 @@ LIMIT 1
 		logAITrace(0, "")
 		return Paper{}, err
 	}
-	stored := uniqueStoredFileName(originalFileName)
-	if err := os.WriteFile(filepath.Join(uploadDir, stored), fileBytes, 0644); err != nil {
+	stored0 := uniqueStoredFileName(parts[0].Filename)
+	if err := os.WriteFile(filepath.Join(uploadDir, stored0), parts[0].Bytes, 0644); err != nil {
 		logAITrace(0, "")
 		return Paper{}, err
 	}
-	fileURL := "/uploads/" + stored
+	fileURL := "/uploads/" + stored0
+
+	extrasURLs := make([]string, 0, len(parts)-1)
+	for i := 1; i < len(parts); i++ {
+		sn := uniqueStoredFileName(parts[i].Filename)
+		if err := os.WriteFile(filepath.Join(uploadDir, sn), parts[i].Bytes, 0644); err != nil {
+			logAITrace(0, fileURL)
+			return Paper{}, err
+		}
+		extrasURLs = append(extrasURLs, "/uploads/"+sn)
+	}
+	var extrasArg any
+	if len(extrasURLs) > 0 {
+		b, _ := json.Marshal(extrasURLs)
+		extrasArg = string(b)
+	}
 
 	writeCtx, writeCancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer writeCancel()
 	res, err := s.db.ExecContext(writeCtx, `
 INSERT INTO exam_paper
-  (student_id, subject_id, file_url, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
-`, studentID, subjectID, fileURL, fileType, now, studentID, now, studentID)
+  (student_id, subject_id, file_url, extra_file_urls, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
+`, studentID, subjectID, fileURL, extrasArg, fileType, now, studentID, now, studentID)
 	if err != nil {
 		logAITrace(0, fileURL)
 		return Paper{}, err
@@ -402,13 +423,17 @@ INSERT INTO improvement_plan
 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
 `, paperID, string(planRaw), string(weakRaw), now, studentID, now, studentID)
 
+	var sumSize int64
+	for _, p := range parts {
+		sumSize += int64(len(p.Bytes))
+	}
 	return Paper{
 		ID:         uint64(paperID),
 		Identifier: identifier,
 		Subject:    subject,
 		Stage:      stageName(stage, stageID),
-		FileName:   originalFileName,
-		FileSize:   fileSize,
+		FileName:   label,
+		FileSize:   sumSize,
 		CreatedAt:  now,
 	}, nil
 }
@@ -418,7 +443,7 @@ func (s *Service) listDB(identifier string) ([]Paper, error) {
 	defer cancel()
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT p.id, subj.name, stg.name, p.file_url, p.created_at
+SELECT p.id, subj.name, stg.name, p.file_url, p.extra_file_urls, p.created_at
 FROM exam_paper p
 JOIN student stu ON stu.id = p.student_id
 JOIN subject subj ON subj.id = p.subject_id
@@ -438,17 +463,28 @@ ORDER BY p.id DESC
 			subject   string
 			stage     string
 			fileURL   string
+			extraRaw  sql.NullString
 			createdAt time.Time
 		)
-		if err := rows.Scan(&id, &subject, &stage, &fileURL, &createdAt); err != nil {
+		if err := rows.Scan(&id, &subject, &stage, &fileURL, &extraRaw, &createdAt); err != nil {
 			return nil, err
+		}
+		fn := filepath.Base(fileURL)
+		if extraRaw.Valid {
+			s := strings.TrimSpace(extraRaw.String)
+			if s != "" && s != "null" {
+				var xs []string
+				if json.Unmarshal([]byte(s), &xs) == nil && len(xs) > 0 {
+					fn = fmt.Sprintf("%s（共%d张）", fn, 1+len(xs))
+				}
+			}
 		}
 		out = append(out, Paper{
 			ID:         id,
 			Identifier: identifier,
 			Subject:    subject,
 			Stage:      stage,
-			FileName:   filepath.Base(fileURL),
+			FileName:   fn,
 			FileSize:   0,
 			CreatedAt:  createdAt,
 		})

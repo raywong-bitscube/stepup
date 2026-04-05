@@ -1,7 +1,8 @@
 # StepUp v0.1 增量：识图分析、Prompt 模板、AI 日志正文与界面优化
 
+**发版批次**: `20260404#02`  
 **日期**: 2026-04-06  
-**适用**: 在已具备 [260404 增量](./DEPLOY_AND_UPGRADE_v0.1_260404.md)（或等效：库内已有 `ai_call_log`）的基础上，部署本批次代码与数据库脚本。  
+**适用**: 在已具备 [20260404#01 增量](./20260404%2301_DEPLOY_AND_UPGRADE.md)（或等效：库内已有 `ai_call_log`）的基础上，部署本批次代码与数据库脚本。  
 **关联**: [文档索引](../README.md)、[`db/README.md`](../../db/README.md)、[API §3.10/3.12](../core/api_v0.1_260403.md)
 
 ---
@@ -21,24 +22,25 @@
 
 ## 2. 数据库升级（已有库，按顺序执行）
 
-在目标库执行（示例与 260404 相同，库名按环境替换）：
+在目标库执行（示例与 **20260404#01** 相同，库名按环境替换）：
 
 ```bash
 # 迁移文件名含「#」，请在 shell 中对路径加引号。
-# 若尚未执行 Kimi 默认模型切换（可选）
-mysql … < "db/migrations/2026-04-05#01_ai_model_kimi_moonshot.sql"
-
+# 下列顺序与 db/migrations 字名字典序一致（2026-04-04#03–#05 后接 2026-04-05#01）。
 # 预置试卷分析 Prompt（无则插入）
-mysql … < "db/migrations/2026-04-06#01_prompt_paper_analyze_template.sql"
+mysql … < "db/migrations/2026-04-04#03_prompt_paper_analyze_template.sql"
 
 # 若曾插入含 %file_content 的旧版 Prompt，对齐为当前默认文案（可选，见脚本条件）
-mysql … < "db/migrations/2026-04-07#01_prompt_paper_analyze_no_file_content.sql"
+mysql … < "db/migrations/2026-04-04#04_prompt_paper_analyze_no_file_content.sql"
 
 # AI 日志：请求/响应正文列（本轮必须，否则新后端列表查询会失败）
-mysql … < "db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql"
+mysql … < "db/migrations/2026-04-04#05_ai_call_log_request_response_body.sql"
+
+# 若尚未执行 Kimi 默认模型切换（可选）
+mysql … < "db/migrations/2026-04-05#01_ai_model_kimi_moonshot.sql"
 ```
 
-**全新建库**：直接使用当前 **`db/schema/mysql_schema_v0.1_260403.sql`**（已含 `ai_call_log` 新列与结构），再按需 **`db/seed/dev_seed.sql`**；上述迁移中 **仅** `2026-04-05#01` / `2026-04-06#01` 在种子已覆盖时可跳过（仍以团队约定为准）。
+**全新建库**：直接使用当前 **`db/schema/mysql_schema_v0.1_260403.sql`**（已含 `ai_call_log` 新列与结构），再按需 **`db/seed/dev_seed.sql`**；上述迁移中 **仅** `2026-04-05#01` / `2026-04-04#03` 在种子已覆盖时可跳过（仍以团队约定为准）。
 
 ---
 
@@ -63,4 +65,4 @@ mysql … < "db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql"
 ## 5. 文档与基线
 
 - **API**：[`api_v0.1_260403.md`](../core/api_v0.1_260403.md) §3.10、§3.12 已随代码更新。  
-- **本文件**：仅描述 **260404 之后至本轮** 的增量；260404 的 checklist 仍可作为前置阅读。
+- **本文件**：仅描述 **20260404#01 之后至本轮** 的增量；#01 的 checklist 仍可作为前置阅读。

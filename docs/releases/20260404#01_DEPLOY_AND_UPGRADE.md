@@ -1,5 +1,6 @@
 # StepUp v0.1 增量：设计说明与部署 / 升级指南
 
+**发版批次**: `20260404#01`  
 **日期**: 2026-04-04  
 **适用**: 自本提交起准备发往 **测试 / QA** 或同级环境时对照执行。  
 **关联**: [文档索引](../README.md)、[部署指南](../core/deployment_guide_v0.1_260403.md)、[`db/README.md`](../../db/README.md)
@@ -91,4 +92,4 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 ## 5. 文档维护说明
 
 - **本文件**：记录 **与该发版相关的增量设计与升级步骤**；大段落基础设施仍以 **deployment_guide / architecture** 为准。  
-- **以后发版**：可复制本文件为新日期版本，或在本文件追加 §6「历史」；索引入口始终为 [**docs/README.md**](../README.md)；增量文档登记见 [**releases/README.md**](./README.md)。
+- **以后发版**：新建 **`YYYYMMDD#NN_DEPLOY_AND_UPGRADE.md`**（见 [releases/README.md](./README.md)）；索引入口为 [**docs/README.md**](../README.md)。

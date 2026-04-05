@@ -2,7 +2,9 @@ package student
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
+
+var errPaperFileTooLarge = errors.New("paper file too large")
 
 type PaperHandler struct {
 	service *studentpaper.Service
@@ -21,7 +25,8 @@ func NewPaperHandler(service *studentpaper.Service, audit *auditlog.Writer) *Pap
 }
 
 func (h *PaperHandler) Create(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(25 << 20); err != nil {
+	const maxMultipartBytes = 120 << 20
+	if err := r.ParseMultipartForm(maxMultipartBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_MULTIPART"})
 		return
 	}
@@ -34,34 +39,86 @@ func (h *PaperHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "FILE_REQUIRED"})
-		return
-	}
-	defer func() { _ = file.Close() }()
-
 	const maxBytes = 25 << 20
-	raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "READ_FAILED"})
-		return
+	var parts []studentpaper.UploadPart
+
+	appendHeader := func(fh *multipart.FileHeader) error {
+		f, err := fh.Open()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = f.Close() }()
+		raw, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+		if err != nil {
+			return err
+		}
+		if len(raw) > maxBytes {
+			return errPaperFileTooLarge
+		}
+		parts = append(parts, studentpaper.UploadPart{
+			Filename:    fh.Filename,
+			ContentType: fh.Header.Get("Content-Type"),
+			Bytes:       raw,
+		})
+		return nil
 	}
-	if len(raw) > maxBytes {
-		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"code": "FILE_TOO_LARGE"})
-		return
+
+	if r.MultipartForm != nil && len(r.MultipartForm.File["files"]) > 0 {
+		for _, fh := range r.MultipartForm.File["files"] {
+			if err := appendHeader(fh); err != nil {
+				if errors.Is(err, errPaperFileTooLarge) {
+					writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"code": "FILE_TOO_LARGE"})
+					return
+				}
+				writeJSON(w, http.StatusBadRequest, map[string]any{"code": "READ_FAILED"})
+				return
+			}
+		}
+	} else {
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "FILE_REQUIRED"})
+			return
+		}
+		defer func() { _ = file.Close() }()
+		raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "READ_FAILED"})
+			return
+		}
+		if len(raw) > maxBytes {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]any{"code": "FILE_TOO_LARGE"})
+			return
+		}
+		parts = append(parts, studentpaper.UploadPart{
+			Filename:    header.Filename,
+			ContentType: header.Header.Get("Content-Type"),
+			Bytes:       raw,
+		})
 	}
-	contentType := header.Header.Get("Content-Type")
-	size := int64(len(raw))
-	paper, err := h.service.Create(identifier, subject, stage, header.Filename, size, contentType, raw)
+
+	paper, err := h.service.Create(identifier, subject, stage, parts)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "PAPER_CREATE_FAILED"})
+		switch {
+		case errors.Is(err, studentpaper.ErrStudentUploadEmpty):
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "FILE_REQUIRED"})
+		case errors.Is(err, studentpaper.ErrStudentUploadTooMany):
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "TOO_MANY_FILES"})
+		case errors.Is(err, studentpaper.ErrStudentUploadPDFMultiple):
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "PDF_REQUIRES_SINGLE_FILE"})
+		case errors.Is(err, studentpaper.ErrStudentUploadImageSet):
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_IMAGE_BATCH"})
+		default:
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "PAPER_CREATE_FAILED"})
+		}
 		return
 	}
 	if h.audit != nil {
 		if sid := middleware.StudentDBID(r.Context()); sid != 0 {
 			pid := paper.ID
-			snap, _ := json.Marshal(map[string]any{"subject": subject, "stage": stage, "file": header.Filename})
+			snap, _ := json.Marshal(map[string]any{
+				"subject": subject, "stage": stage, "files_n": len(parts), "label": paper.FileName,
+			})
 			h.audit.Write(r.Context(), auditlog.Event{
 				UserID:     &sid,
 				UserType:   "student",

@@ -206,19 +206,26 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 	}
 
 	var userMsg map[string]any
-	if len(input.ImageData) > 0 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(input.ImageMIME)), "image/") {
-		dataURL := fmt.Sprintf("data:%s;base64,%s", input.ImageMIME, base64.StdEncoding.EncodeToString(input.ImageData))
-		userMsg = map[string]any{
-			"role": "user",
-			"content": []any{
-				map[string]any{
-					"type": "image_url",
-					"image_url": map[string]any{
-						"url": dataURL,
-					},
+	if len(input.VisionImages) > 0 {
+		content := make([]any, 0, len(input.VisionImages)+1)
+		for _, im := range input.VisionImages {
+			mime := strings.ToLower(strings.TrimSpace(im.MIME))
+			if !strings.HasPrefix(mime, "image/") || len(im.Data) == 0 {
+				continue
+			}
+			dataURL := fmt.Sprintf("data:%s;base64,%s", im.MIME, base64.StdEncoding.EncodeToString(im.Data))
+			content = append(content, map[string]any{
+				"type": "image_url",
+				"image_url": map[string]any{
+					"url": dataURL,
 				},
-				map[string]any{"type": "text", "text": userPrompt},
-			},
+			})
+		}
+		if len(content) == 0 {
+			userMsg = map[string]any{"role": "user", "content": userPrompt}
+		} else {
+			content = append(content, map[string]any{"type": "text", "text": userPrompt})
+			userMsg = map[string]any{"role": "user", "content": content}
 		}
 	} else {
 		userMsg = map[string]any{

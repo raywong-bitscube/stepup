@@ -80,6 +80,56 @@
     }
   }
 
+  /** Per-subject student features. Extend here or later move to GET /api/v1/catalog.features. */
+  const PAPER_ANALYZE = {
+    id: 'paper_analyze',
+    title: '试卷 AI 分析',
+    desc: '上传 PDF，或最多 10 张试卷图片，生成摘要、薄弱点与改进计划',
+    available: true,
+  };
+
+  function subjectFeatures(subjectName) {
+    const map = {
+      语文: [
+        PAPER_ANALYZE,
+        {
+          id: 'essay_outline',
+          title: '作文提纲练习',
+          desc: '立意、结构与论据提纲训练（即将开放）',
+          available: false,
+        },
+      ],
+      英语: [
+        PAPER_ANALYZE,
+        {
+          id: 'vocab',
+          title: '背单词',
+          desc: '词书与复习计划（即将开放）',
+          available: false,
+        },
+      ],
+      数学: [
+        PAPER_ANALYZE,
+        {
+          id: 'topic_drill',
+          title: '题型专项',
+          desc: '按知识点巩固（即将开放）',
+          available: false,
+        },
+      ],
+      物理: [
+        PAPER_ANALYZE,
+        {
+          id: 'lab_think',
+          title: '实验与探究',
+          desc: '实验思路与数据处理（即将开放）',
+          available: false,
+        },
+      ],
+    };
+    return map[subjectName] || [PAPER_ANALYZE];
+  }
+
   const state = {
     token: localStorage.getItem(LS_TOKEN),
     authTab: 'login',
@@ -89,6 +139,8 @@
     papers: [],
     selectedPaperId: null,
     uploading: false,
+    hubSubject: null,
+    hubFeature: null,
   };
 
   async function api(path, opts = {}) {
@@ -126,7 +178,7 @@
         <div class="wrap">
           <div class="card">
             <h1>StepUp 学生端</h1>
-            <p class="muted">手机号或邮箱注册/登录，上传试卷查看 AI 分析与改进计划（第一阶段）。</p>
+            <p class="muted">手机号或邮箱注册/登录。按科目使用试卷分析、作文提纲等功能（持续扩展）。</p>
             <p class="muted" style="margin-top:8px">API：<strong>${escapeHtml(apiBase())}</strong>
               （<code>?api=</code> 或 <code>localStorage.stepup_api_base</code>）</p>
             ${flash}
@@ -151,18 +203,23 @@
           <button type="button" class="btn secondary" id="btnOut">退出</button>
         </div>
         ${flash}
-        <div class="card" id="uploadCard"><p class="muted">加载中…</p></div>
+        <div class="card" id="hubCard"><p class="muted">加载中…</p></div>
         <div class="card">
           <h2>我的试卷</h2>
-          <p class="muted">点击一条查看摘要、薄弱点与改进计划（数据已保存至服务端）。</p>
+          <p class="muted">含各科目上传记录；点击一条查看 AI 摘要与改进计划。</p>
           <div id="paperPane"></div>
         </div>
       </div>`;
     bindMain(root);
     Promise.all([loadSession(root), loadCatalog()])
       .then(() => {
-        root.querySelector('#uploadCard').innerHTML = renderUploadForm();
-        bindUpload(root);
+        const hub = root.querySelector('#hubCard');
+        hub.innerHTML = renderHub();
+        bindHub(root, hub);
+        if (state.hubSubject && state.hubFeature === 'paper_analyze') {
+          const fb = hub.querySelector('#featureBody');
+          if (fb) bindUpload(root, fb);
+        }
         return refreshPapers(root);
       })
       .catch((e) => {
@@ -308,10 +365,90 @@
     }
   }
 
-  function optSubjects() {
-    const xs = state.catalog.subjects || [];
-    if (!xs.length) return '<option value="物理">物理</option><option value="语文">语文</option>';
-    return xs.map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+  function renderHub() {
+    if (!state.hubSubject) {
+      const subs = state.catalog.subjects || [];
+      const cards = subs.length
+        ? subs
+            .map(
+              (s) =>
+                `<button type="button" class="subject-card" data-sub="${escapeHtml(s.name)}"><span class="sc-name">${escapeHtml(
+                  s.name
+                )}</span><span class="sc-hint">查看功能</span></button>`
+            )
+            .join('')
+        : '<p class="muted">暂无科目。请稍后重试或联系管理员配置 catalog。</p>';
+      return `
+        <h2>选择科目</h2>
+        <p class="muted">先选科目，再进入具体功能。试卷分析支持 <strong>1 个 PDF</strong> 或 <strong>最多 10 张图片</strong>。</p>
+        <div class="subject-grid">${cards}</div>`;
+    }
+    const feats = subjectFeatures(state.hubSubject);
+    const featHtml = feats
+      .map((f) => {
+        const on = state.hubFeature === f.id ? ' on' : '';
+        const soon = f.available ? '' : ' soon';
+        return `<button type="button" class="feature-card${on}${soon}" data-fid="${escapeHtml(f.id)}" data-available="${
+          f.available ? '1' : '0'
+        }"><span class="fc-title">${escapeHtml(f.title)}</span><span class="fc-desc">${escapeHtml(f.desc)}</span></button>`;
+      })
+      .join('');
+    let panel = '';
+    if (state.hubFeature === 'paper_analyze') {
+      panel = `<div class="feature-panel" id="featureBody">${renderUploadForm()}</div>`;
+    }
+    return `
+      <div class="hub-nav">
+        <button type="button" class="btn-link" id="btnBackSubjects">← 全部科目</button>
+        <h2 style="margin:8px 0 0">${escapeHtml(state.hubSubject)}</h2>
+        <p class="muted" style="margin:4px 0 0">选择学习功能</p>
+      </div>
+      <div class="feature-grid">${featHtml}</div>
+      ${panel}`;
+  }
+
+  function bindHub(root, hubEl) {
+    hubEl.querySelector('#btnBackSubjects')?.addEventListener('click', () => {
+      state.hubSubject = null;
+      state.hubFeature = null;
+      mount(document.getElementById('app'));
+    });
+    hubEl.querySelectorAll('.subject-card').forEach((b) => {
+      b.addEventListener('click', () => {
+        state.hubSubject = b.getAttribute('data-sub');
+        state.hubFeature = null;
+        mount(document.getElementById('app'));
+      });
+    });
+    hubEl.querySelectorAll('.feature-card').forEach((b) => {
+      b.addEventListener('click', () => {
+        if (b.getAttribute('data-available') === '0') {
+          alert('该功能即将开放，敬请期待。');
+          return;
+        }
+        state.hubFeature = b.getAttribute('data-fid');
+        mount(document.getElementById('app'));
+      });
+    });
+  }
+
+  function collectUploadFiles(fileList) {
+    const fs = Array.from(fileList || []);
+    if (fs.length === 0) return null;
+    if (fs.length > 10) {
+      alert('最多选择 10 个文件。');
+      return null;
+    }
+    const pdfs = fs.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfs.length > 1) {
+      alert('PDF 仅支持单个文件上传。');
+      return null;
+    }
+    if (pdfs.length === 1 && fs.length > 1) {
+      alert('上传 PDF 时不要同时选择其他文件。多图请只选图片。');
+      return null;
+    }
+    return fs;
   }
 
   function optStages() {
@@ -321,48 +458,56 @@
   }
 
   function renderUploadForm() {
+    const sub = state.hubSubject ? escapeHtml(state.hubSubject) : '—';
     return `
-      <h2>上传试卷</h2>
-      <p class="muted">选择科目与阶段，上传 <strong>PDF</strong> 或 <strong>图片</strong>。分析由当前后台配置的 AI 模型执行，结果写入数据库。</p>
-      <div class="row">
-        <div><label>科目</label><select id="sub">${optSubjects()}</select></div>
+      <h3 style="margin:0 0 8px">试卷 AI 分析</h3>
+      <p class="muted" style="margin:0 0 12px">当前科目：<strong>${sub}</strong>。可选 <strong>1 个 PDF</strong>，或 <strong>最多 10 张图片</strong>（多图将一并送给模型识图分析）。单张图不超过 25MB。</p>
+      <div class="row" style="grid-template-columns:1fr">
         <div><label>阶段</label><select id="stg">${optStages()}</select></div>
       </div>
       <div class="drop">
-        <input type="file" id="file" accept=".pdf,application/pdf,image/*" />
+        <input type="file" id="file" multiple accept=".pdf,application/pdf,image/*" />
         <p class="muted" id="fileMeta" style="margin:8px 0 0">未选择文件</p>
       </div>
       <button type="button" class="btn" id="bUp">提交并开始分析</button>`;
   }
 
-  function bindUpload(root) {
-    const fileInput = root.querySelector('#file');
-    const meta = root.querySelector('#fileMeta');
-    const btn = root.querySelector('#bUp');
+  function bindUpload(root, container) {
+    const fileInput = container.querySelector('#file');
+    const meta = container.querySelector('#fileMeta');
+    const btn = container.querySelector('#bUp');
+    if (!fileInput || !btn) return;
     fileInput.addEventListener('change', () => {
-      const f = fileInput.files[0];
-      if (!f) {
+      const fs = fileInput.files;
+      if (!fs || !fs.length) {
         meta.textContent = '未选择文件';
         return;
       }
-      meta.textContent = f.name + ' · ' + formatBytes(f.size);
+      const names = Array.from(fs)
+        .map((f) => f.name)
+        .join('、');
+      let total = 0;
+      Array.from(fs).forEach((f) => {
+        total += f.size;
+      });
+      meta.textContent = `已选 ${fs.length} 个文件 · 合计 ${formatBytes(total)} · ${names.length > 120 ? names.slice(0, 120) + '…' : names}`;
     });
     btn.addEventListener('click', async () => {
-      const sub = root.querySelector('#sub').value;
-      const stg = root.querySelector('#stg').value;
-      const f = fileInput.files[0];
-      if (!f) {
-        alert('请选择文件');
+      if (!state.hubSubject) {
+        alert('请先从科目入口进入。');
         return;
       }
+      const stg = container.querySelector('#stg').value;
+      const fs = collectUploadFiles(fileInput.files);
+      if (!fs) return;
       if (state.uploading) return;
       state.uploading = true;
       btn.disabled = true;
       btn.textContent = '上传并分析中…';
       const fd = new FormData();
-      fd.append('subject', sub);
+      fd.append('subject', state.hubSubject);
       fd.append('stage', stg);
-      fd.append('file', f, f.name);
+      fs.forEach((f) => fd.append('files', f, f.name));
       try {
         const res = await api('/api/v1/student/papers', { method: 'POST', form: fd });
         const newId = res.paper && res.paper.id ? Number(res.paper.id) : null;
@@ -388,6 +533,8 @@
       localStorage.removeItem(LS_TOKEN);
       state.selectedPaperId = null;
       state.session = null;
+      state.hubSubject = null;
+      state.hubFeature = null;
       mount(document.getElementById('app'));
     });
   }

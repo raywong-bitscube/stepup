@@ -1,6 +1,6 @@
 # StepUp Backend Scaffold (v0.1)
 
-发版与数据库升级见仓库 [**docs/README.md**](../docs/README.md)、[**docs/releases/DEPLOY_AND_UPGRADE_v0.1_260404.md**](../docs/releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)。
+发版与数据库升级见仓库 [**docs/README.md**](../docs/README.md)、[**docs/releases/20260404#01_DEPLOY_AND_UPGRADE.md**](../docs/releases/20260404%2301_DEPLOY_AND_UPGRADE.md)。
 
 ## Run
 
@@ -32,7 +32,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 
 When `DB_DSN` is set, the process opens **one** shared `*sql.DB` connection pool; admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
 
-**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表见 `db/schema/mysql_schema_v0.1_260403.sql` 与增量 `db/migrations/2026-04-08#01_ai_call_log_request_response_body.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
+**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表见 `db/schema/mysql_schema_v0.1_260403.sql` 与增量 `db/migrations/2026-04-04#05_ai_call_log_request_response_body.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
 
 ## Environment Variables
 

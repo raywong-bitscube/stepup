@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS exam_paper (
   student_id BIGINT UNSIGNED NOT NULL,
   subject_id BIGINT UNSIGNED NOT NULL,
   file_url VARCHAR(1024) NOT NULL,
+  extra_file_urls JSON NULL COMMENT 'additional /uploads paths for multi-image batch; primary in file_url',
   file_type VARCHAR(16) NOT NULL COMMENT 'pdf/image',
   score INT NULL,
   exam_date DATE NULL,

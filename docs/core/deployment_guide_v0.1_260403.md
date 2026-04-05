@@ -6,7 +6,7 @@
 **相关文档**:
 
 - [**文档索引与阅读顺序**](../README.md)
-- [**v0.1 增量：部署与升级说明**](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md)（含 AI 调用日志、SQL 目录调整等）
+- [**v0.1 增量：部署与升级说明（20260404#01）**](../releases/20260404%2301_DEPLOY_AND_UPGRADE.md)（含 AI 调用日志、SQL 目录调整等）
 - [架构与部署设计](./architecture_deployment_v0.1_260403.md)
 - [MySQL 建表脚本](../../db/schema/mysql_schema_v0.1_260403.sql)（**所有 SQL 见仓库 [`db/`](../../db/README.md)**）
 - [API 文档](./api_v0.1_260403.md)
@@ -78,7 +78,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < "db/migrations/2026-04-04#01_ai_call_log.sql"
 ```
 
-说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](../releases/DEPLOY_AND_UPGRADE_v0.1_260404.md) §3。
+说明见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md) 与 [部署与升级说明](../releases/20260404%2301_DEPLOY_AND_UPGRADE.md) §3。
 
 **种子数据说明**（`db/seed/dev_seed.sql`）：
 
