@@ -45,7 +45,15 @@
       if (u) return u.replace(/\/$/, '');
     }
     const p = location.pathname || '';
-    if (p.startsWith('/student')) return location.origin;
+    if (p.startsWith('/student')) {
+      // 分端口部署（7010 静态 + 7012 API）时，若页面挂在 /student/ 下，仍需指向 API 端口，否则会 POST 到静态站得到 405。
+      const splitApiPort = PAGE_PORT_TO_API_PORT[location.port || ''];
+      if (splitApiPort) {
+        const u = apiBaseSameHostPort(splitApiPort);
+        if (u) return u.replace(/\/$/, '');
+      }
+      return location.origin;
+    }
     const host = location.hostname;
     const port = location.port;
     const isLocal = host === 'localhost' || host === '127.0.0.1';
