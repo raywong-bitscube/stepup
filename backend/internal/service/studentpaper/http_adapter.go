@@ -46,6 +46,11 @@ func endpointHost(raw string) string {
 	return u.Host
 }
 
+func isDashScopeLikeHost(host string) bool {
+	h := strings.ToLower(host)
+	return strings.Contains(h, "dashscope") || strings.Contains(h, "aliyuncs.com")
+}
+
 func truncateRunes(s string, max int) string {
 	if max <= 0 || s == "" {
 		return ""
@@ -238,6 +243,10 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 		"model":    model,
 		"messages": []any{userMsg},
 	}
+	// DashScope Qwen3.5+ may emit huge reasoning_content; prefer non-thinking for latency and logs.
+	if isDashScopeLikeHost(host) {
+		reqBody["enable_thinking"] = false
+	}
 	payload, err := json.Marshal(reqBody)
 	if err != nil {
 		trace.LatencyMS = time.Since(start).Milliseconds()
@@ -277,7 +286,7 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 		trace.ResponseBody = string(respBodyBytes)
 		return a.mockFallback(input, trace)
 	}
-	trace.ResponseBody = string(respBodyBytes)
+	trace.ResponseBody = string(redactChatCompletionResponseForLog(respBodyBytes))
 
 	if resp.StatusCode >= 400 {
 		trace.ErrorPhase = "http_status"

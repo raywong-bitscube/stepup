@@ -60,7 +60,8 @@ func DefaultEssayOutlineReview() string {
 请从以下维度分析：1.题目匹配度（是否紧扣文体/命题要求）；2.结构合理性（层次是否清晰，逻辑是否连贯）；3.素材适配性（素材是否典型、支撑中心）。
 请严格用一段连续文本输出三段，段与段之间用英文竖线 | 分隔，格式如下：
 {总体评价}|{维度评分：匹配度X星/结构X星/素材X星}|{详细建议：1.xxx；2.xxx}
-其中 X 为 1-5 的整数。不要 markdown 代码围栏。`
+其中 X 为 1-5 的整数。不要 markdown 代码围栏。
+仅输出上述三段中文正文；不要输出思考过程、英文推演或「Thinking」类内容。`
 }
 
 // DefaultEssayOutlineOCRTopic fallback when DB prompt missing.
