@@ -108,7 +108,7 @@ WHERE NOT EXISTS (
   WHERE `key` = 'paper_analyze_chat_user' AND is_deleted = 0
 );
 
--- 作文提纲练习 Prompt（与 db/migrations/2026-04-05#04_essay_outline_practice.sql 一致；仅种子环境未跑迁移时补齐）
+-- 作文提纲练习 Prompt（与 db/migrations/2026-04-06#01_essay_outline_practice.sql 一致；仅种子环境未跑迁移时补齐）
 INSERT INTO prompt_template
   (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
 SELECT

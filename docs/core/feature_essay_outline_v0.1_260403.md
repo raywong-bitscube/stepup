@@ -37,7 +37,7 @@
 | review_json | 解析后的点评：summary、stars(match/structure/material)、suggestions、highlights |
 | raw_review_response | 模型原始文本（便于溯源） |
 
-迁移：`db/migrations/2026-04-05#04_essay_outline_practice.sql`  
+迁移：`db/migrations/2026-04-06#01_essay_outline_practice.sql`  
 基线：`db/schema/mysql_schema_v0.1_260403.sql`（`essay_outline_practice` 段）
 
 ### 3.2 Prompt 模板（`prompt_template`）

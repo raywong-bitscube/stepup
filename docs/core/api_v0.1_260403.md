@@ -459,7 +459,7 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 
 ### 5.5 作文提纲练习（语文）
 
-需 **`DB_DSN`**（落库 `essay_outline_practice`）及已执行迁移 `db/migrations/2026-04-05#04_essay_outline_practice.sql`（或当前基线 schema）。AI 行为与 §1 试卷分析相同优先级（`ANALYSIS_ADAPTER`、`ai_model` 激活项）。详见 [`feature_essay_outline_v0.1_260403.md`](./feature_essay_outline_v0.1_260403.md)。
+需 **`DB_DSN`**（落库 `essay_outline_practice`）及已执行迁移 `db/migrations/2026-04-06#01_essay_outline_practice.sql`（或当前基线 schema）。AI 行为与 §1 试卷分析相同优先级（`ANALYSIS_ADAPTER`、`ai_model` 激活项）。详见 [`feature_essay_outline_v0.1_260403.md`](./feature_essay_outline_v0.1_260403.md)。
 
 #### 5.5.1 生成题目
 

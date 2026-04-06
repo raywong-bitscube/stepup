@@ -1,4 +1,5 @@
 -- 作文提纲练习：落库每次「提交点评」记录；Prompt 模板供管理端可编辑
+-- 命名：发文日 2026-04-06，当日批次 #01（见 db/README.md）
 SET NAMES utf8mb4;
 
 CREATE TABLE IF NOT EXISTS essay_outline_practice (
