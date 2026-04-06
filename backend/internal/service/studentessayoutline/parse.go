@@ -10,6 +10,7 @@ var (
 	reStarMatch     = regexp.MustCompile(`匹配度[：:．.]?\s*(\d)\s*(?:星|颗)`)
 	reStarStructure = regexp.MustCompile(`结构[合理]?[性]?[：:．.]?\s*(\d)\s*(?:星|颗)`)
 	reStarMaterial  = regexp.MustCompile(`素材[：:．.]?\s*(\d)\s*(?:星|颗)`)
+	reBulletPrefix  = regexp.MustCompile(`^\d+[\.\、．]\s*`)
 )
 
 func clampStar(n int) int {
@@ -93,8 +94,8 @@ func parseSuggestionBullets(detail string) []string {
 		if t == "" {
 			continue
 		}
-		// trim leading "1." "2、" 
-		t = regexp.MustCompile(`^\d+[\.\、．]\s*`).ReplaceAllString(t, "")
+		// trim leading "1." "2、"
+		t = reBulletPrefix.ReplaceAllString(t, "")
 		if t != "" {
 			parts = append(parts, t)
 		}
