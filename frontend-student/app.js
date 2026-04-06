@@ -149,6 +149,8 @@
   function defaultEssayOutline() {
     return {
       topicMode: 'category',
+      /** 分类选题下：按文体形式 | 按命题方式 */
+      categorySubMode: 'genre',
       topicText: '',
       topicLabel: '',
       topicSource: '',
@@ -605,14 +607,23 @@
   function renderEssayOutlinePanel() {
     const eo = state.essayOutline;
     const mode = eo.topicMode || 'category';
+    const subMode = eo.categorySubMode || 'genre';
     const genreRadios = ESSAY_GENRES.map((g) => {
       const c = eo.genre === g ? ' checked' : '';
-      return `<label class="radio-chip"><input type="radio" name="eo_genre" value="${escapeHtml(g)}"${c}/> ${escapeHtml(g)}</label>`;
+      return `<label class="radio-chip"><input type="radio" name="eo_genre" value="${escapeHtml(g)}"${c}/><span class="radio-label">${escapeHtml(
+        g
+      )}</span></label>`;
     }).join('');
     const taskRadios = ESSAY_TASKS.map((t) => {
       const c = eo.taskType === t ? ' checked' : '';
-      return `<label class="radio-chip"><input type="radio" name="eo_task" value="${escapeHtml(t)}"${c}/> ${escapeHtml(t)}</label>`;
+      return `<label class="radio-chip"><input type="radio" name="eo_task" value="${escapeHtml(t)}"${c}/><span class="radio-label">${escapeHtml(
+        t
+      )}</span></label>`;
     }).join('');
+    const subGenreOn = subMode === 'genre' ? ' on' : '';
+    const subTaskOn = subMode === 'task' ? ' on' : '';
+    const genreBlockHidden = subMode !== 'genre' ? ' hidden' : '';
+    const taskBlockHidden = subMode !== 'task' ? ' hidden' : '';
     const topicBody = escapeHtml(eo.topicText || '');
     const labelBody = escapeHtml(eo.topicLabel || '');
     const outlineBody = escapeHtml(eo.outlineText || '');
@@ -628,14 +639,22 @@
         <button type="button" class="btn-tab${tabCusOn}" id="eoTabCustom">自定义题目</button>
       </div>
       <div class="eo-section${catHidden}" id="eoSectionCategory">
-        <p class="muted" style="margin:8px 0">文体形式</p>
-        <div class="radio-row">${genreRadios}</div>
-        <p class="muted" style="margin:12px 0 0">命题方式</p>
-        <div class="radio-row">${taskRadios}</div>
-        <button type="button" class="btn secondary" id="eoBtnGen" style="margin-top:12px">生成题目</button>
+        <div class="eo-subtabs">
+          <button type="button" class="btn-tab btn-tab-sub${subGenreOn}" id="eoTabSubGenre">按文体形式</button>
+          <button type="button" class="btn-tab btn-tab-sub${subTaskOn}" id="eoTabSubTask">按命题方式</button>
+        </div>
+        <div class="eo-subsection" id="eoGenreBlock"${genreBlockHidden}>
+          <p class="muted" style="margin:8px 0 4px">请选择一种文体（记叙文、议论文等）</p>
+          <div class="radio-row">${genreRadios}</div>
+        </div>
+        <div class="eo-subsection" id="eoTaskBlock"${taskBlockHidden}>
+          <p class="muted" style="margin:8px 0 4px">请选择一种命题方式（命题作文、材料作文等）</p>
+          <div class="radio-row">${taskRadios}</div>
+        </div>
+        <button type="button" class="btn secondary" id="eoBtnGen" style="margin-top:14px">生成题目</button>
       </div>
-      <div class="eo-section${cusHidden}" id="eoSectionCustom">
-        <p class="muted" style="margin:8px 0">在下方「题目正文」中直接输入或粘贴；亦可上传题目截图（JPG/PNG）识别。</p>
+      <div class="eo-section${cusHidden}" id="eoSectionCustom" tabindex="-1">
+        <p class="muted" style="margin:8px 0">在下方「题目正文」输入、粘贴文字，或在本区域 <strong>Ctrl+V / ⌘V</strong> 粘贴截图；亦可上传 JPG/PNG 后点「识别」。</p>
         <div class="row" style="grid-template-columns:1fr 1fr; align-items:end">
           <div>
             <label>题目图片</label>
@@ -649,7 +668,7 @@
       </div>
       <div class="essay-topic-card" style="margin-top:16px">
         <h4 style="margin:0 0 8px">题目正文</h4>
-        <textarea id="eoTopicText" rows="5" placeholder="题目全文（分类选题生成后将自动填入，可自行微调）">${topicBody}</textarea>
+        <textarea id="eoTopicText" rows="5" placeholder="题目全文：分类选题生成后可改；自定义时在题目区或上方区域可粘贴文字，「自定义题目」内还可粘贴截图识别">${topicBody}</textarea>
         <label style="margin-top:8px;display:block;font-size:12px;color:var(--muted)">题型标签（如：议论文 · 材料作文；自拟题为「自定义」）</label>
         <input type="text" id="eoTopicLabel" placeholder="自定义" value="${labelBody}" style="margin-top:4px" />
       </div>
@@ -687,6 +706,27 @@
       applyMode();
     });
 
+    const blockGenre = container.querySelector('#eoGenreBlock');
+    const blockTask = container.querySelector('#eoTaskBlock');
+    const tabSubG = container.querySelector('#eoTabSubGenre');
+    const tabSubT = container.querySelector('#eoTabSubTask');
+    function applyCategorySubMode() {
+      const sm = state.essayOutline.categorySubMode || 'genre';
+      if (blockGenre) blockGenre.hidden = sm !== 'genre';
+      if (blockTask) blockTask.hidden = sm !== 'task';
+      if (tabSubG) tabSubG.classList.toggle('on', sm === 'genre');
+      if (tabSubT) tabSubT.classList.toggle('on', sm === 'task');
+    }
+    applyCategorySubMode();
+    tabSubG?.addEventListener('click', () => {
+      state.essayOutline.categorySubMode = 'genre';
+      applyCategorySubMode();
+    });
+    tabSubT?.addEventListener('click', () => {
+      state.essayOutline.categorySubMode = 'task';
+      applyCategorySubMode();
+    });
+
     const syncTopicFromDom = () => {
       const tt = container.querySelector('#eoTopicText');
       const tl = container.querySelector('#eoTopicLabel');
@@ -695,6 +735,62 @@
       if (tl) state.essayOutline.topicLabel = tl.value.trim() || '自定义';
       if (ol) state.essayOutline.outlineText = ol.value.trim();
     };
+
+    const runEssayOcrFile = async (file) => {
+      if (!file) return;
+      const btn = container.querySelector('#eoBtnOcr');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '识别中…';
+      }
+      const fd = new FormData();
+      fd.append('file', file, file.name || 'paste.png');
+      try {
+        const data = await api('/api/v1/student/essay-outline/ocr-topic', { method: 'POST', form: fd });
+        state.essayOutline.topicText = (data && data.topic_text) || '';
+        state.essayOutline.topicLabel = (data && data.label) || '自定义';
+        state.essayOutline.topicSource = 'ocr_image';
+        state.essayOutline.lastReview = null;
+        mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('识别失败：' + (e.data && e.data.code ? e.data.code : e.message));
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '识别图片中的题目';
+        }
+      }
+    };
+
+    sectionCus?.addEventListener('paste', (e) => {
+      const dt = e.clipboardData;
+      if (!dt) return;
+      const files = clipboardFilesFromDataTransfer(dt);
+      const img = files.find((f) => String(f.type || '').startsWith('image/'));
+      if (img) {
+        e.preventDefault();
+        runEssayOcrFile(img)
+          .catch(() => {});
+        return;
+      }
+      const plain = dt.getData('text/plain');
+      if (!plain || !String(plain).trim()) return;
+      const tgt = e.target;
+      if (tgt && tgt.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      const ta = container.querySelector('#eoTopicText');
+      if (!ta) return;
+      const start = ta.selectionStart != null ? ta.selectionStart : ta.value.length;
+      const end = ta.selectionEnd != null ? ta.selectionEnd : ta.value.length;
+      const v = ta.value;
+      ta.value = v.slice(0, start) + plain + v.slice(end);
+      ta.focus();
+      try {
+        const pos = start + plain.length;
+        ta.setSelectionRange(pos, pos);
+      } catch (_) {}
+    });
 
     container.querySelector('#eoBtnGen')?.addEventListener('click', async () => {
       const genre = container.querySelector('input[name="eo_genre"]:checked')?.value;
@@ -734,25 +830,18 @@
         alert('请选择 JPG/PNG 图片。');
         return;
       }
-      const btn = container.querySelector('#eoBtnOcr');
-      btn.disabled = true;
-      btn.textContent = '识别中…';
-      const fd = new FormData();
-      fd.append('file', file, file.name);
-      try {
-        const data = await api('/api/v1/student/essay-outline/ocr-topic', { method: 'POST', form: fd });
-        state.essayOutline.topicText = (data && data.topic_text) || '';
-        state.essayOutline.topicLabel = (data && data.label) || '自定义';
-        state.essayOutline.topicSource = 'ocr_image';
-        state.essayOutline.lastReview = null;
-        mount(document.getElementById('app'));
-      } catch (e) {
-        if (authRedirectHandled(e)) return;
-        alert('识别失败：' + (e.data && e.data.code ? e.data.code : e.message));
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '识别图片中的题目';
-      }
+      await runEssayOcrFile(file);
+    });
+
+    container.querySelector('#eoTopicText')?.addEventListener('paste', (e) => {
+      if (state.essayOutline.topicMode !== 'custom') return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+      const files = clipboardFilesFromDataTransfer(dt);
+      const img = files.find((f) => String(f.type || '').startsWith('image/'));
+      if (!img) return;
+      e.preventDefault();
+      runEssayOcrFile(img).catch(() => {});
     });
 
     container.querySelector('#eoBtnReview')?.addEventListener('click', async () => {

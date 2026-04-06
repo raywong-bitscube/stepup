@@ -107,3 +107,58 @@ WHERE NOT EXISTS (
   SELECT 1 FROM prompt_template
   WHERE `key` = 'paper_analyze_chat_user' AND is_deleted = 0
 );
+
+-- 作文提纲练习 Prompt（与 db/migrations/2026-04-05#04_essay_outline_practice.sql 一致；仅种子环境未跑迁移时补齐）
+INSERT INTO prompt_template
+  (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
+SELECT
+  'essay_outline_generate_topic',
+  '作文提纲-按文体与命题方式生成题目（占位符 %genre %task_type）',
+  '你是一名有10年高中语文教学经验的资深教师，熟悉高考作文命题趋势。\n用户选择的文体形式为：%genre；命题方式为：%task_type。\n请生成1道符合近年高考趋势的作文题目。要求：题目需明确文体/命题类型，内容贴合高中生认知，具有思辨性或情感表达空间，避免偏题怪题。\n请严格用一行输出，格式为：{题目全文} | {文体/命题类型标签}。不要其它说明或换行。',
+  1,
+  NOW(),
+  0,
+  NOW(),
+  0,
+  0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM prompt_template
+  WHERE `key` = 'essay_outline_generate_topic' AND is_deleted = 0
+);
+
+INSERT INTO prompt_template
+  (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
+SELECT
+  'essay_outline_review',
+  '作文提纲-AI点评（占位符 %topic_text %outline_text）',
+  '你是一名高考作文阅卷专家，请对用户的作文提纲进行专业点评。\n题目为：%topic_text\n用户提纲为：%outline_text\n请从以下维度分析：1.题目匹配度（是否紧扣文体/命题要求）；2.结构合理性（层次是否清晰，逻辑是否连贯）；3.素材适配性（素材是否典型、支撑中心）。\n请严格用一段连续文本输出三段，段与段之间用英文竖线 | 分隔，格式如下：\n{总体评价}|{维度评分：匹配度X星/结构X星/素材X星}|{详细建议：1.xxx；2.xxx}\n其中 X 为 1-5 的整数。不要 markdown 代码围栏。',
+  1,
+  NOW(),
+  0,
+  NOW(),
+  0,
+  0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM prompt_template
+  WHERE `key` = 'essay_outline_review' AND is_deleted = 0
+);
+
+INSERT INTO prompt_template
+  (`key`, description, content, status, created_at, created_by, updated_at, updated_by, is_deleted)
+SELECT
+  'essay_outline_ocr_topic',
+  '作文提纲-从题目图片 OCR 提取正文（无占位符或后续扩展）',
+  '请识别图片中的作文题目或材料内容，只输出应作为「题目文本」交给学生看的正文本身；不要加「题目：」等前缀，不要解释。若材料为多段，保留合理换行。',
+  1,
+  NOW(),
+  0,
+  NOW(),
+  0,
+  0
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM prompt_template
+  WHERE `key` = 'essay_outline_ocr_topic' AND is_deleted = 0
+);
