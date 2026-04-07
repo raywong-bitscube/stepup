@@ -150,6 +150,9 @@
 
   /** 登录后主界面异步加载代数；`mount` 递增，用于丢弃过期的 Promise 回调，避免失败后反复 `mount` 造成死循环。 */
   let mainLoadGen = 0;
+  /** 作文提纲「练习记录」列表请求序号：勿用 mainLoadGen 丢弃列表结果，否则任意 mount 会导致刚成功的 GET 被丢弃、列表永远不刷新。 */
+  let eoPracticeListFetchSeq = 0;
+  let eoPracticeDetailFetchSeq = 0;
 
   const ESSAY_GENRES = ['记叙文', '议论文', '散文', '应用文', '说明文'];
   const ESSAY_TASKS = ['命题作文', '材料作文', '话题作文', '任务驱动型作文'];
@@ -588,7 +591,7 @@
 
   function renderEOPracticeList(items) {
     if (!items || !items.length) {
-      return '<p class="muted">暂无记录，提交点评后会出现在这里。</p>';
+      return '<p class="muted">暂无记录。提交点评成功后会出现在这里；若库中已有数据仍为空，请核对 <code>essay_outline_practice.student_id</code> 是否与当前账号在 <code>student</code> 表中的 <code>id</code> 一致。</p>';
     }
     const rows = items
       .map(
@@ -940,39 +943,63 @@
     });
 
     async function refreshPracticeList() {
-      const host = container.querySelector('#eoPracticeListHost');
+      const seq = ++eoPracticeListFetchSeq;
+      const host = document.getElementById('eoPracticeListHost');
       if (!host) return;
       host.innerHTML = '<p class="muted">加载中…</p>';
       try {
         const d = await api('/api/v1/student/essay-outline/practices?limit=50');
-        host.innerHTML = renderEOPracticeList(d.items || []);
-        host.querySelectorAll('.eo-practice-item').forEach((el) => {
+        if (seq !== eoPracticeListFetchSeq) return;
+        const host2 = document.getElementById('eoPracticeListHost');
+        if (!host2) return;
+        const items = d && Array.isArray(d.items) ? d.items : [];
+        host2.innerHTML = renderEOPracticeList(items);
+        host2.querySelectorAll('.eo-practice-item').forEach((el) => {
           el.addEventListener('click', () => {
             loadPracticeDetail(Number(el.getAttribute('data-practice-id')));
           });
         });
       } catch (e) {
-        if (authRedirectHandled(e)) return;
-        host.innerHTML =
+        if (authRedirectHandled(e)) {
+          const h = document.getElementById('eoPracticeListHost');
+          if (h) h.innerHTML = '<p class="muted">登录已失效，请刷新页面重新登录。</p>';
+          return;
+        }
+        if (seq !== eoPracticeListFetchSeq) return;
+        const host2 = document.getElementById('eoPracticeListHost');
+        if (!host2) return;
+        host2.innerHTML =
           '<p class="muted">加载记录失败：' +
           escapeHtml(e.data && e.data.code ? e.data.code : e.message) +
-          '</p>';
+          '</p><p class="muted" style="font-size:12px;margin-top:6px">若数据库已有记录但此处为空，请核对 <code>essay_outline_practice.student_id</code> 是否等于当前登录学生在表 <code>student</code> 中的 <code>id</code>；并确认后端已部署 <code>GET …/essay-outline/practices</code>。</p>';
       }
     }
 
     async function loadPracticeDetail(id) {
-      const dh = container.querySelector('#eoPracticeDetailHost');
+      const seq = ++eoPracticeDetailFetchSeq;
+      const dh = document.getElementById('eoPracticeDetailHost');
       if (!dh) return;
       dh.innerHTML = '<p class="muted">加载详情…</p>';
       try {
         const d = await api('/api/v1/student/essay-outline/practices/' + id);
-        dh.innerHTML = renderEOPracticeDetail(d.practice);
-        dh.querySelector('#eoBtnCloseDetail')?.addEventListener('click', () => {
-          dh.innerHTML = '';
+        if (seq !== eoPracticeDetailFetchSeq) return;
+        const dh2 = document.getElementById('eoPracticeDetailHost');
+        if (!dh2) return;
+        dh2.innerHTML = renderEOPracticeDetail(d.practice);
+        dh2.querySelector('#eoBtnCloseDetail')?.addEventListener('click', () => {
+          const h = document.getElementById('eoPracticeDetailHost');
+          if (h) h.innerHTML = '';
         });
       } catch (e) {
-        if (authRedirectHandled(e)) return;
-        dh.innerHTML =
+        if (authRedirectHandled(e)) {
+          const h = document.getElementById('eoPracticeDetailHost');
+          if (h) h.innerHTML = '<p class="muted">登录已失效，请刷新页面。</p>';
+          return;
+        }
+        if (seq !== eoPracticeDetailFetchSeq) return;
+        const h2 = document.getElementById('eoPracticeDetailHost');
+        if (!h2) return;
+        h2.innerHTML =
           '<p class="muted">无法加载：' +
           escapeHtml(e.data && e.data.code ? e.data.code : e.message) +
           '</p>';
@@ -980,6 +1007,12 @@
     }
 
     refreshPracticeList();
+    // Second pass: avoids rare races (e.g. remount/generation) or first GET finishing before UI settles.
+    setTimeout(() => {
+      if (state.hubSubject && state.hubFeature === 'essay_outline') {
+        refreshPracticeList();
+      }
+    }, 400);
   }
 
   function collectUploadFiles(fileList) {
