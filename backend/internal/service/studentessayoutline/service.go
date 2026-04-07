@@ -8,6 +8,7 @@ import (
 	"mime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
@@ -18,7 +19,31 @@ import (
 var (
 	ErrDatabaseRequired = errors.New("essay outline requires database")
 	ErrInvalidInput     = errors.New("invalid input")
+	ErrPracticeNotFound = errors.New("essay outline practice not found")
 )
+
+// PracticeSummary is one row for the student history list (lightweight).
+type PracticeSummary struct {
+	ID           uint64    `json:"id"`
+	CreatedAt    time.Time `json:"created_at"`
+	TopicLabel   string    `json:"topic_label"`
+	TopicSource  string    `json:"topic_source"`
+	TopicPreview string    `json:"topic_preview"`
+}
+
+// PracticeDetail is a full saved practice record for the detail view.
+type PracticeDetail struct {
+	ID          uint64         `json:"id"`
+	CreatedAt   time.Time      `json:"created_at"`
+	TopicText   string         `json:"topic_text"`
+	TopicLabel  string         `json:"topic_label"`
+	TopicSource string         `json:"topic_source"`
+	Genre       string         `json:"genre,omitempty"`
+	TaskType    string         `json:"task_type,omitempty"`
+	OutlineText string         `json:"outline_text"`
+	Review      map[string]any `json:"review"`
+	RawReview   string         `json:"raw_review,omitempty"`
+}
 
 const subjectNameChinese = "语文"
 
@@ -357,4 +382,94 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+func previewRunes(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || s == "" {
+		return s
+	}
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:max]) + "…"
+}
+
+// ListPractices returns recent non-deleted rows for the student, newest first.
+func (s *Service) ListPractices(ctx context.Context, studentID uint64, limit int) ([]PracticeSummary, error) {
+	if s.db == nil {
+		return nil, ErrDatabaseRequired
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, created_at, topic_label, topic_source, topic_text
+FROM essay_outline_practice
+WHERE student_id = ? AND is_deleted = 0
+ORDER BY created_at DESC, id DESC
+LIMIT ?
+`, studentID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PracticeSummary
+	for rows.Next() {
+		var p PracticeSummary
+		var topicFull string
+		if err := rows.Scan(&p.ID, &p.CreatedAt, &p.TopicLabel, &p.TopicSource, &topicFull); err != nil {
+			return nil, err
+		}
+		p.TopicPreview = previewRunes(topicFull, 100)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// GetPractice returns one practice if it belongs to the student.
+func (s *Service) GetPractice(ctx context.Context, studentID, practiceID uint64) (PracticeDetail, error) {
+	if s.db == nil {
+		return PracticeDetail{}, ErrDatabaseRequired
+	}
+	var p PracticeDetail
+	var genreN, taskN sql.NullString
+	var reviewBlob []byte
+	var rawN sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+SELECT id, created_at, topic_text, topic_label, topic_source, genre, task_type, outline_text, review_json, raw_review_response
+FROM essay_outline_practice
+WHERE id = ? AND student_id = ? AND is_deleted = 0
+LIMIT 1
+`, practiceID, studentID).Scan(
+		&p.ID, &p.CreatedAt, &p.TopicText, &p.TopicLabel, &p.TopicSource,
+		&genreN, &taskN, &p.OutlineText, &reviewBlob, &rawN,
+	)
+	if err == sql.ErrNoRows {
+		return PracticeDetail{}, ErrPracticeNotFound
+	}
+	if err != nil {
+		return PracticeDetail{}, err
+	}
+	if genreN.Valid {
+		p.Genre = genreN.String
+	}
+	if taskN.Valid {
+		p.TaskType = taskN.String
+	}
+	if rawN.Valid {
+		p.RawReview = rawN.String
+	}
+	p.Review = map[string]any{}
+	if len(reviewBlob) > 0 {
+		_ = json.Unmarshal(reviewBlob, &p.Review)
+	}
+	if p.Review == nil {
+		p.Review = map[string]any{}
+	}
+	return p, nil
 }

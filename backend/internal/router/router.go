@@ -82,6 +82,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("POST /api/v1/student/essay-outline/generate-topic", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.GenerateTopic))
 	mux.HandleFunc("POST /api/v1/student/essay-outline/ocr-topic", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.OCRTopic))
 	mux.HandleFunc("POST /api/v1/student/essay-outline/review", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.Review))
+	mux.HandleFunc("GET /api/v1/student/essay-outline/practices", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.ListPractices))
+	mux.HandleFunc("GET /api/v1/student/essay-outline/practices/{practiceId}", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.GetPractice))
 
 	// Admin management routes
 	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))

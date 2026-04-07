@@ -289,6 +289,10 @@
           if (!hub) return;
           hub.innerHTML = renderHub();
           bindHub(root, hub);
+          const paperListCard = root.querySelector('#paperListCard');
+          if (paperListCard) {
+            paperListCard.hidden = !!(state.hubSubject && state.hubFeature === 'essay_outline');
+          }
           if (state.hubSubject && state.hubFeature === 'paper_analyze') {
             const fb = hub.querySelector('#featureBody');
             if (fb) bindUpload(root, fb);
@@ -355,7 +359,7 @@
         </div>
         ${flash}
         <div class="card" id="hubCard"><p class="muted">加载中…</p></div>
-        <div class="card">
+        <div class="card" id="paperListCard">
           <h2>我的试卷</h2>
           <p class="muted">含各科目上传记录；点击一条查看 AI 摘要与改进计划。</p>
           <div id="paperPane"></div>
@@ -582,6 +586,43 @@
     return h;
   }
 
+  function renderEOPracticeList(items) {
+    if (!items || !items.length) {
+      return '<p class="muted">暂无记录，提交点评后会出现在这里。</p>';
+    }
+    const rows = items
+      .map(
+        (it) =>
+          `<div class="paper-item eo-practice-item" data-practice-id="${it.id}" role="button" tabindex="0">
+          <div><strong>#${it.id}</strong> ${escapeHtml(it.topic_preview || '')} · ${escapeHtml(it.topic_label || '')}<br/>
+          <span class="muted" style="font-size:12px">${escapeHtml(it.topic_source || '')} · ${formatWhen(
+            it.created_at
+          )}</span></div>
+          <span class="muted">›</span>
+        </div>`
+      )
+      .join('');
+    return `<div class="paper-list">${rows}</div>`;
+  }
+
+  function renderEOPracticeDetail(p) {
+    if (!p) return '';
+    const rev = p.review || null;
+    return `
+      <div class="detail eo-practice-detail" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <button type="button" class="btn secondary" id="eoBtnCloseDetail" style="margin-bottom:10px">关闭详情</button>
+        <p class="meta-line"><span class="lbl">练习记录</span> #${p.id} · ${escapeHtml(formatWhen(p.created_at))}</p>
+        <h4 style="margin:12px 0 6px">题型标签</h4>
+        <p class="muted" style="margin:0">${escapeHtml(p.topic_label || '')}（${escapeHtml(p.topic_source || '')}）</p>
+        <h4 style="margin:12px 0 6px">题目</h4>
+        <pre class="block" style="white-space:pre-wrap">${escapeHtml(p.topic_text || '')}</pre>
+        <h4 style="margin:12px 0 6px">提纲</h4>
+        <pre class="block" style="white-space:pre-wrap">${escapeHtml(p.outline_text || '')}</pre>
+        <h4 style="margin:12px 0 6px">AI 点评</h4>
+        ${renderEssayReviewCards(rev)}
+      </div>`;
+  }
+
   function renderEssayReviewCards(review) {
     if (!review) return '<p class="muted">提交提纲后将在此展示 AI 点评。</p>';
     const stars = review.stars || {};
@@ -685,7 +726,13 @@
         <textarea id="eoOutline" rows="10" placeholder="可写标题、中心论点、分论点与论据、记叙线索与细节等">${outlineBody}</textarea>
         <button type="button" class="btn" id="eoBtnReview" style="margin-top:10px">提交点评</button>
       </div>
-      <div id="eoReviewHost" style="margin-top:16px">${renderEssayReviewCards(eo.lastReview)}</div>`;
+      <div id="eoReviewHost" style="margin-top:16px">${renderEssayReviewCards(eo.lastReview)}</div>
+      <section class="eo-history" style="margin-top:24px">
+        <h3 style="margin:0 0 6px;font-size:17px">练习记录</h3>
+        <p class="muted" style="margin:0 0 10px;font-size:13px">每次提交点评后自动保存。点击下方一条可查看题目、提纲与完整点评（与上方「我的试卷」试卷 AI 分析无关）。</p>
+        <div id="eoPracticeListHost"><p class="muted">加载中…</p></div>
+        <div id="eoPracticeDetailHost"></div>
+      </section>`;
   }
 
   function bindEssayOutline(root, container) {
@@ -891,6 +938,48 @@
         btn.textContent = '提交点评';
       }
     });
+
+    async function refreshPracticeList() {
+      const host = container.querySelector('#eoPracticeListHost');
+      if (!host) return;
+      host.innerHTML = '<p class="muted">加载中…</p>';
+      try {
+        const d = await api('/api/v1/student/essay-outline/practices?limit=50');
+        host.innerHTML = renderEOPracticeList(d.items || []);
+        host.querySelectorAll('.eo-practice-item').forEach((el) => {
+          el.addEventListener('click', () => {
+            loadPracticeDetail(Number(el.getAttribute('data-practice-id')));
+          });
+        });
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        host.innerHTML =
+          '<p class="muted">加载记录失败：' +
+          escapeHtml(e.data && e.data.code ? e.data.code : e.message) +
+          '</p>';
+      }
+    }
+
+    async function loadPracticeDetail(id) {
+      const dh = container.querySelector('#eoPracticeDetailHost');
+      if (!dh) return;
+      dh.innerHTML = '<p class="muted">加载详情…</p>';
+      try {
+        const d = await api('/api/v1/student/essay-outline/practices/' + id);
+        dh.innerHTML = renderEOPracticeDetail(d.practice);
+        dh.querySelector('#eoBtnCloseDetail')?.addEventListener('click', () => {
+          dh.innerHTML = '';
+        });
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        dh.innerHTML =
+          '<p class="muted">无法加载：' +
+          escapeHtml(e.data && e.data.code ? e.data.code : e.message) +
+          '</p>';
+      }
+    }
+
+    refreshPracticeList();
   }
 
   function collectUploadFiles(fileList) {
@@ -1081,6 +1170,12 @@
   }
 
   async function refreshPapers(root) {
+    if (state.hubSubject && state.hubFeature === 'essay_outline') {
+      state.papers = [];
+      const pane = root.querySelector('#paperPane');
+      if (pane) pane.innerHTML = '';
+      return;
+    }
     const d = await api('/api/v1/student/papers');
     state.papers = d.items || [];
     const pane = root.querySelector('#paperPane');

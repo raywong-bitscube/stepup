@@ -515,6 +515,11 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 }
 ```
 
+#### 5.5.4 练习记录列表与详情
+
+- `GET /api/v1/student/essay-outline/practices?limit=50` — 当前学生已保存的练习（`essay_outline_practice`，未删除），`limit` 默认 50、最大 100。响应 `items[]`：`id`、`created_at`、`topic_label`、`topic_source`、`topic_preview`（题目摘要）。
+- `GET /api/v1/student/essay-outline/practices/{practiceId}` — 单条详情（含 `topic_text`、`outline_text`、`review`、`raw_review` 等）。非本人或不存在：`404` + `NOT_FOUND`。
+
 `ai_call_log.action`：`essay_outline_generate_topic` / `essay_outline_ocr_topic` / `essay_outline_review`。
 
 ---
