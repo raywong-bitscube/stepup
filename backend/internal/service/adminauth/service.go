@@ -11,7 +11,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -31,12 +34,12 @@ type Session struct {
 
 type Service struct {
 	cfg      config.Config
-	db       *sql.DB
+	db       *sqlx.DB
 	mu       sync.RWMutex
 	sessions map[string]Session
 }
 
-func New(cfg config.Config, db *sql.DB) *Service {
+func New(cfg config.Config, db *sqlx.DB) *Service {
 	return &Service{
 		cfg:      cfg,
 		db:       db,
@@ -122,12 +125,12 @@ func (s *Service) loginDB(username, password string) (Session, error) {
 		dbPass  string
 		role    string
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, username, password, role
 FROM admin
 WHERE username = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, username).Scan(&adminID, &dbUser, &dbPass, &role)
+`), username).Scan(&adminID, &dbUser, &dbPass, &role)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnauthorized
@@ -145,11 +148,11 @@ LIMIT 1
 	now := time.Now()
 	expiresAt := now.Add(s.cfg.SessionTTL)
 
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO admin_session
   (admin_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
-`, adminID, token, expiresAt, now, now, adminID, now, adminID)
+`), adminID, token, expiresAt, now, now, adminID, now, adminID)
 	if err != nil {
 		return Session{}, fmt.Errorf("create admin_session failed: %w", err)
 	}
@@ -175,7 +178,7 @@ func (s *Service) currentDB(token string) (Session, error) {
 		expiresAt time.Time
 		lastSeen  sql.NullTime
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT a.id, a.username, a.role, sess.expires_at, sess.last_seen_at
 FROM admin_session sess
 JOIN admin a ON a.id = sess.admin_id
@@ -185,7 +188,7 @@ WHERE sess.session_token = ?
   AND a.status = 1
   AND a.is_deleted = 0
 LIMIT 1
-`, token).Scan(&adminID, &username, &role, &expiresAt, &lastSeen)
+`), token).Scan(&adminID, &username, &role, &expiresAt, &lastSeen)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnauthorized
@@ -198,11 +201,11 @@ LIMIT 1
 	}
 
 	now := time.Now()
-	_, _ = s.db.ExecContext(ctx, `
+	_, _ = s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE admin_session
 SET last_seen_at = ?, updated_at = ?, updated_by = ?
 WHERE session_token = ? AND is_deleted = 0
-`, now, now, adminID, token)
+`), now, now, adminID, token)
 
 	return Session{
 		AdminID:   adminID,
@@ -217,11 +220,11 @@ WHERE session_token = ? AND is_deleted = 0
 func (s *Service) logoutDB(token string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE admin_session
 SET status = 0, updated_at = ?, updated_by = COALESCE(updated_by, 0)
 WHERE session_token = ? AND is_deleted = 0
-`, time.Now(), token)
+`), time.Now(), token)
 	return err
 }
 

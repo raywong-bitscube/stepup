@@ -7,6 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -28,10 +31,10 @@ type Student struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -124,11 +127,11 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	defer cancel()
 
 	var stageID uint64
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id FROM stage
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, stage).Scan(&stageID)
+`), stage).Scan(&stageID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, ErrInvalidInput
@@ -144,19 +147,20 @@ LIMIT 1
 		phone = sql.NullString{String: identifier, Valid: true}
 	}
 	now := time.Now()
-	res, err := s.db.ExecContext(ctx, `
+	var nid uint64
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO student
   (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, 1, ?, 0, ?, 0, 0)
-`, phone, email, string(hashed), name, stageID, now, now)
+RETURNING id
+`), phone, email, string(hashed), name, stageID, now, now).Scan(&nid)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return 0, ErrConflict
 		}
 		return 0, err
 	}
-	nid, _ := res.LastInsertId()
-	return uint64(nid), nil
+	return nid, nil
 }
 
 func (s *Service) Patch(ctx context.Context, studentID uint64, in UpdateInput) error {
@@ -192,11 +196,11 @@ func (s *Service) Patch(ctx context.Context, studentID uint64, in UpdateInput) e
 			return ErrInvalidInput
 		}
 		var stageID uint64
-		if err := s.db.QueryRowContext(ctx, `
+		if err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id FROM stage
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, stage).Scan(&stageID); err != nil {
+`), stage).Scan(&stageID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrInvalidInput
 			}
@@ -226,7 +230,7 @@ LIMIT 1
 	args = append(args, studentID)
 
 	query := `UPDATE student SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, query, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(query), args...)
 	if err != nil {
 		return err
 	}

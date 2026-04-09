@@ -2,14 +2,16 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jmoiron/sqlx"
 )
 
-func OpenMySQL(dsn string) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+// OpenPostgres opens a pooled *sqlx.DB for PostgreSQL (pgx stdlib driver).
+// DB_DSN example: postgres://user:pass@localhost:5432/stepup?sslmode=disable
+func OpenPostgres(dsn string) (*sqlx.DB, error) {
+	db, err := sqlx.Open("pgx", dsn)
 	if err != nil {
 		return nil, err
 	}

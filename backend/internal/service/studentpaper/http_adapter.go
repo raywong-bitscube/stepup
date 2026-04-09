@@ -243,6 +243,9 @@ func (a *HTTPAnalysisAdapter) analyzeChatCompletions(input AnalyzeInput, host st
 		"model":    model,
 		"messages": []any{userMsg},
 	}
+	if input.OptionalMaxOutputTokens > 0 {
+		reqBody["max_tokens"] = input.OptionalMaxOutputTokens
+	}
 	// DashScope Qwen3.5+ may emit huge reasoning_content; prefer non-thinking for latency and logs.
 	if isDashScopeLikeHost(host) {
 		reqBody["enable_thinking"] = false

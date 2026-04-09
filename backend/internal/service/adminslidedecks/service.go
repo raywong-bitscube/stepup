@@ -5,8 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -37,10 +42,10 @@ type Full struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -52,11 +57,11 @@ func normalizeStatus(s string) string {
 func ValidateSlideJSON(raw json.RawMessage) error {
 	var root map[string]interface{}
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return ErrInvalidInput
+		return fmt.Errorf("%w: json: %v", ErrInvalidInput, err)
 	}
 	sv, ok := root["schemaVersion"]
 	if !ok {
-		return ErrInvalidInput
+		return fmt.Errorf("%w: missing schemaVersion", ErrInvalidInput)
 	}
 	var v int
 	switch x := sv.(type) {
@@ -65,22 +70,25 @@ func ValidateSlideJSON(raw json.RawMessage) error {
 	case int:
 		v = x
 	default:
-		return ErrInvalidInput
+		return fmt.Errorf("%w: schemaVersion must be number (got %T)", ErrInvalidInput, sv)
 	}
 	if v != 1 {
-		return ErrInvalidInput
+		return fmt.Errorf("%w: schemaVersion must be 1", ErrInvalidInput)
 	}
 	slides, ok := root["slides"].([]interface{})
 	if !ok || slides == nil {
-		return ErrInvalidInput
+		if _, has := root["slides"]; !has {
+			return fmt.Errorf("%w: missing slides", ErrInvalidInput)
+		}
+		return fmt.Errorf("%w: slides must be a JSON array (got %T)", ErrInvalidInput, root["slides"])
 	}
 	return nil
 }
 
 func (s *Service) sectionExists(ctx context.Context, sectionID uint64) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
-SELECT 1 FROM section WHERE id = ? AND is_deleted = 0 LIMIT 1`, sectionID).Scan(&n)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT 1 FROM section WHERE id = ? AND is_deleted = 0 LIMIT 1`), sectionID).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -97,12 +105,12 @@ func (s *Service) ListSummaries(ctx context.Context, sectionID uint64) ([]Summar
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, section_id, title, deck_status, schema_version, updated_at
 FROM slide_deck
 WHERE section_id = ? AND is_deleted = 0
 ORDER BY id DESC
-LIMIT 200`, sectionID)
+LIMIT 200`), sectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -129,10 +137,10 @@ func (s *Service) Get(ctx context.Context, deckID uint64) (*Full, error) {
 	var f Full
 	var content []byte
 	var genPrompt sql.NullString
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, section_id, title, deck_status, schema_version, updated_at, content, generation_prompt
 FROM slide_deck
-WHERE id = ? AND is_deleted = 0`, deckID).Scan(
+WHERE id = ? AND is_deleted = 0`), deckID).Scan(
 		&f.ID, &f.SectionID, &f.Title, &f.DeckStatus, &f.SchemaVersion, &f.UpdatedAt, &content, &genPrompt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -200,16 +208,16 @@ func (s *Service) Create(ctx context.Context, sectionID uint64, adminID uint64, 
 		return 0, ErrNotFound
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if st == StatusActive {
-		_, err = tx.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
 UPDATE slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
-WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`,
+WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`),
 			StatusArchived, adminID, sectionID, StatusActive)
 		if err != nil {
 			return 0, err
@@ -220,22 +228,20 @@ WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`,
 	if in.GenerationPrompt != nil && strings.TrimSpace(*in.GenerationPrompt) != "" {
 		gen = strings.TrimSpace(*in.GenerationPrompt)
 	}
-	res, err := tx.ExecContext(ctx, `
+	var id64 uint64
+	err = tx.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO slide_deck
   (section_id, title, deck_status, schema_version, content, generation_prompt, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, NOW(), ?, NOW(), ?, 0)`,
-		sectionID, title, st, sv, string(in.Content), gen, adminID, adminID)
-	if err != nil {
-		return 0, err
-	}
-	id64, err := res.LastInsertId()
+VALUES (?, ?, ?, ?, ?::jsonb, ?, NOW(), ?, NOW(), ?, 0)
+RETURNING id`),
+		sectionID, title, st, sv, string(in.Content), gen, adminID, adminID).Scan(&id64)
 	if err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return uint64(id64), nil
+	return id64, nil
 }
 
 type PatchInput struct {
@@ -261,8 +267,8 @@ func (s *Service) Patch(ctx context.Context, deckID uint64, adminID uint64, in P
 
 	var sectionID uint64
 	var curStatus string
-	err := s.db.QueryRowContext(ctx, `
-SELECT section_id, deck_status FROM slide_deck WHERE id = ? AND is_deleted = 0`, deckID).Scan(&sectionID, &curStatus)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT section_id, deck_status FROM slide_deck WHERE id = ? AND is_deleted = 0`), deckID).Scan(&sectionID, &curStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -287,16 +293,16 @@ SELECT section_id, deck_status FROM slide_deck WHERE id = ? AND is_deleted = 0`,
 		contentBytes = *in.Content
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if newStatus == StatusActive && curStatus != StatusActive {
-		_, err = tx.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
 UPDATE slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
-WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`,
+WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`),
 			StatusArchived, adminID, sectionID, deckID, StatusActive)
 		if err != nil {
 			return err
@@ -314,7 +320,7 @@ WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`,
 		args = append(args, t)
 	}
 	if in.Content != nil {
-		sets = append(sets, "content = CAST(? AS JSON)")
+		sets = append(sets, "content = ?::jsonb")
 		args = append(args, string(contentBytes))
 	}
 	if in.DeckStatus != nil {
@@ -330,7 +336,7 @@ WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`,
 	}
 	args = append(args, adminID, deckID)
 	q := "UPDATE slide_deck SET " + strings.Join(sets, ", ") + ", updated_at = NOW(), updated_by = ? WHERE id = ? AND is_deleted = 0"
-	_, err = tx.ExecContext(ctx, q, args...)
+	_, err = tx.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
 	}

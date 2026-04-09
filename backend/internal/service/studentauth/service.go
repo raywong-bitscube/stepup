@@ -13,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -49,7 +52,7 @@ type Session struct {
 
 type Service struct {
 	cfg           config.Config
-	db            *sql.DB
+	db            *sqlx.DB
 	mu            sync.RWMutex
 	students      map[string]student
 	codes         map[string]verification
@@ -59,7 +62,7 @@ type Service struct {
 	defaultStatus int
 }
 
-func New(cfg config.Config, db *sql.DB) *Service {
+func New(cfg config.Config, db *sqlx.DB) *Service {
 	return &Service{
 		cfg:           cfg,
 		db:            db,
@@ -272,11 +275,11 @@ func (s *Service) sendCodeDB(identifier string) (string, error) {
 
 	code := generateCode()
 	now := time.Now()
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO verification_code
   (identifier, code, type, expires_at, is_used, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 'login', ?, 0, ?, 0, ?, 0, 0)
-`, identifier, code, now.Add(s.codeTTL), now, now)
+`), identifier, code, now.Add(s.codeTTL), now, now)
 	if err != nil {
 		return "", err
 	}
@@ -293,13 +296,13 @@ func (s *Service) verifyCodeDB(identifier, code string) error {
 		expiresAt time.Time
 		isUsed    bool
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, code, expires_at, is_used
 FROM verification_code
 WHERE identifier = ? AND type = 'login' AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
-`, identifier).Scan(&id, &dbCode, &expiresAt, &isUsed)
+`), identifier).Scan(&id, &dbCode, &expiresAt, &isUsed)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrCodeInvalid
@@ -316,11 +319,11 @@ LIMIT 1
 		return ErrCodeInvalid
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE verification_code
 SET is_used = 1, updated_at = ?, updated_by = 0
 WHERE id = ?
-`, time.Now(), id)
+`), time.Now(), id)
 	return err
 }
 
@@ -333,11 +336,11 @@ func (s *Service) setPasswordDB(identifier, password string) error {
 	defer cancel()
 
 	var id uint64
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id FROM student
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
-`, identifier, identifier).Scan(&id)
+`), identifier, identifier).Scan(&id)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -351,19 +354,19 @@ LIMIT 1
 		} else {
 			phone = sql.NullString{String: identifier, Valid: true}
 		}
-		_, err = s.db.ExecContext(ctx, `
+		_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO student
   (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 1, 1, ?, 0, ?, 0, 0)
-`, phone, email, hashed, identifier, now, now)
+`), phone, email, hashed, identifier, now, now)
 		return err
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE student
 SET password = ?, updated_at = ?, updated_by = 0
 WHERE id = ?
-`, hashed, now, id)
+`), hashed, now, id)
 	return err
 }
 
@@ -378,12 +381,12 @@ func (s *Service) loginDB(identifier, password string) (Session, error) {
 		dbPass    string
 		status    int
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, phone, email, password, status
 FROM student
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
-`, identifier, identifier).Scan(&studentID, &phone, &email, &dbPass, &status)
+`), identifier, identifier).Scan(&studentID, &phone, &email, &dbPass, &status)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnauthorized
@@ -401,11 +404,11 @@ LIMIT 1
 	now := time.Now()
 	expiresAt := now.Add(s.sessionTTL)
 
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO student_session
   (student_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
-`, studentID, token, expiresAt, now, now, studentID, now, studentID)
+`), studentID, token, expiresAt, now, now, studentID, now, studentID)
 	if err != nil {
 		return Session{}, fmt.Errorf("create student_session: %w", err)
 	}
@@ -429,7 +432,7 @@ func (s *Service) currentStudentDB(token string) (Session, error) {
 		email     sql.NullString
 		expiresAt time.Time
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.phone, s.email, sess.expires_at
 FROM student_session sess
 JOIN student s ON s.id = sess.student_id
@@ -439,7 +442,7 @@ WHERE sess.session_token = ?
   AND s.status = 1
   AND s.is_deleted = 0
 LIMIT 1
-`, token).Scan(&studentID, &phone, &email, &expiresAt)
+`), token).Scan(&studentID, &phone, &email, &expiresAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnauthorized
@@ -452,11 +455,11 @@ LIMIT 1
 	}
 
 	now := time.Now()
-	_, _ = s.db.ExecContext(ctx, `
+	_, _ = s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE student_session
 SET last_seen_at = ?, updated_at = ?, updated_by = ?
 WHERE session_token = ? AND is_deleted = 0
-`, now, now, studentID, token)
+`), now, now, studentID, token)
 
 	var idf string
 	if phone.Valid && strings.TrimSpace(phone.String) != "" {
@@ -477,11 +480,11 @@ WHERE session_token = ? AND is_deleted = 0
 func (s *Service) logoutStudentDB(token string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
 UPDATE student_session
 SET status = 0, updated_at = NOW(), updated_by = student_id
 WHERE session_token = ? AND is_deleted = 0
-`, token)
+`), token)
 	return err
 }
 

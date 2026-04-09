@@ -6,6 +6,10 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -24,10 +28,10 @@ type Stage struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -95,19 +99,20 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	now := time.Now()
-	res, err := s.db.ExecContext(ctx, `
+	var nid uint64
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO stage
   (name, description, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 1, ?, 0, ?, 0, 0)
-`, name, desc, now, now)
+RETURNING id
+`), name, desc, now, now).Scan(&nid)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return 0, ErrConflict
 		}
 		return 0, err
 	}
-	nid, _ := res.LastInsertId()
-	return uint64(nid), nil
+	return nid, nil
 }
 
 type UpdateInput struct {
@@ -159,7 +164,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	args = append(args, time.Now(), id)
 
 	q := `UPDATE stage SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return ErrConflict

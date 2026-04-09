@@ -6,6 +6,10 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -24,10 +28,10 @@ type Prompt struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -38,10 +42,10 @@ func (s *Service) List(ctx context.Context) ([]Prompt, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	q := `
-SELECT id, ` + "`key`" + `, description, content, status, created_at
+SELECT id, "key", description, content, status, created_at
 FROM prompt_template
 WHERE is_deleted = 0
-ORDER BY ` + "`key`" + ` ASC
+ORDER BY "key" ASC
 LIMIT 500`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
@@ -121,7 +125,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	args = append(args, now, id)
 
 	q := `UPDATE prompt_template SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
 	}

@@ -2,13 +2,14 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/database"
@@ -18,10 +19,10 @@ import (
 func Run() error {
 	cfg := config.Load()
 
-	var db *sql.DB
+	var db *sqlx.DB
 	if cfg.DBDSN != "" {
 		var err error
-		db, err = database.OpenMySQL(cfg.DBDSN)
+		db, err = database.OpenPostgres(cfg.DBDSN)
 		if err != nil {
 			log.Printf("database: open failed (%v); continuing without DB-backed stores", err)
 			db = nil

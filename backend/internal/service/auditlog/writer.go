@@ -2,19 +2,22 @@ package auditlog
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 // Writer appends rows to audit_log. A nil Writer or nil db is a no-op.
 type Writer struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Writer {
+func New(db *sqlx.DB) *Writer {
 	if db == nil {
 		return nil
 	}
@@ -56,11 +59,11 @@ func (w *Writer) Write(ctx context.Context, e Event) {
 
 	ipKey := ClientIP(e.IP)
 
-	_, _ = w.db.ExecContext(ctx, `
+	_, _ = w.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO audit_log
   (user_id, user_type, action, entity_type, entity_id, snapshot, ip_address, created_at, created_by)
 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
-`, userID, e.UserType, e.Action, e.EntityType, entityID, snap, nullIfEmpty(ipKey), e.CreatedBy)
+`), userID, e.UserType, e.Action, e.EntityType, entityID, snap, nullIfEmpty(ipKey), e.CreatedBy)
 }
 
 func nullIfEmpty(s string) any {

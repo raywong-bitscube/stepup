@@ -24,10 +24,36 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** 将 JSON/模型输出中的字面量实体先还原，再走 escapeHtml。多轮收敛以支持 &amp;gt; 等双重转义。 */
+  function decodeHtmlEntities(s) {
+    if (s == null || s === '') return '';
+    let t = String(s);
+    for (let pass = 0; pass < 10; pass++) {
+      const before = t;
+      t = t.replace(/&#x([0-9a-fA-F]+);/g, function (_, hex) {
+        const c = parseInt(hex, 16);
+        return c >= 0 && c <= 0x10ffff ? String.fromCodePoint(c) : _;
+      });
+      t = t.replace(/&#(\d+);/g, function (_, dec) {
+        const c = parseInt(dec, 10);
+        return c >= 0 && c <= 0x10ffff ? String.fromCodePoint(c) : _;
+      });
+      t = t.replace(/&lt;/gi, '<');
+      t = t.replace(/&gt;/gi, '>');
+      t = t.replace(/&quot;/gi, '"');
+      t = t.replace(/&#0*39;/g, "'");
+      t = t.replace(/&apos;/gi, "'");
+      t = t.replace(/&nbsp;/g, ' ');
+      t = t.replace(/&amp;/g, '&');
+      if (t === before) break;
+    }
+    return t;
+  }
+
   /** 极简 Markdown：换行、**粗体**、以 "- " 开头的行转为列表项（块级简单处理） */
   function renderSimpleMarkdown(text) {
     if (text == null) return '';
-    const raw = String(text);
+    const raw = decodeHtmlEntities(String(text));
     const lines = raw.split(/\r?\n/);
     let inList = false;
     let html = '';
@@ -100,7 +126,7 @@
   }
 
   function renderLatex(tex, display) {
-    const t = String(tex || '');
+    const t = decodeHtmlEntities(String(tex || ''));
     if (!global.katex || !global.katex.renderToString) {
       return '<pre class="slide-latex-fallback">' + escapeHtml(t) + '</pre>';
     }
@@ -237,7 +263,7 @@
     }
     if (typ === 'image') {
       const src = el.src ? String(el.src) : '';
-      const alt = el.alt != null ? String(el.alt) : '';
+      const alt = el.alt != null ? decodeHtmlEntities(String(el.alt)) : '';
       const cap = el.caption != null ? String(el.caption) : '';
       let h =
         '<div class="slide-el slide-type-image slide-role-' +

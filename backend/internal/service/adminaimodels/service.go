@@ -2,10 +2,13 @@ package adminaimodels
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -25,10 +28,10 @@ type PublicModel struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -90,34 +93,35 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	defer cancel()
 	now := time.Now()
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if status == 1 {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, dbutil.Rebind(`
 UPDATE ai_model
 SET status = 0, updated_at = ?, updated_by = 0
 WHERE is_deleted = 0
-`, now); err != nil {
+`), now); err != nil {
 			return 0, err
 		}
 	}
-	res, err := tx.ExecContext(ctx, `
+	var nid uint64
+	err = tx.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO ai_model
   (name, url, model, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
-`, name, url, modelID, secret, status, now, now)
+RETURNING id
+`), name, url, modelID, secret, status, now, now).Scan(&nid)
 	if err != nil {
 		return 0, err
 	}
-	nid, _ := res.LastInsertId()
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return uint64(nid), nil
+	return nid, nil
 }
 
 type UpdateInput struct {
@@ -186,24 +190,24 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	now := time.Now()
 	args = append(args, now, id)
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if activating {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, dbutil.Rebind(`
 UPDATE ai_model
 SET status = 0, updated_at = ?, updated_by = 0
 WHERE is_deleted = 0 AND id != ?
-`, now, id); err != nil {
+`), now, id); err != nil {
 			return err
 		}
 	}
 
 	q := `UPDATE ai_model SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := tx.ExecContext(ctx, q, args...)
+	res, err := tx.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
 	}

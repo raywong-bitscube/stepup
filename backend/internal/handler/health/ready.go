@@ -2,15 +2,16 @@ package health
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // ReadyHandler returns 200 when the process can serve traffic.
-// If requireDB is true, a non-nil *sql.DB must ping successfully; otherwise 503.
-func ReadyHandler(requireDB bool, db *sql.DB) http.HandlerFunc {
+// If requireDB is true, a non-nil *sqlx.DB must ping successfully; otherwise 503.
+func ReadyHandler(requireDB bool, db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if !requireDB {

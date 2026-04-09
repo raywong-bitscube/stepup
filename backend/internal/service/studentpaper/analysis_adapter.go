@@ -14,6 +14,8 @@ type AnalyzeInput struct {
 	VisionImages []VisionImage
 	// ChatUserPrompt is the final user message for chat/completions (from prompt_template + placeholders).
 	ChatUserPrompt string
+	// OptionalMaxOutputTokens, when > 0, sets max_tokens on OpenAI-compatible chat/completions (e.g. long slide JSON).
+	OptionalMaxOutputTokens int
 }
 
 type AnalyzeOutput struct {

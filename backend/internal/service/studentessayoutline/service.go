@@ -10,7 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/prompttemplate"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
@@ -66,11 +69,11 @@ type ReviewResult struct {
 
 type Service struct {
 	cfg   config.Config
-	db    *sql.DB
+	db    *sqlx.DB
 	aiLog *ailog.Writer
 }
 
-func New(cfg config.Config, db *sql.DB) *Service {
+func New(cfg config.Config, db *sqlx.DB) *Service {
 	return &Service{cfg: cfg, db: db, aiLog: ailog.NewWriter(db)}
 }
 
@@ -349,9 +352,9 @@ func (s *Service) SubmitReview(ctx context.Context, studentID uint64, topicText,
 	reviewBytes, _ := json.Marshal(reviewObj)
 
 	var subjectID sql.NullInt64
-	_ = s.db.QueryRowContext(ctx, `
+	_ = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id FROM subject WHERE name = ? AND status = 1 AND is_deleted = 0 LIMIT 1
-`, subjectNameChinese).Scan(&subjectID)
+`), subjectNameChinese).Scan(&subjectID)
 
 	now := time.Now()
 	var subArg any
@@ -361,20 +364,21 @@ SELECT id FROM subject WHERE name = ? AND status = 1 AND is_deleted = 0 LIMIT 1
 		subArg = nil
 	}
 
-	res, err := s.db.ExecContext(ctx, `
+	var newID uint64
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO essay_outline_practice (
   student_id, subject_id, topic_text, topic_label, topic_source, genre, task_type,
   outline_text, review_json, raw_review_response,
   created_at, created_by, updated_at, updated_by, is_deleted
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-`, studentID, subArg, topicText, topicLabel, ts, nullIfEmpty(genre), nullIfEmpty(taskType), outlineText,
-		string(reviewBytes), reviewRaw, now, studentID, now, studentID)
+RETURNING id
+`), studentID, subArg, topicText, topicLabel, ts, nullIfEmpty(genre), nullIfEmpty(taskType), outlineText,
+		string(reviewBytes), reviewRaw, now, studentID, now, studentID).Scan(&newID)
 	if err != nil {
 		return ReviewResult{}, err
 	}
-	id, _ := res.LastInsertId()
 	return ReviewResult{
-		ID:        uint64(id),
+		ID:        newID,
 		Review:    reviewObj,
 		RawReview: reviewRaw,
 	}, nil
@@ -410,13 +414,13 @@ func (s *Service) ListPractices(ctx context.Context, studentID uint64, limit int
 	if limit > 100 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, created_at, topic_label, topic_source, topic_text
 FROM essay_outline_practice
 WHERE student_id = ? AND is_deleted = 0
 ORDER BY created_at DESC, id DESC
 LIMIT ?
-`, studentID, limit)
+`), studentID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -442,13 +446,13 @@ func (s *Service) PracticeVisibilityCounts(ctx context.Context, studentID uint64
 	if s.db == nil {
 		return 0, 0, ErrDatabaseRequired
 	}
-	err = s.db.QueryRowContext(ctx, `
-SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ?`, studentID).Scan(&total)
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ?`), studentID).Scan(&total)
 	if err != nil {
 		return 0, 0, err
 	}
-	err = s.db.QueryRowContext(ctx, `
-SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ? AND is_deleted = 0`, studentID).Scan(&active)
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ? AND is_deleted = 0`), studentID).Scan(&active)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -464,12 +468,12 @@ func (s *Service) GetPractice(ctx context.Context, studentID, practiceID uint64)
 	var genreN, taskN sql.NullString
 	var reviewBlob []byte
 	var rawN sql.NullString
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, created_at, topic_text, topic_label, topic_source, genre, task_type, outline_text, review_json, raw_review_response
 FROM essay_outline_practice
 WHERE id = ? AND student_id = ? AND is_deleted = 0
 LIMIT 1
-`, practiceID, studentID).Scan(
+`), practiceID, studentID).Scan(
 		&p.ID, &p.CreatedAt, &p.TopicText, &p.TopicLabel, &p.TopicSource,
 		&genreN, &taskN, &p.OutlineText, &reviewBlob, &rawN,
 	)

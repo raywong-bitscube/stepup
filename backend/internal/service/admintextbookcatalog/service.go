@@ -6,6 +6,10 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -16,16 +20,16 @@ var (
 )
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
 func (s *Service) subjectExists(ctx context.Context, subjectID uint64) error {
 	var one int
-	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM subject WHERE id = ? AND is_deleted = 0 LIMIT 1`, subjectID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT 1 FROM subject WHERE id = ? AND is_deleted = 0 LIMIT 1`), subjectID).Scan(&one)
 	if err == sql.ErrNoRows {
 		return ErrNotFound
 	}
@@ -58,11 +62,11 @@ func (s *Service) ListTextbooksBySubject(ctx context.Context, subjectID uint64) 
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, name, version, subject, category, remarks, status, updated_at
 FROM textbook
 WHERE subject_id = ? AND is_deleted = 0
-ORDER BY id ASC`, subjectID)
+ORDER BY id ASC`), subjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +160,7 @@ func (s *Service) PatchTextbook(ctx context.Context, id uint64, in TextbookPatch
 	args = append(args, now, id)
 
 	q := `UPDATE textbook SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			return ErrConflict
@@ -191,7 +195,7 @@ func (s *Service) ListChapters(ctx context.Context, textbookID uint64) ([]Chapte
 	defer cancel()
 
 	var one uint64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM textbook WHERE id = ? AND is_deleted = 0`, textbookID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT id FROM textbook WHERE id = ? AND is_deleted = 0`), textbookID).Scan(&one)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -199,11 +203,11 @@ func (s *Service) ListChapters(ctx context.Context, textbookID uint64) ([]Chapte
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, textbook_id, number, title, full_title, status, updated_at
 FROM chapter
 WHERE textbook_id = ? AND is_deleted = 0
-ORDER BY number ASC, id ASC`, textbookID)
+ORDER BY number ASC, id ASC`), textbookID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +290,7 @@ func (s *Service) PatchChapter(ctx context.Context, id uint64, in ChapterPatch) 
 	args = append(args, now, id)
 
 	q := `UPDATE chapter SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
 	}
@@ -319,7 +323,7 @@ func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]Section
 	defer cancel()
 
 	var one uint64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM chapter WHERE id = ? AND is_deleted = 0`, chapterID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT id FROM chapter WHERE id = ? AND is_deleted = 0`), chapterID).Scan(&one)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -327,12 +331,12 @@ func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]Section
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.chapter_id, s.number, s.title, s.full_title, s.status, s.updated_at,
        (SELECT COUNT(*) FROM slide_deck sd WHERE sd.section_id = s.id AND sd.is_deleted = 0) AS slide_deck_count
 FROM section s
 WHERE s.chapter_id = ? AND s.is_deleted = 0
-ORDER BY s.number ASC, s.id ASC`, chapterID)
+ORDER BY s.number ASC, s.id ASC`), chapterID)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +421,7 @@ func (s *Service) PatchSection(ctx context.Context, id uint64, in SectionPatch) 
 	args = append(args, now, id)
 
 	q := `UPDATE section SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
 	}

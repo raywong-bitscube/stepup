@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -27,10 +31,10 @@ type Entry struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -52,7 +56,7 @@ SELECT id, user_id, user_type, action, entity_type, entity_id, snapshot, ip_addr
 FROM audit_log
 ORDER BY id DESC
 LIMIT ? OFFSET ?`
-	rows, err := s.db.QueryContext(ctx, q, limit, offset)
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(q), limit, offset)
 	if err != nil {
 		return nil, err
 	}

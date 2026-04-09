@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 // KeyPaperAnalyzeChatUser is the prompt_template.key for the OpenAI-compatible chat
@@ -70,7 +74,7 @@ func DefaultEssayOutlineOCRTopic() string {
 }
 
 // GetActiveContent returns prompt_template.content for key when status=1 and not deleted.
-func GetActiveContent(ctx context.Context, db *sql.DB, key string) (string, error) {
+func GetActiveContent(ctx context.Context, db *sqlx.DB, key string) (string, error) {
 	if db == nil {
 		return "", sql.ErrNoRows
 	}
@@ -81,12 +85,12 @@ func GetActiveContent(ctx context.Context, db *sql.DB, key string) (string, erro
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var content string
-	err := db.QueryRowContext(ctx, `
+	err := db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT content
 FROM prompt_template
-WHERE `+"`key`"+` = ? AND status = 1 AND is_deleted = 0
+WHERE "key" = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, key).Scan(&content)
+`), key).Scan(&content)
 	if err != nil {
 		return "", err
 	}

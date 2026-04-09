@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var (
@@ -36,17 +40,17 @@ type Analysis struct {
 }
 
 type Service struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func New(db *sql.DB) *Service {
+func New(db *sqlx.DB) *Service {
 	return &Service{db: db}
 }
 
 func (s *Service) studentExists(ctx context.Context, studentID uint64) (bool, error) {
 	var one int
-	err := s.db.QueryRowContext(ctx, `
-SELECT 1 FROM student WHERE id = ? AND is_deleted = 0 LIMIT 1`, studentID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT 1 FROM student WHERE id = ? AND is_deleted = 0 LIMIT 1`), studentID).Scan(&one)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
@@ -68,7 +72,7 @@ func (s *Service) List(ctx context.Context, studentID uint64) ([]Paper, error) {
 		return nil, ErrNotFound
 	}
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT p.id, subj.name, stg.name, p.file_url, p.created_at
 FROM exam_paper p
 JOIN student stu ON stu.id = p.student_id
@@ -76,7 +80,7 @@ JOIN subject subj ON subj.id = p.subject_id
 JOIN stage stg ON stg.id = stu.stage_id
 WHERE p.student_id = ? AND p.is_deleted = 0
 ORDER BY p.id DESC
-`, studentID)
+`), studentID)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +147,7 @@ func (s *Service) GetAnalysis(ctx context.Context, studentID uint64, paperIDRaw 
 		status     int
 		updatedAt  time.Time
 	)
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT pa.ai_model_snapshot, pa.ai_response, pa.status, pa.updated_at
 FROM paper_analysis pa
 JOIN exam_paper p ON p.id = pa.paper_id
@@ -152,7 +156,7 @@ WHERE pa.paper_id = ?
   AND pa.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
-`, pid, studentID).Scan(&aiSnapshot, &aiResp, &status, &updatedAt)
+`), pid, studentID).Scan(&aiSnapshot, &aiResp, &status, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Analysis{}, ErrNotFound
@@ -192,7 +196,7 @@ func (s *Service) GetPlanSlice(ctx context.Context, studentID, paperID uint64) (
 		planRaw   string
 		updatedAt time.Time
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
 FROM improvement_plan ip
 JOIN exam_paper p ON p.id = ip.paper_id
@@ -201,7 +205,7 @@ WHERE ip.paper_id = ?
   AND ip.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
-`, paperID, studentID).Scan(&planRaw, &updatedAt)
+`), paperID, studentID).Scan(&planRaw, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -233,7 +237,7 @@ func (s *Service) GetPlan(ctx context.Context, studentID uint64, paperIDRaw stri
 		planRaw   string
 		updatedAt time.Time
 	)
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
 FROM improvement_plan ip
 JOIN exam_paper p ON p.id = ip.paper_id
@@ -242,7 +246,7 @@ WHERE ip.paper_id = ?
   AND ip.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
-`, pid, studentID).Scan(&planRaw, &updatedAt)
+`), pid, studentID).Scan(&planRaw, &updatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound

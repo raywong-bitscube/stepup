@@ -9,7 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidedecks"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
@@ -22,14 +25,17 @@ var (
 	ErrAIFailed     = errors.New("ai slide json failed")
 )
 
+// slideGenMaxOutputTokens avoids provider default (often 4k) truncating long multi-slide JSON.
+const slideGenMaxOutputTokens = 32768
+
 type Service struct {
 	cfg   config.Config
-	db    *sql.DB
+	db    *sqlx.DB
 	aiLog *ailog.Writer
 	decks *adminslidedecks.Service
 }
 
-func New(cfg config.Config, db *sql.DB) *Service {
+func New(cfg config.Config, db *sqlx.DB) *Service {
 	return &Service{
 		cfg:   cfg,
 		db:    db,
@@ -97,12 +103,12 @@ func (s *Service) loadSectionContext(ctx context.Context, sectionID uint64) (*Se
 	defer cancel()
 	var c SectionContext
 	var full sql.NullString
-	err := s.db.QueryRowContext(ctx, `
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.number, s.title, s.full_title, ch.number, ch.title, t.name, t.version, t.subject
 FROM section s
 JOIN chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
 JOIN textbook t ON t.id = ch.textbook_id AND t.is_deleted = 0
-WHERE s.id = ? AND s.is_deleted = 0`, sectionID).Scan(
+WHERE s.id = ? AND s.is_deleted = 0`), sectionID).Scan(
 		&c.SectionID, &c.SecNum, &c.SectionTitle, &full, &c.ChapterNum, &c.ChapterTitle,
 		&c.TextbookName, &c.TextbookVersion, &c.Subject,
 	)
@@ -127,7 +133,12 @@ func DefaultPrompt(c *SectionContext) string {
 	if ft == "" {
 		ft = c.SectionTitle
 	}
-	return fmt.Sprintf(`你是 StepUp 课件结构生成助手。根据以下教材节信息，输出**仅一个**合法 JSON 对象（不要 Markdown 代码围栏），符合 slide schemaVersion 1。
+	return fmt.Sprintf(`你是 StepUp 课件结构生成助手。根据以下教材节信息，输出**仅一个**合法 JSON 对象，符合 slide schemaVersion 1。
+## 输出格式（硬性）
+- 只输出**一个** UTF-8 JSON 对象；第一个非空白字符必须是「{」；**禁止**在 JSON 前写开场白、标题或「如下」等说明。
+- 若你无法避免使用 Markdown 代码围栏，须保证围栏（三个反引号）成对闭合；更推荐**直接输出裸 JSON**。
+- **禁止**输出未闭合的 JSON（如中途被截断）。若长度紧张，可减少页数或缩短 explanation 文字，但必须保持 schemaVersion、slides 与每个对象括号、引号、逗号语法完整。
+
 ## 体量（必须遵守）
 - 总页数：**10～20 页**（建议 **14～18 页**）；硬上限 **20 页**，硬下限 **10 页**。内容要充实，禁止只做提纲式几页。
 
@@ -174,6 +185,69 @@ func stripCodeFence(s string) string {
 	return strings.TrimSpace(rest)
 }
 
+// stripFenceFromAnywhere handles "Here is … ```json … ```".
+func stripFenceFromAnywhere(s string) string {
+	s = strings.TrimSpace(s)
+	idx := strings.Index(s, "```")
+	if idx < 0 {
+		return s
+	}
+	rest := strings.TrimSpace(s[idx+3:])
+	if len(rest) >= 4 && strings.EqualFold(rest[:4], "json") {
+		rest = strings.TrimSpace(rest[4:])
+	}
+	closeIdx := strings.Index(rest, "```")
+	if closeIdx >= 0 {
+		rest = rest[:closeIdx]
+	}
+	return strings.TrimSpace(rest)
+}
+
+func trimUTF8BOM(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "\uFEFF")
+	return s
+}
+
+// extractFirstJSONObject returns the first top-level {...} span using string/escape-aware brace matching.
+func extractFirstJSONObject(s string) (string, bool) {
+	s = trimUTF8BOM(s)
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return "", false
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if c == '\\' {
+				escape = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(s[start : i+1]), true
+			}
+		}
+	}
+	return "", false
+}
+
 func mockDeckJSON(c *SectionContext) json.RawMessage {
 	t := "演示课件"
 	if c != nil && strings.TrimSpace(c.SectionTitle) != "" {
@@ -184,20 +258,56 @@ func mockDeckJSON(c *SectionContext) json.RawMessage {
 }
 
 func normalizeSlideJSON(raw string) (json.RawMessage, error) {
-	s := stripCodeFence(raw)
-	b := []byte(s)
-	if err := adminslidedecks.ValidateSlideJSON(b); err != nil {
-		return nil, err
+	s := trimUTF8BOM(strings.TrimSpace(raw))
+	seen := map[string]struct{}{}
+	cands := make([]string, 0, 10)
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return
+		}
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		cands = append(cands, v)
 	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, err
+	add(s)
+	add(stripCodeFence(s))
+	add(stripFenceFromAnywhere(s))
+	if j, ok := extractFirstJSONObject(s); ok {
+		add(j)
 	}
-	out, err := json.Marshal(m)
-	if err != nil {
-		return nil, err
+	sf := stripFenceFromAnywhere(s)
+	if sf != s {
+		add(stripCodeFence(sf))
+		if j, ok := extractFirstJSONObject(sf); ok {
+			add(j)
+		}
 	}
-	return out, nil
+	var lastErr error
+	for _, c := range cands {
+		b := []byte(c)
+		if err := adminslidedecks.ValidateSlideJSON(b); err != nil {
+			lastErr = err
+			continue
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal(b, &m); err != nil {
+			lastErr = err
+			continue
+		}
+		out, err := json.Marshal(m)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return out, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("%w: no valid deck json found in model output", adminslidedecks.ErrInvalidInput)
 }
 
 func deckTitleFromJSON(b json.RawMessage) string {
@@ -275,7 +385,10 @@ func (s *Service) Generate(ctx context.Context, sectionID uint64, adminID uint64
 	}
 
 	adapter, meta := s.resolveAdapter(ctx)
-	res := adapter.Analyze(studentpaper.AnalyzeInput{ChatUserPrompt: prompt})
+	res := adapter.Analyze(studentpaper.AnalyzeInput{
+		ChatUserPrompt:          prompt,
+		OptionalMaxOutputTokens: slideGenMaxOutputTokens,
+	})
 
 	raw := strings.TrimSpace(res.Out.RawContent)
 	if res.Trace.AdapterKind == "mock_builtin" || res.Trace.ResultStatus == "mock_only" {

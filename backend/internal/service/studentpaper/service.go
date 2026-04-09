@@ -13,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/prompttemplate"
 )
@@ -40,7 +43,7 @@ type Analysis struct {
 
 type Service struct {
 	cfg      config.Config
-	db       *sql.DB
+	db       *sqlx.DB
 	aiLog    *ailog.Writer
 	mu       sync.RWMutex
 	nextID   uint64
@@ -48,7 +51,7 @@ type Service struct {
 	analysis map[uint64]Analysis
 }
 
-func New(cfg config.Config, db *sql.DB) *Service {
+func New(cfg config.Config, db *sqlx.DB) *Service {
 	return &Service{
 		cfg:      cfg,
 		db:       db,
@@ -318,24 +321,24 @@ func (s *Service) createDB(identifier, subject, stage string, parts []UploadPart
 		studentID uint64
 		stageID   uint64
 	)
-	err := s.db.QueryRowContext(lookupCtx, `
+	err := s.db.QueryRowContext(lookupCtx, dbutil.Rebind(`
 SELECT id, stage_id
 FROM student
 WHERE (phone = ? OR email = ?) AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, identifier, identifier).Scan(&studentID, &stageID)
+`), identifier, identifier).Scan(&studentID, &stageID)
 	if err != nil {
 		lookupCancel()
 		return Paper{}, err
 	}
 
 	var subjectID uint64
-	err = s.db.QueryRowContext(lookupCtx, `
+	err = s.db.QueryRowContext(lookupCtx, dbutil.Rebind(`
 SELECT id
 FROM subject
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
-`, subject).Scan(&subjectID)
+`), subject).Scan(&subjectID)
 	if err != nil {
 		lookupCancel()
 		return Paper{}, err
@@ -394,18 +397,19 @@ LIMIT 1
 
 	writeCtx, writeCancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer writeCancel()
-	res, err := s.db.ExecContext(writeCtx, `
+	var paperID uint64
+	err = s.db.QueryRowContext(writeCtx, dbutil.Rebind(`
 INSERT INTO exam_paper
   (student_id, subject_id, file_url, extra_file_urls, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
-`, studentID, subjectID, fileURL, extrasArg, fileType, now, studentID, now, studentID)
+VALUES (?, ?, ?, ?, ?, NULL, CURRENT_DATE, ?, ?, ?, ?, 0)
+RETURNING id
+`), studentID, subjectID, fileURL, extrasArg, fileType, now, studentID, now, studentID).Scan(&paperID)
 	if err != nil {
 		logAITrace(0, fileURL)
 		return Paper{}, err
 	}
-	paperID, _ := res.LastInsertId()
 
-	logAITrace(uint64(paperID), fileURL)
+	logAITrace(paperID, fileURL)
 
 	snapshotRaw, _ := json.Marshal(analysisOut.ModelSnapshot)
 	weakRaw, _ := json.Marshal(analysisOut.WeakPoints)
@@ -415,24 +419,24 @@ VALUES (?, ?, ?, ?, ?, NULL, CURDATE(), ?, ?, ?, ?, 0)
 		"weak_points": analysisOut.WeakPoints,
 	})
 
-	_, _ = s.db.ExecContext(writeCtx, `
+	_, _ = s.db.ExecContext(writeCtx, dbutil.Rebind(`
 INSERT INTO paper_analysis
   (paper_id, ai_model_snapshot, raw_content, ai_response, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 2, ?, ?, ?, ?, 0)
-`, paperID, string(snapshotRaw), analysisOut.RawContent, string(aiResponseRaw), now, studentID, now, studentID)
+`), paperID, string(snapshotRaw), analysisOut.RawContent, string(aiResponseRaw), now, studentID, now, studentID)
 
-	_, _ = s.db.ExecContext(writeCtx, `
+	_, _ = s.db.ExecContext(writeCtx, dbutil.Rebind(`
 INSERT INTO improvement_plan
   (paper_id, plan_content, weak_points, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-`, paperID, string(planRaw), string(weakRaw), now, studentID, now, studentID)
+`), paperID, string(planRaw), string(weakRaw), now, studentID, now, studentID)
 
 	var sumSize int64
 	for _, p := range parts {
 		sumSize += int64(len(p.Bytes))
 	}
 	return Paper{
-		ID:         uint64(paperID),
+		ID:         paperID,
 		Identifier: identifier,
 		Subject:    subject,
 		Stage:      stageName(stage, stageID),
@@ -446,7 +450,7 @@ func (s *Service) listDB(identifier string) ([]Paper, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT p.id, subj.name, stg.name, p.file_url, p.extra_file_urls, p.created_at
 FROM exam_paper p
 JOIN student stu ON stu.id = p.student_id
@@ -454,7 +458,7 @@ JOIN subject subj ON subj.id = p.subject_id
 JOIN stage stg ON stg.id = stu.stage_id
 WHERE (stu.phone = ? OR stu.email = ?) AND p.is_deleted = 0
 ORDER BY p.id DESC
-`, identifier, identifier)
+`), identifier, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +515,7 @@ func (s *Service) getAnalysisDB(identifier, paperIDRaw string) (Analysis, error)
 		status     int
 		updatedAt  time.Time
 	)
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT pa.ai_model_snapshot, pa.ai_response, pa.status, pa.updated_at
 FROM paper_analysis pa
 JOIN exam_paper p ON p.id = pa.paper_id
@@ -521,7 +525,7 @@ WHERE pa.paper_id = ?
   AND pa.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
-`, pid, identifier, identifier).Scan(&aiSnapshot, &aiResp, &status, &updatedAt)
+`), pid, identifier, identifier).Scan(&aiSnapshot, &aiResp, &status, &updatedAt)
 	if err != nil {
 		return Analysis{}, err
 	}
@@ -569,7 +573,7 @@ func (s *Service) getPlanDB(identifier, paperIDRaw string) (map[string]any, erro
 		planRaw   string
 		updatedAt time.Time
 	)
-	err = s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
 FROM improvement_plan ip
 JOIN exam_paper p ON p.id = ip.paper_id
@@ -579,7 +583,7 @@ WHERE ip.paper_id = ?
   AND ip.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
-`, pid, identifier, identifier).Scan(&planRaw, &updatedAt)
+`), pid, identifier, identifier).Scan(&planRaw, &updatedAt)
 	if err != nil {
 		return nil, err
 	}

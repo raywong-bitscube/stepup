@@ -2,14 +2,15 @@ package catalog
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // Handler returns active subjects and stages for student forms (no auth).
-func Handler(db *sql.DB) http.HandlerFunc {
+func Handler(db *sqlx.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
@@ -57,7 +58,7 @@ SELECT id, name FROM stage WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC`)
 	}
 }
 
-func loadNames(ctx context.Context, db *sql.DB, q string) ([]map[string]any, error) {
+func loadNames(ctx context.Context, db *sqlx.DB, q string) ([]map[string]any, error) {
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err

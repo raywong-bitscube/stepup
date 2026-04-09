@@ -6,15 +6,19 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 var ErrNoDatabase = errors.New("database not configured")
 
 type ListService struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func NewListService(db *sql.DB) *ListService {
+func NewListService(db *sqlx.DB) *ListService {
 	return &ListService{db: db}
 }
 
@@ -81,7 +85,7 @@ FROM ai_call_log`
 	q += " ORDER BY id DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, p.Offset)
 
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return nil, err
 	}

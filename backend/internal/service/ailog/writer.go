@@ -5,13 +5,17 @@ import (
 	"database/sql"
 	"strings"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
 type Writer struct {
-	db *sql.DB
+	db *sqlx.DB
 }
 
-func NewWriter(db *sql.DB) *Writer {
+func NewWriter(db *sqlx.DB) *Writer {
 	return &Writer{db: db}
 }
 
@@ -66,14 +70,14 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 	rsp := row.ResponseBody
 	rsp = TruncateBody(rsp)
 
-	_, _ = w.db.ExecContext(ctx, `
+	_, _ = w.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO ai_call_log (
   ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
   http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
   fallback_to_mock, student_id, ref_table, ref_id, request_meta, response_meta,
   request_body, response_body
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`, nullInt64(aid), row.ModelNameSnap, row.Action, row.AdapterKind, row.ResultStatus,
+`), nullInt64(aid), row.ModelNameSnap, row.Action, row.AdapterKind, row.ResultStatus,
 		nullInt64(httpSt), nullInt64(lat), row.ErrorPhase, row.ErrorMessage,
 		row.EndpointHost, row.ChatModel, fallback,
 		nullInt64(stu), nullString(refTbl), nullInt64(refID), req, resp, rb, rsp)

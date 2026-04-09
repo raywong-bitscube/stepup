@@ -1,8 +1,9 @@
 package router
 
 import (
-	"database/sql"
 	"net/http"
+
+	"github.com/jmoiron/sqlx"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/config"
 	"github.com/raywong-bitscube/stepup/backend/internal/handler/admin"
@@ -29,7 +30,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentslidedeck"
 )
 
-func New(cfg config.Config, db *sql.DB) http.Handler {
+func New(cfg config.Config, db *sqlx.DB) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", health.Get)
@@ -45,7 +46,7 @@ func New(cfg config.Config, db *sql.DB) http.Handler {
 	return middleware.CORS(cfg.CORSAllowedOrigins, mux)
 }
 
-func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
+func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sqlx.DB) {
 	auditWriter := auditlog.New(db)
 	adminAuthService := adminauth.New(cfg, db)
 	adminAuthHandler := admin.NewAuthHandler(adminAuthService, auditWriter)
