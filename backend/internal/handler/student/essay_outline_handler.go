@@ -176,7 +176,15 @@ func (h *EssayOutlineHandler) ListPractices(w http.ResponseWriter, r *http.Reque
 	if items == nil {
 		items = []studentessayoutline.PracticeSummary{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	meta := map[string]any{"row_count_total": 0, "row_count_active": 0}
+	if total, active, err := h.svc.PracticeVisibilityCounts(r.Context(), sid); err == nil {
+		meta["row_count_total"] = total
+		meta["row_count_active"] = active
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"meta":  meta,
+	})
 }
 
 // GetPractice GET /api/v1/student/essay-outline/practices/{practiceId}

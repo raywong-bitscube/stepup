@@ -76,6 +76,19 @@
 │ ip_address  │
 │ created_at  │
 └─────────────┘
+
+        教材目录（可选，用于考点/前端目录树）
+┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+│  Textbook   │ 1:N   │   Chapter   │ 1:N   │   Section   │
+├─────────────┤       ├─────────────┤       ├─────────────┤
+│ id          │       │ id          │       │ id          │
+│ name        │       │ textbook_id │       │ chapter_id  │
+│ version     │       │ number      │       │ number      │
+│ subject     │       │ title       │       │ title       │
+│ category    │       │ full_title  │       │ full_title  │
+│ subject_id  │       │ …audit      │       │ …audit      │
+│ …audit      │       └─────────────┘       └─────────────┘
+└─────────────┘
 ```
 
 ---
@@ -280,7 +293,64 @@
 
 ---
 
-### 12. AuditLog (审计日志)
+### 12. Textbook（教材书目）
+
+**说明**: 一本具体版本、具体册别的教科书（如「粤教版 2019 · 物理 必修 第一册」）。与系统 `subject` 通过 `subject_id` 可选关联，`subject` 字段保留展示用短名。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | uint | 主键 |
+| name | string(50) | 书籍名称 |
+| version | string(50) | 教材版本 |
+| subject | string(20) | 学科展示名 |
+| category | string(20) | 必修 / 选择性必修 等 |
+| subject_id | uint nullable | 关联 `subject.id`，ON DELETE SET NULL |
+| status | tinyint | 1=启用 |
+| remarks | string nullable | 备注 |
+| created_at / created_by / updated_at / updated_by | | 与全库审计惯例一致 |
+| is_deleted / deleted_at / deleted_by | | 软删除 |
+
+**索引**: `(name, version)` 唯一；`subject_id`、`category`、`status`、`is_deleted`。
+
+---
+
+### 13. Chapter（章）
+
+**说明**: 某本教材下的一章；`title` 不含「第一章」前缀，`full_title` 可选存完整展示文案。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | uint | 主键 |
+| textbook_id | uint | 外键 → textbook |
+| number | uint | 章序号（建议从 1 起；可与同书下其他章重复，由业务约束） |
+| title | string(100) | 短标题 |
+| full_title | string(150) nullable | 如「第一章 运动的描述」 |
+| status | tinyint | 1=启用，0=停用（管理端用状态代替对目录行的软删操作） |
+| 审计与软删除 | | 同 textbook |
+
+**索引**: `idx_chapter_textbook_number (textbook_id, number)` 非唯一，仅查询排序。
+
+---
+
+### 14. Section（节）
+
+**说明**: 某一章下的一节；序号与标题规则同章。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | uint | 主键 |
+| chapter_id | uint | 外键 → chapter |
+| number | uint | 节序号（可与同章下其他节重复，由业务约束） |
+| title | string(100) | 短标题 |
+| full_title | string(150) nullable | 如「第一节 质点 参考系 时间」 |
+| status | tinyint | 1=启用，0=停用 |
+| 审计与软删除 | | 同 textbook |
+
+**索引**: `idx_section_chapter_number (chapter_id, number)` 非唯一。
+
+---
+
+### 15. AuditLog (审计日志)
 
 **说明**: 记录所有用户操作，支持数据变更快照。
 
@@ -312,6 +382,9 @@
 | Admin → AdminSession | 1:N | 管理员可有多个登录会话 |
 | PaperAnalysis | 快照 | `ai_model_snapshot` 记录本次分析所用模型信息（至少含 `name`、`url`；无外键；不落盘密钥） |
 | AuditLog → User | N:1 | 日志关联操作用户 |
+| Textbook → Subject | N:1 | `subject_id` 可空；展示字段 `subject` 与科目表可并存 |
+| Textbook → Chapter | 1:N | 一本书下多章 |
+| Chapter → Section | 1:N | 一章下多节 |
 
 ---
 

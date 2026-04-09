@@ -256,6 +256,21 @@ Header: `Authorization: Bearer <admin_token>`
 
 说明：`description` 传空字符串表示置为 `NULL`。
 
+#### 教材目录（管理端，只改不增删）
+
+用于维护已落库的 `textbook` / `chapter` / `section`：**仅 PATCH**，不提供创建与删除接口。学生端科目下**至少绑定一本教材**时，管理端「科目 → 编辑」会显示 **目录** 并进入独立视图（`frontend-admin`）。
+
+均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；`chapter`/`section` 需已执行迁移（含 `status` 字段、章/节序号无唯一约束），见 **`db/migrations/2026-04-08#02_chapter_section_status_drop_number_unique.sql`** 或当前基线 schema。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/v1/admin/subjects/{subjectId}/textbooks` | 科目须存在。返回该 `subject_id` 下未软删教材 `items`：`id`、`name`、`version`、`subject`、`category`、`remarks`、`status`、`updated_at`。 |
+| `PATCH` | `/api/v1/admin/textbooks/{textbookId}` | 可选字段（至少一项）：`name`、`version`、`subject`、`remarks`、`status`（0/1）。**不可**改 `category` / `subject_id`。`remarks` 空串置 `NULL`。`name+version` 与现唯一键冲突时 `409` `CONFLICT`。 |
+| `GET` | `/api/v1/admin/textbooks/{textbookId}/chapters` | 教材须存在。`items`：`id`、`textbook_id`、`number`、`title`、`full_title`、`status`、`updated_at`。 |
+| `PATCH` | `/api/v1/admin/chapters/{chapterId}` | 可选：`number`、`title`、`full_title`、`status`（至少一项）。`full_title` 空串置 `NULL`。 |
+| `GET` | `/api/v1/admin/chapters/{chapterId}/sections` | 章须存在。`items`：`id`、`chapter_id`、`number`、`title`、`full_title`、`status`、`updated_at`。 |
+| `PATCH` | `/api/v1/admin/sections/{sectionId}` | 可选：`number`、`title`、`full_title`、`status`（至少一项）。 |
+
 ### 3.8 阶段（管理端）
 
 与科目相同模式：
@@ -517,7 +532,7 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 
 #### 5.5.4 练习记录列表与详情
 
-- `GET /api/v1/student/essay-outline/practices?limit=50` — 当前学生已保存的练习（`essay_outline_practice`，未删除），`limit` 默认 50、最大 100。响应 `items[]`：`id`、`created_at`、`topic_label`、`topic_source`、`topic_preview`（题目摘要）。
+- `GET /api/v1/student/essay-outline/practices?limit=50` — 当前学生已保存的练习（`essay_outline_practice`，未删除），`limit` 默认 50、最大 100。响应 `items[]`：`id`、`created_at`、`topic_label`、`topic_source`、`topic_preview`（题目摘要）。另含 **`meta`**：`row_count_total`（该 `student_id` 总行数）、`row_count_active`（`is_deleted=0` 行数），便于排查「库里有行但列表为空」（多为已软删）。
 - `GET /api/v1/student/essay-outline/practices/{practiceId}` — 单条详情（含 `topic_text`、`outline_text`、`review`、`raw_review` 等）。非本人或不存在：`404` + `NOT_FOUND`。
 
 `ai_call_log.action`：`essay_outline_generate_topic` / `essay_outline_ocr_topic` / `essay_outline_review`。

@@ -83,6 +83,7 @@ docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MY
 **种子数据说明**（`db/seed/dev_seed.sql`）：
 
 - 默认管理员（bcrypt）、阶段、科目、`ai_model` 中的 DeepSeek 占位行等。
+- 教材目录（粤教版 2019 物理必修一/二）为 **可选**：迁移建好 `textbook` / `chapter` / `section` 后，可执行 `db/seed/textbook_yuedu_physics_required_2019.sql`（详见 [`releases/20260408#01`](../releases/20260408%2301_DEPLOY_AND_UPGRADE.md)）。
 - **`app_secret` 为占位符** `__REPLACE_WITH_DEEPSEEK_API_KEY__`：执行前在本地替换为真实 Key，或在导入后用管理端 **AI 模型** 界面更新；**不要把真实密钥提交到 Git**。
 
 若库中 **已存在** 同名 DeepSeek 种子行，`INSERT ... WHERE NOT EXISTS` 不会重复插入；需改密钥时用 SQL `UPDATE` 或管理端。

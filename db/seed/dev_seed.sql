@@ -162,3 +162,6 @@ WHERE NOT EXISTS (
   SELECT 1 FROM prompt_template
   WHERE `key` = 'essay_outline_ocr_topic' AND is_deleted = 0
 );
+
+-- 教材目录（粤教版 2019 物理必修一/二）：在跑完本文件且已执行 2026-04-08#01_textbook_chapter_section.sql 与 2026-04-08#02_chapter_section_status_drop_number_unique.sql（或基线 schema 已合并等价 DDL）后，可选：
+--   mysql ... < db/seed/textbook_yuedu_physics_required_2019.sql

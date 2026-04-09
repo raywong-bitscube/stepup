@@ -1,0 +1,14 @@
+---
+description: Calendar dates in migration/release filenames must come from shell `date`, not inference.
+alwaysApply: true
+---
+
+# Dated filenames → shell `date`
+
+When **creating or renaming** any file whose name embeds a **calendar date** (for example `db/migrations/yyyy-mm-dd#NN_*.sql`, `docs/releases/YYYYMMDD#NN_*.md`, or any other `yyyy-mm-dd` / `YYYYMMDD` segment):
+
+1. Run in the project environment: `date +%F` (and if the convention needs no dashes, derive `YYYYMMDD` from that output).
+2. Use **exactly** that date in the filename. Do **not** use the model’s guess, conversation memory, or `user_info` “Today’s date” as the source of truth when they conflict with `date +%F`.
+3. If the shell cannot run `date`, state that and ask the user for the authoritative date.
+
+This matches `db/README.md`: migration prefixes are the **real** calendar day of write/merge, verified via the shell in this workspace.

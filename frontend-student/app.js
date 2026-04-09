@@ -589,9 +589,26 @@
     return h;
   }
 
-  function renderEOPracticeList(items) {
+  function renderEOPracticeList(items, meta) {
+    const m = meta || {};
+    const total = Number(m.row_count_total);
+    const active = Number(m.row_count_active);
     if (!items || !items.length) {
-      return '<p class="muted">暂无记录。提交点评成功后会出现在这里；若库中已有数据仍为空，请核对 <code>essay_outline_practice.student_id</code> 是否与当前账号在 <code>student</code> 表中的 <code>id</code> 一致。</p>';
+      if (total > 0 && active === 0) {
+        return (
+          '<p class="muted">数据库中有 <strong>' +
+          total +
+          '</strong> 条您的练习记录，但均为<strong>已删除</strong>状态（<code>is_deleted = 1</code>），列表只展示未删除记录。可在库中执行 <code>SELECT id,is_deleted FROM essay_outline_practice WHERE student_id=…</code> 核对；恢复示例：<code>UPDATE essay_outline_practice SET is_deleted=0, deleted_at=NULL, deleted_by=NULL WHERE student_id=? AND id IN (…)</code>。</p>'
+        );
+      }
+      if (total > 0 && active > 0) {
+        return (
+          '<p class="muted">当前账号在库中应有 <strong>' +
+          active +
+          '</strong> 条可见记录，但列表未加载出来，请强制刷新或查看 Network 中 <code>GET …/practices</code> 的 JSON。</p>'
+        );
+      }
+      return '<p class="muted">暂无记录。提交点评成功后会出现在这里；请确认 <code>student_id</code> 与登录学生在 <code>student.id</code> 一致，且页面访问的后端与查库的实例为同一套。</p>';
     }
     const rows = items
       .map(
@@ -944,16 +961,16 @@
 
     async function refreshPracticeList() {
       const seq = ++eoPracticeListFetchSeq;
-      const host = document.getElementById('eoPracticeListHost');
+      const host = root.querySelector('#eoPracticeListHost');
       if (!host) return;
       host.innerHTML = '<p class="muted">加载中…</p>';
       try {
         const d = await api('/api/v1/student/essay-outline/practices?limit=50');
         if (seq !== eoPracticeListFetchSeq) return;
-        const host2 = document.getElementById('eoPracticeListHost');
+        const host2 = root.querySelector('#eoPracticeListHost');
         if (!host2) return;
         const items = d && Array.isArray(d.items) ? d.items : [];
-        host2.innerHTML = renderEOPracticeList(items);
+        host2.innerHTML = renderEOPracticeList(items, d && d.meta);
         host2.querySelectorAll('.eo-practice-item').forEach((el) => {
           el.addEventListener('click', () => {
             loadPracticeDetail(Number(el.getAttribute('data-practice-id')));
@@ -961,12 +978,12 @@
         });
       } catch (e) {
         if (authRedirectHandled(e)) {
-          const h = document.getElementById('eoPracticeListHost');
+          const h = root.querySelector('#eoPracticeListHost');
           if (h) h.innerHTML = '<p class="muted">登录已失效，请刷新页面重新登录。</p>';
           return;
         }
         if (seq !== eoPracticeListFetchSeq) return;
-        const host2 = document.getElementById('eoPracticeListHost');
+        const host2 = root.querySelector('#eoPracticeListHost');
         if (!host2) return;
         host2.innerHTML =
           '<p class="muted">加载记录失败：' +
@@ -977,27 +994,27 @@
 
     async function loadPracticeDetail(id) {
       const seq = ++eoPracticeDetailFetchSeq;
-      const dh = document.getElementById('eoPracticeDetailHost');
+      const dh = root.querySelector('#eoPracticeDetailHost');
       if (!dh) return;
       dh.innerHTML = '<p class="muted">加载详情…</p>';
       try {
         const d = await api('/api/v1/student/essay-outline/practices/' + id);
         if (seq !== eoPracticeDetailFetchSeq) return;
-        const dh2 = document.getElementById('eoPracticeDetailHost');
+        const dh2 = root.querySelector('#eoPracticeDetailHost');
         if (!dh2) return;
         dh2.innerHTML = renderEOPracticeDetail(d.practice);
         dh2.querySelector('#eoBtnCloseDetail')?.addEventListener('click', () => {
-          const h = document.getElementById('eoPracticeDetailHost');
+          const h = root.querySelector('#eoPracticeDetailHost');
           if (h) h.innerHTML = '';
         });
       } catch (e) {
         if (authRedirectHandled(e)) {
-          const h = document.getElementById('eoPracticeDetailHost');
+          const h = root.querySelector('#eoPracticeDetailHost');
           if (h) h.innerHTML = '<p class="muted">登录已失效，请刷新页面。</p>';
           return;
         }
         if (seq !== eoPracticeDetailFetchSeq) return;
-        const h2 = document.getElementById('eoPracticeDetailHost');
+        const h2 = root.querySelector('#eoPracticeDetailHost');
         if (!h2) return;
         h2.innerHTML =
           '<p class="muted">无法加载：' +
@@ -1007,12 +1024,6 @@
     }
 
     refreshPracticeList();
-    // Second pass: avoids rare races (e.g. remount/generation) or first GET finishing before UI settles.
-    setTimeout(() => {
-      if (state.hubSubject && state.hubFeature === 'essay_outline') {
-        refreshPracticeList();
-      }
-    }, 400);
   }
 
   function collectUploadFiles(fileList) {

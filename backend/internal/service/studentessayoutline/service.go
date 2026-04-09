@@ -428,7 +428,28 @@ LIMIT ?
 		p.TopicPreview = previewRunes(topicFull, 100)
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PracticeVisibilityCounts returns (all rows for student, rows with is_deleted=0). Helps explain empty lists.
+func (s *Service) PracticeVisibilityCounts(ctx context.Context, studentID uint64) (total, active int, err error) {
+	if s.db == nil {
+		return 0, 0, ErrDatabaseRequired
+	}
+	err = s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ?`, studentID).Scan(&total)
+	if err != nil {
+		return 0, 0, err
+	}
+	err = s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ? AND is_deleted = 0`, studentID).Scan(&active)
+	if err != nil {
+		return 0, 0, err
+	}
+	return total, active, nil
 }
 
 // GetPractice returns one practice if it belongs to the student.

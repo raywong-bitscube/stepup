@@ -8,7 +8,7 @@
 | **[`docs/releases/`](./releases/)** | **发版增量**：某次上线的变更说明、升级 checklist、评审摘要（按日期/批次追加新文件，不必改基线文档日期）。 |
 | **[`docs/deploy/`](./deploy/)** | **部署样例**：与文档配套的 Nginx 等可复制配置（非运行时目录）。 |
 
-**建议入口**：发往测试 / 预发请按序阅读 [**releases/20260404#01**](./releases/20260404%2301_DEPLOY_AND_UPGRADE.md)（AI 日志与 `db/` 等）、[**20260404#02**](./releases/20260404%2302_DEPLOY_AND_UPGRADE.md)（识图、Prompt、日志正文）、[**20260405#01**](./releases/20260405%2301_DEPLOY_AND_UPGRADE.md)（多图上传、种子与迁移归并）、[**20260405#02**](./releases/20260405%2302_DEPLOY_AND_UPGRADE.md)（CORS / Go+Nginx / 学生端稳定性），并按需展开 **core** 中文档。
+**建议入口**：发往测试 / 预发请按序阅读 [**releases/20260404#01**](./releases/20260404%2301_DEPLOY_AND_UPGRADE.md)（AI 日志与 `db/` 等）、[**20260404#02**](./releases/20260404%2302_DEPLOY_AND_UPGRADE.md)（识图、Prompt、日志正文）、[**20260405#01**](./releases/20260405%2301_DEPLOY_AND_UPGRADE.md)（多图上传、种子与迁移归并）、[**20260405#02**](./releases/20260405%2302_DEPLOY_AND_UPGRADE.md)（CORS / Go+Nginx / 学生端稳定性）、[**20260408#01**](./releases/20260408%2301_DEPLOY_AND_UPGRADE.md)（教材目录表与粤教版物理必修种子），并按需展开 **core** 中文档。
 
 ---
 

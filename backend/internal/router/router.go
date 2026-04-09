@@ -18,6 +18,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/admintextbookcatalog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/auditlog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
@@ -47,6 +48,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminAuthHandler := admin.NewAuthHandler(adminAuthService, auditWriter)
 	adminStudentsHandler := admin.NewStudentsHandler(adminstudents.New(db), auditWriter)
 	adminSubjectsHandler := admin.NewSubjectsHandler(adminsubjects.New(db), auditWriter)
+	adminTextbookCatalogHandler := admin.NewTextbookCatalogHandler(admintextbookcatalog.New(db))
 	adminStagesHandler := admin.NewStagesHandler(adminstages.New(db), auditWriter)
 	adminAIModelsHandler := admin.NewAIModelsHandler(adminaimodels.New(db), auditWriter)
 	adminPromptsHandler := admin.NewPromptsHandler(adminprompts.New(db), auditWriter)
@@ -96,7 +98,14 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 
 	mux.HandleFunc("GET /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/subjects", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.Create))
+	mux.HandleFunc("GET /api/v1/admin/subjects/{subjectId}/textbooks", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.ListTextbooksBySubject))
 	mux.HandleFunc("PATCH /api/v1/admin/subjects/{subjectId}", middleware.RequireAdminAuth(adminAuthService, adminSubjectsHandler.Patch))
+
+	mux.HandleFunc("GET /api/v1/admin/textbooks/{textbookId}/chapters", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.ListChapters))
+	mux.HandleFunc("PATCH /api/v1/admin/textbooks/{textbookId}", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.PatchTextbook))
+	mux.HandleFunc("GET /api/v1/admin/chapters/{chapterId}/sections", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.ListSections))
+	mux.HandleFunc("PATCH /api/v1/admin/chapters/{chapterId}", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.PatchChapter))
+	mux.HandleFunc("PATCH /api/v1/admin/sections/{sectionId}", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.PatchSection))
 
 	mux.HandleFunc("GET /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Create))

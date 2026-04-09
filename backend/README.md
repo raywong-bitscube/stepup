@@ -81,6 +81,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `POST /api/v1/admin/students` — create student (identifier/password/name/stage)
 - `PATCH /api/v1/admin/students/{studentId}` — update student (name/stage/status/password)
 - `GET|POST /api/v1/admin/subjects`, `PATCH /api/v1/admin/subjects/{subjectId}` — subject CRUD
+- 教材目录（仅更新、无增删）：`GET /api/v1/admin/subjects/{subjectId}/textbooks`，`PATCH /api/v1/admin/textbooks/{textbookId}`，`GET /api/v1/admin/textbooks/{textbookId}/chapters`，`PATCH /api/v1/admin/chapters/{chapterId}`，`GET /api/v1/admin/chapters/{chapterId}/sections`，`PATCH /api/v1/admin/sections/{sectionId}`
 - `GET|POST /api/v1/admin/stages`, `PATCH /api/v1/admin/stages/{stageId}` — stage CRUD
 - `GET|POST /api/v1/admin/ai-models`, `PATCH /api/v1/admin/ai-models/{modelId}` — AI 模型（列表不返回 secret；激活一个模型会将其他模型置为非激活）
 - `GET /api/v1/admin/prompts`, `PATCH /api/v1/admin/prompts/{promptId}` — Prompt 模板（预置行，仅更新）

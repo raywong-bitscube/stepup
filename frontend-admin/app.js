@@ -172,6 +172,8 @@
       from: '',
       to: '',
     },
+    /** 科目下教材目录：独立视图导航（有 textbook 的科目才从编辑弹窗进入） */
+    subjectCatalog: null,
   };
 
   async function api(path, opts = {}) {
@@ -332,6 +334,22 @@
           )}</button>`
       )
       .join('');
+    if (state.view === 'subject_catalog') {
+      return `
+      <div class="wrap">
+        <div class="card toolbar">
+          <div>
+            <strong>StepUp 管理后台</strong>
+            <span class="muted" style="margin-left:8px">API: ${escapeHtml(apiBase())}</span>
+          </div>
+          <div class="row" style="margin-top:0">
+            <button type="button" class="btn secondary small" id="btnLogout">退出</button>
+          </div>
+        </div>
+        ${flash}
+        <section class="card" id="mainPane" style="margin-top:0"><p class="muted">加载中…</p></section>
+      </div>`;
+    }
     return `
       <div class="wrap">
         <div class="card toolbar">
@@ -360,13 +378,17 @@
       localStorage.removeItem(LS_TOKEN);
       mount(document.getElementById('app'));
     });
-    root.querySelectorAll('#sideMenu button').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.view = btn.getAttribute('data-view');
-        state.flash = null;
-        mount(document.getElementById('app'));
+    const side = root.querySelector('#sideMenu');
+    if (side) {
+      side.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          state.view = btn.getAttribute('data-view');
+          state.flash = null;
+          state.subjectCatalog = null;
+          mount(document.getElementById('app'));
+        });
       });
-    });
+    }
   }
 
   async function refreshView(root) {
@@ -374,6 +396,40 @@
     if (!pane) return;
     await loadCatalog();
     try {
+      if (state.view === 'subject_catalog') {
+        const nav = state.subjectCatalog;
+        if (!nav || !nav.subjectId) {
+          state.view = 'subjects';
+          state.subjectCatalog = null;
+          mount(root);
+          return;
+        }
+        if (nav.mode === 'textbooks') {
+          const d = await api('/api/v1/admin/subjects/' + nav.subjectId + '/textbooks');
+          const items = d.items || [];
+          pane.innerHTML = renderTextbookCatalogPage(nav, items);
+          bindTextbookCatalog(pane, nav);
+          return;
+        }
+        if (nav.mode === 'chapters') {
+          const d = await api('/api/v1/admin/textbooks/' + nav.textbookId + '/chapters');
+          const items = d.items || [];
+          pane.innerHTML = renderChapterCatalogPage(nav, items);
+          bindChapterCatalog(pane, nav);
+          return;
+        }
+        if (nav.mode === 'sections') {
+          const d = await api('/api/v1/admin/chapters/' + nav.chapterId + '/sections');
+          const items = d.items || [];
+          pane.innerHTML = renderSectionCatalogPage(nav, items);
+          bindSectionCatalog(pane, nav);
+          return;
+        }
+        state.view = 'subjects';
+        state.subjectCatalog = null;
+        mount(root);
+        return;
+      }
       if (state.view === 'dashboard') {
         const [st, sub] = await Promise.all([
           api('/api/v1/admin/students'),
@@ -444,6 +500,7 @@
         state.aiLogs = d.items || [];
         pane.innerHTML = renderAICallLogs();
         bindAICallLogs(pane);
+        return;
       }
     } catch (e) {
       if (authRedirectHandled(e)) return;
@@ -669,7 +726,7 @@
         <div><label>说明</label><input id="sd" value="${edit && ex.description ? escapeHtml(ex.description) : ''}" /></div>
         ${edit ? `<div><label>状态</label><input id="ss" type="number" value="${ex.status}" /></div>` : ''}
       </div>
-      <div class="row"><button type="button" class="btn" id="sok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
+      <div class="row" id="subActions"><button type="button" class="btn" id="sok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
       </div></div>`;
     const close = () => {
       mr.innerHTML = '';
@@ -700,6 +757,374 @@
         }
         close();
         mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+      }
+    });
+    if (edit) {
+      api('/api/v1/admin/subjects/' + ex.id + '/textbooks')
+        .then((d) => {
+          const items = d.items || [];
+          if (!items.length) return;
+          const row = mr.querySelector('#subActions');
+          if (!row) return;
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'btn secondary';
+          b.textContent = '目录';
+          row.insertBefore(b, row.firstChild);
+          b.addEventListener('click', () => {
+            close();
+            state.view = 'subject_catalog';
+            state.subjectCatalog = {
+              subjectId: ex.id,
+              subjectName: ex.name || '',
+              mode: 'textbooks',
+            };
+            mount(document.getElementById('app'));
+          });
+        })
+        .catch((e) => {
+          if (authRedirectHandled(e)) return;
+        });
+    }
+  }
+
+  function mountCatalog(nav) {
+    state.view = 'subject_catalog';
+    state.subjectCatalog = nav;
+    mount(document.getElementById('app'));
+  }
+
+  function renderTextbookCatalogPage(nav, items) {
+    const rows = items
+      .map(
+        (t) =>
+          `<tr><td>${t.id}</td><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.version)}</td><td>${escapeHtml(
+            t.subject
+          )}</td><td>${escapeHtml(t.category)}</td><td>${escapeHtml(
+            (t.remarks || '').trim() || '—'
+          )}</td><td>${t.status}</td>
+        <td class="row" style="gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn small" data-edit-tb="${t.id}">编辑</button>
+          <button type="button" class="btn small secondary" data-chapters-tb="${t.id}">章节</button>
+        </td></tr>`
+      )
+      .join('');
+    return `
+      <div class="toolbar row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <button type="button" class="btn secondary small" id="catBackSubjects">← 科目列表</button>
+          <span class="muted" style="margin-left:12px;font-weight:500">${escapeHtml(
+            nav.subjectName || '科目'
+          )} · 教材目录</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:8px">仅可编辑已有教材（书名、版本、学科展示名、备注、状态）；不提供新增或删除。<strong>类别</strong>只读。</p>
+      <table class="data"><thead><tr><th>ID</th><th>名称</th><th>版本</th><th>学科</th><th>类别</th><th>备注</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
+        '<tr><td colspan="8">暂无教材</td></tr>'}</tbody></table>
+      <div id="catalogModalRoot"></div>`;
+  }
+
+  function bindTextbookCatalog(pane, nav) {
+    pane.querySelector('#catBackSubjects').addEventListener('click', () => {
+      state.view = 'subjects';
+      state.subjectCatalog = null;
+      mount(document.getElementById('app'));
+    });
+    const mr = pane.querySelector('#catalogModalRoot');
+    pane.querySelectorAll('button[data-edit-tb]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const tr = b.closest('tr');
+        const id = Number(b.getAttribute('data-edit-tb'));
+        const cells = tr ? tr.querySelectorAll('td') : [];
+        const rm = cells[5] ? cells[5].textContent.trim() : '';
+        const rec = {
+          id,
+          name: cells[1] ? cells[1].textContent.trim() : '',
+          version: cells[2] ? cells[2].textContent.trim() : '',
+          subject: cells[3] ? cells[3].textContent.trim() : '',
+          remarks: rm === '—' ? '' : rm,
+          status: cells[6] ? Number(cells[6].textContent.trim()) || 1 : 1,
+        };
+        openTextbookEditModal(mr, rec, () => mountCatalog(Object.assign({}, nav, { mode: 'textbooks' })));
+      });
+    });
+    pane.querySelectorAll('button[data-chapters-tb]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const tr = b.closest('tr');
+        const cells = tr ? tr.querySelectorAll('td') : [];
+        const tid = Number(b.getAttribute('data-chapters-tb'));
+        const nm = cells[1] ? cells[1].textContent.trim() : '';
+        mountCatalog({
+          subjectId: nav.subjectId,
+          subjectName: nav.subjectName,
+          mode: 'chapters',
+          textbookId: tid,
+          textbookName: nm,
+        });
+      });
+    });
+  }
+
+  function openTextbookEditModal(mr, t, onSaved) {
+    mr.innerHTML = `
+      <div class="modal-backdrop" id="tbd"><div class="modal"><h3>编辑教材</h3>
+      <div class="form-grid">
+        <div><label>名称</label><input id="tbn" value="${escapeHtml(t.name)}" /></div>
+        <div><label>版本</label><input id="tbv" value="${escapeHtml(t.version)}" /></div>
+        <div><label>学科（展示）</label><input id="tbs" value="${escapeHtml(t.subject)}" /></div>
+        <div style="grid-column:1/-1"><label>备注</label><input id="tbr" value="${escapeHtml(t.remarks)}" /></div>
+        <div><label>状态 1启用/0停用</label><input id="tbst" type="number" min="0" max="1" value="${t.status}" /></div>
+      </div>
+      <div class="row"><button type="button" class="btn" id="tbok">保存</button><button type="button" class="btn secondary" id="tbx">取消</button></div>
+      </div></div>`;
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    mr.querySelector('#tbx').addEventListener('click', close);
+    mr.querySelector('#tbd').addEventListener('click', (e) => {
+      if (e.target.id === 'tbd') close();
+    });
+    mr.querySelector('#tbok').addEventListener('click', async () => {
+      try {
+        await api('/api/v1/admin/textbooks/' + t.id, {
+          method: 'PATCH',
+          jsonBody: {
+            name: mr.querySelector('#tbn').value.trim(),
+            version: mr.querySelector('#tbv').value.trim(),
+            subject: mr.querySelector('#tbs').value.trim(),
+            remarks: mr.querySelector('#tbr').value,
+            status: Number(mr.querySelector('#tbst').value),
+          },
+        });
+        close();
+        onSaved();
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+      }
+    });
+  }
+
+  function renderChapterCatalogPage(nav, items) {
+    const rows = items
+      .map(
+        (c) =>
+          `<tr><td>${c.id}</td><td>${c.number}</td><td>${escapeHtml(c.title)}</td><td>${escapeHtml(
+            (c.full_title || '').trim() || '—'
+          )}</td><td>${c.status}</td>
+        <td class="row" style="gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn small" data-edit-ch="${c.id}">编辑</button>
+          <button type="button" class="btn small secondary" data-sects-ch="${c.id}">小节</button>
+        </td></tr>`
+      )
+      .join('');
+    return `
+      <div class="toolbar row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <button type="button" class="btn secondary small" id="catBackTextbooks">← 教材列表</button>
+          <span class="muted" style="margin-left:12px">${escapeHtml(nav.subjectName || '')} › ${escapeHtml(
+      nav.textbookName || ''
+    )} · 章</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:8px">仅可编辑序号、标题、完整标题、状态；不提供新增或删除。</p>
+      <table class="data"><thead><tr><th>ID</th><th>序号</th><th>标题</th><th>完整标题</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
+        '<tr><td colspan="6">暂无章节</td></tr>'}</tbody></table>
+      <div id="catalogModalRoot"></div>`;
+  }
+
+  function bindChapterCatalog(pane, nav) {
+    pane.querySelector('#catBackTextbooks').addEventListener('click', () => {
+      mountCatalog({
+        subjectId: nav.subjectId,
+        subjectName: nav.subjectName,
+        mode: 'textbooks',
+      });
+    });
+    const mr = pane.querySelector('#catalogModalRoot');
+    pane.querySelectorAll('button[data-edit-ch]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const tr = b.closest('tr');
+        const id = Number(b.getAttribute('data-edit-ch'));
+        const cells = tr ? tr.querySelectorAll('td') : [];
+        const ftRaw = cells[3] ? cells[3].textContent.trim() : '';
+        const rec = {
+          id,
+          number: cells[1] ? Number(cells[1].textContent) : 0,
+          title: cells[2] ? cells[2].textContent.trim() : '',
+          full_title: ftRaw === '—' ? '' : ftRaw,
+          status: cells[4] ? Number(cells[4].textContent) : 1,
+        };
+        openChapterEditModal(mr, rec, () =>
+          mountCatalog({
+            subjectId: nav.subjectId,
+            subjectName: nav.subjectName,
+            mode: 'chapters',
+            textbookId: nav.textbookId,
+            textbookName: nav.textbookName,
+          })
+        );
+      });
+    });
+    pane.querySelectorAll('button[data-sects-ch]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const tr = b.closest('tr');
+        const cells = tr ? tr.querySelectorAll('td') : [];
+        const cid = Number(b.getAttribute('data-sects-ch'));
+        const ct = cells[2] ? cells[2].textContent.trim() : '';
+        mountCatalog({
+          subjectId: nav.subjectId,
+          subjectName: nav.subjectName,
+          mode: 'sections',
+          textbookId: nav.textbookId,
+          textbookName: nav.textbookName,
+          chapterId: cid,
+          chapterTitle: ct,
+        });
+      });
+    });
+  }
+
+  function openChapterEditModal(mr, c, onSaved) {
+    mr.innerHTML = `
+      <div class="modal-backdrop" id="cbd"><div class="modal"><h3>编辑章</h3>
+      <div class="form-grid">
+        <div><label>序号</label><input id="chnu" type="number" min="0" value="${c.number}" /></div>
+        <div style="grid-column:1/-1"><label>标题</label><input id="cht" value="${escapeHtml(c.title)}" /></div>
+        <div style="grid-column:1/-1"><label>完整标题</label><input id="chft" value="${escapeHtml(
+          c.full_title || ''
+        )}" /></div>
+        <div><label>状态</label><input id="chst" type="number" min="0" max="1" value="${c.status}" /></div>
+      </div>
+      <div class="row"><button type="button" class="btn" id="chok">保存</button><button type="button" class="btn secondary" id="chx">取消</button></div>
+      </div></div>`;
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    mr.querySelector('#chx').addEventListener('click', close);
+    mr.querySelector('#cbd').addEventListener('click', (e) => {
+      if (e.target.id === 'cbd') close();
+    });
+    mr.querySelector('#chok').addEventListener('click', async () => {
+      try {
+        await api('/api/v1/admin/chapters/' + c.id, {
+          method: 'PATCH',
+          jsonBody: {
+            number: Number(mr.querySelector('#chnu').value),
+            title: mr.querySelector('#cht').value.trim(),
+            full_title: mr.querySelector('#chft').value.trim(),
+            status: Number(mr.querySelector('#chst').value),
+          },
+        });
+        close();
+        onSaved();
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+      }
+    });
+  }
+
+  function renderSectionCatalogPage(nav, items) {
+    const rows = items
+      .map(
+        (s) =>
+          `<tr><td>${s.id}</td><td>${s.number}</td><td>${escapeHtml(s.title)}</td><td>${escapeHtml(
+            (s.full_title || '').trim() || '—'
+          )}</td><td>${s.status}</td>
+        <td><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button></td></tr>`
+      )
+      .join('');
+    return `
+      <div class="toolbar row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <button type="button" class="btn secondary small" id="catBackChapters">← 章列表</button>
+          <span class="muted" style="margin-left:12px">${escapeHtml(nav.textbookName || '')} › ${escapeHtml(
+      nav.chapterTitle || ''
+    )} · 节</span>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:8px">仅可编辑序号、标题、完整标题、状态；不提供新增或删除。</p>
+      <table class="data"><thead><tr><th>ID</th><th>序号</th><th>标题</th><th>完整标题</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
+        '<tr><td colspan="6">暂无小节</td></tr>'}</tbody></table>
+      <div id="catalogModalRoot"></div>`;
+  }
+
+  function bindSectionCatalog(pane, nav) {
+    pane.querySelector('#catBackChapters').addEventListener('click', () => {
+      mountCatalog({
+        subjectId: nav.subjectId,
+        subjectName: nav.subjectName,
+        mode: 'chapters',
+        textbookId: nav.textbookId,
+        textbookName: nav.textbookName,
+      });
+    });
+    const mr = pane.querySelector('#catalogModalRoot');
+    pane.querySelectorAll('button[data-edit-se]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const tr = b.closest('tr');
+        const id = Number(b.getAttribute('data-edit-se'));
+        const cells = tr ? tr.querySelectorAll('td') : [];
+        const ftRaw = cells[3] ? cells[3].textContent.trim() : '';
+        const rec = {
+          id,
+          number: cells[1] ? Number(cells[1].textContent) : 0,
+          title: cells[2] ? cells[2].textContent.trim() : '',
+          full_title: ftRaw === '—' ? '' : ftRaw,
+          status: cells[4] ? Number(cells[4].textContent) : 1,
+        };
+        openSectionEditModal(mr, rec, () =>
+          mountCatalog({
+            subjectId: nav.subjectId,
+            subjectName: nav.subjectName,
+            mode: 'sections',
+            textbookId: nav.textbookId,
+            textbookName: nav.textbookName,
+            chapterId: nav.chapterId,
+            chapterTitle: nav.chapterTitle,
+          })
+        );
+      });
+    });
+  }
+
+  function openSectionEditModal(mr, srow, onSaved) {
+    mr.innerHTML = `
+      <div class="modal-backdrop" id="sbd"><div class="modal"><h3>编辑节</h3>
+      <div class="form-grid">
+        <div><label>序号</label><input id="senu" type="number" min="0" value="${srow.number}" /></div>
+        <div style="grid-column:1/-1"><label>标题</label><input id="set" value="${escapeHtml(srow.title)}" /></div>
+        <div style="grid-column:1/-1"><label>完整标题</label><input id="seft" value="${escapeHtml(
+          srow.full_title || ''
+        )}" /></div>
+        <div><label>状态</label><input id="sest" type="number" min="0" max="1" value="${srow.status}" /></div>
+      </div>
+      <div class="row"><button type="button" class="btn" id="seok">保存</button><button type="button" class="btn secondary" id="sex">取消</button></div>
+      </div></div>`;
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    mr.querySelector('#sex').addEventListener('click', close);
+    mr.querySelector('#sbd').addEventListener('click', (e) => {
+      if (e.target.id === 'sbd') close();
+    });
+    mr.querySelector('#seok').addEventListener('click', async () => {
+      try {
+        await api('/api/v1/admin/sections/' + srow.id, {
+          method: 'PATCH',
+          jsonBody: {
+            number: Number(mr.querySelector('#senu').value),
+            title: mr.querySelector('#set').value.trim(),
+            full_title: mr.querySelector('#seft').value.trim(),
+            status: Number(mr.querySelector('#sest').value),
+          },
+        });
+        close();
+        onSaved();
       } catch (e) {
         if (authRedirectHandled(e)) return;
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
