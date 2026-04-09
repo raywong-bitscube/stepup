@@ -44,13 +44,13 @@
           html += '<ul class="slide-md-ul">';
           inList = true;
         }
-        html += '<li>' + inlineFormat(escapeHtml(listM[1])) + '</li>';
+        html += '<li>' + renderMarkdownSegment(escapeHtml(listM[1])) + '</li>';
       } else {
         closeList();
         if (line.trim() === '') {
           html += '<br/>';
         } else {
-          html += '<p class="slide-md-p">' + inlineFormat(escapeHtml(line)) + '</p>';
+          html += '<p class="slide-md-p">' + renderMarkdownSegment(escapeHtml(line)) + '</p>';
         }
       }
     }
@@ -60,6 +60,43 @@
 
   function inlineFormat(escapedLine) {
     return escapedLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+
+  /** 已 escapeHtml 的片段：$$块级公式$$，再 $行内$，最后 **粗体**（仅作用于非公式段）。 */
+  function renderMarkdownSegment(escapedText) {
+    if (escapedText == null || escapedText === '') return '';
+    if (escapedText.indexOf('$$') >= 0) {
+      const segs = escapedText.split('$$');
+      let out = '';
+      for (let j = 0; j < segs.length; j++) {
+        if (j % 2 === 0) {
+          out += injectInlineDollarMath(segs[j]);
+        } else {
+          const tex = segs[j].trim();
+          out += '<div class="slide-math-block">' + renderLatex(tex, false) + '</div>';
+        }
+      }
+      return out;
+    }
+    return injectInlineDollarMath(escapedText);
+  }
+
+  function injectInlineDollarMath(escapedText) {
+    if (escapedText.indexOf('$') < 0) return inlineFormat(escapedText);
+    const parts = escapedText.split('$');
+    if (parts.length === 1) return inlineFormat(escapedText);
+    let html = '';
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        html += inlineFormat(parts[i]);
+      } else {
+        const tex = parts[i].trim();
+        if (tex === '') html += '$';
+        else
+          html += '<span class="slide-math-inline">' + renderLatex(tex, 'inline') + '</span>';
+      }
+    }
+    return html;
   }
 
   function renderLatex(tex, display) {
