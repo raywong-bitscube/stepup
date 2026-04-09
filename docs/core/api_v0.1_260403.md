@@ -221,11 +221,14 @@ Header: `Authorization: Bearer <admin_token>`
       "name": "物理",
       "description": "默认科目：物理",
       "status": 1,
+      "textbook_count": 1,
       "created_at": "2026-04-03T12:00:00Z"
     }
   ]
 }
 ```
+
+`textbook_count`：该科目下未软删教材数量；管理端列表在 `textbook_count > 0` 时显示「目录」入口。
 
 #### 创建
 
@@ -258,7 +261,7 @@ Header: `Authorization: Bearer <admin_token>`
 
 #### 教材目录（管理端，只改不增删）
 
-用于维护已落库的 `textbook` / `chapter` / `section`：**仅 PATCH**，不提供创建与删除接口。学生端科目下**至少绑定一本教材**时，管理端「科目 → 编辑」会显示 **目录** 并进入独立视图（`frontend-admin`）。
+用于维护已落库的 `textbook` / `chapter` / `section`：**仅 PATCH**，不提供创建与删除接口。学生端科目下**至少绑定一本教材**时，管理端「科目」列表行内显示 **目录**，进入盖在主内容上的全屏目录区，**左侧保留管理菜单**，且「科目」菜单项保持高亮（`frontend-admin`）。
 
 均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；`chapter`/`section` 需已执行迁移（含 `status` 字段、章/节序号无唯一约束），见 **`db/migrations/2026-04-08#02_chapter_section_status_drop_number_unique.sql`** 或当前基线 schema。
 

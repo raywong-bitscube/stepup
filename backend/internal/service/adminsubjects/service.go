@@ -16,11 +16,12 @@ var (
 )
 
 type Subject struct {
-	ID          uint64    `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Status      int       `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID             uint64    `json:"id"`
+	Name           string    `json:"name"`
+	Description    *string   `json:"description"`
+	Status         int       `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	TextbookCount  int       `json:"textbook_count"`
 }
 
 type Service struct {
@@ -39,10 +40,13 @@ func (s *Service) List(ctx context.Context) ([]Subject, error) {
 	defer cancel()
 
 	const q = `
-SELECT id, name, description, status, created_at
-FROM subject
-WHERE is_deleted = 0
-ORDER BY id DESC
+SELECT s.id, s.name, s.description, s.status, s.created_at,
+  COALESCE((
+    SELECT COUNT(*) FROM textbook t WHERE t.subject_id = s.id AND t.is_deleted = 0
+  ), 0) AS textbook_count
+FROM subject s
+WHERE s.is_deleted = 0
+ORDER BY s.id DESC
 LIMIT 500`
 
 	rows, err := s.db.QueryContext(ctx, q)
@@ -54,16 +58,17 @@ LIMIT 500`
 	out := make([]Subject, 0, 32)
 	for rows.Next() {
 		var (
-			id          uint64
-			name        string
-			description sql.NullString
-			status      int
-			createdAt   time.Time
+			id             uint64
+			name           string
+			description    sql.NullString
+			status         int
+			createdAt      time.Time
+			textbookCount  int
 		)
-		if err := rows.Scan(&id, &name, &description, &status, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name, &description, &status, &createdAt, &textbookCount); err != nil {
 			return nil, err
 		}
-		sub := Subject{ID: id, Name: name, Status: status, CreatedAt: createdAt}
+		sub := Subject{ID: id, Name: name, Status: status, CreatedAt: createdAt, TextbookCount: textbookCount}
 		if description.Valid && description.String != "" {
 			d := description.String
 			sub.Description = &d

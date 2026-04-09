@@ -66,6 +66,27 @@
       .replace(/"/g, '&quot;');
   }
 
+  /** 状态 0/1：管理端单选（≤4 项用 radio） */
+  function htmlAdminStatus10(nameAttr, currentValue, onLabel, offLabel) {
+    const v = Number(currentValue) === 0 ? 0 : 1;
+    const onL = onLabel || '激活';
+    const offL = offLabel || '未激活';
+    return `<div class="radio-group" role="group" aria-label="状态">
+      <label class="radio-line"><input type="radio" name="${nameAttr}" value="1" ${v === 1 ? 'checked' : ''} /> ${escapeHtml(
+      onL
+    )}</label>
+      <label class="radio-line"><input type="radio" name="${nameAttr}" value="0" ${v === 0 ? 'checked' : ''} /> ${escapeHtml(
+      offL
+    )}</label>
+    </div>`;
+  }
+
+  function readAdminStatus10(container, nameAttr) {
+    const el = container.querySelector(`input[name="${nameAttr}"]:checked`);
+    if (!el) return 1;
+    return Number(el.value);
+  }
+
   function isAdminLoginPOST(path, opts) {
     const p = String(path || '').split('?')[0];
     const m = (opts.method || 'GET').toUpperCase();
@@ -329,27 +350,11 @@
     const menu = nav
       .map(
         ([k, lab]) =>
-          `<button type="button" data-view="${k}" class="${state.view === k ? 'active' : ''}">${escapeHtml(
-            lab
-          )}</button>`
+          `<button type="button" data-view="${k}" class="${
+            state.view === k || (state.view === 'subject_catalog' && k === 'subjects') ? 'active' : ''
+          }">${escapeHtml(lab)}</button>`
       )
       .join('');
-    if (state.view === 'subject_catalog') {
-      return `
-      <div class="wrap">
-        <div class="card toolbar">
-          <div>
-            <strong>StepUp 管理后台</strong>
-            <span class="muted" style="margin-left:8px">API: ${escapeHtml(apiBase())}</span>
-          </div>
-          <div class="row" style="margin-top:0">
-            <button type="button" class="btn secondary small" id="btnLogout">退出</button>
-          </div>
-        </div>
-        ${flash}
-        <section class="card" id="mainPane" style="margin-top:0"><p class="muted">加载中…</p></section>
-      </div>`;
-    }
     return `
       <div class="wrap">
         <div class="card toolbar">
@@ -590,7 +595,12 @@
             <div><label>阶段</label><select id="m_stage">${stageOptions(existing ? existing.stage : '')}</select></div>
             ${
               isEdit
-                ? `<div><label>状态 1=启用 0=停用</label><input id="m_stat" type="number" value="${existing.status}" /></div>
+                ? `<div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10(
+                    'admStudentStatus',
+                    existing.status,
+                    '激活',
+                    '未激活'
+                  )}</div>
             <div><label>重置密码（可选）</label><input id="m_newpw" type="password" placeholder="留空不改" /></div>`
                 : ''
             }
@@ -614,7 +624,7 @@
           const body = {
             name: root.querySelector('#m_name').value.trim(),
             stage: root.querySelector('#m_stage').value.trim(),
-            status: Number(root.querySelector('#m_stat').value),
+            status: readAdminStatus10(root, 'admStudentStatus'),
           };
           const np = root.querySelector('#m_newpw').value;
           if (np) body.password = np;
@@ -697,11 +707,16 @@
           `<tr><td>${s.id}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(
             s.description || '—'
           )}</td><td>${s.status}</td>
-        <td><button type="button" class="btn small" data-sid="${s.id}">编辑</button></td></tr>`
+        <td class="row" style="gap:6px;flex-wrap:wrap">${
+          (s.textbook_count || 0) > 0
+            ? `<button type="button" class="btn small secondary" data-catalog-sid="${s.id}">目录</button>`
+            : ''
+        }<button type="button" class="btn small" data-sid="${s.id}">编辑</button></td></tr>`
       )
       .join('');
     return `
       <div class="toolbar"><h2 style="margin:0">科目</h2><button type="button" class="btn" id="btnAddSub">新建</button></div>
+      <p class="muted">某科目下已有教材时，列表中显示「目录」，可维护教材/章/节（仅编辑，无新增删除）。</p>
       <table class="data"><thead><tr><th>ID</th><th>名称</th><th>说明</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
         '<tr><td colspan="5">暂无</td></tr>'}</tbody></table><div id="modalRoot"></div>`;
   }
@@ -709,6 +724,17 @@
   function bindSubjects(pane) {
     const mr = pane.querySelector('#modalRoot');
     pane.querySelector('#btnAddSub').addEventListener('click', () => openSubjectModal(mr, null));
+    pane.querySelectorAll('button[data-catalog-sid]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = Number(b.getAttribute('data-catalog-sid'));
+        const sub = state.subjects.find((x) => x.id === id);
+        mountCatalog({
+          subjectId: id,
+          subjectName: sub ? sub.name || '' : '',
+          mode: 'textbooks',
+        });
+      });
+    });
     pane.querySelectorAll('button[data-sid]').forEach((b) => {
       b.addEventListener('click', () => {
         const id = Number(b.getAttribute('data-sid'));
@@ -724,7 +750,16 @@
       <div class="form-grid">
         <div><label>名称</label><input id="sn" value="${edit ? escapeHtml(ex.name) : ''}" /></div>
         <div><label>说明</label><input id="sd" value="${edit && ex.description ? escapeHtml(ex.description) : ''}" /></div>
-        ${edit ? `<div><label>状态</label><input id="ss" type="number" value="${ex.status}" /></div>` : ''}
+        ${
+          edit
+            ? `<div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10(
+                'admSubjectStatus',
+                ex.status,
+                '激活',
+                '未激活'
+              )}</div>`
+            : ''
+        }
       </div>
       <div class="row" id="subActions"><button type="button" class="btn" id="sok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
       </div></div>`;
@@ -743,7 +778,7 @@
             jsonBody: {
               name: mr.querySelector('#sn').value.trim(),
               description: mr.querySelector('#sd').value,
-              status: Number(mr.querySelector('#ss').value),
+              status: readAdminStatus10(mr, 'admSubjectStatus'),
             },
           });
         } else {
@@ -762,33 +797,6 @@
         alert('失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
     });
-    if (edit) {
-      api('/api/v1/admin/subjects/' + ex.id + '/textbooks')
-        .then((d) => {
-          const items = d.items || [];
-          if (!items.length) return;
-          const row = mr.querySelector('#subActions');
-          if (!row) return;
-          const b = document.createElement('button');
-          b.type = 'button';
-          b.className = 'btn secondary';
-          b.textContent = '目录';
-          row.insertBefore(b, row.firstChild);
-          b.addEventListener('click', () => {
-            close();
-            state.view = 'subject_catalog';
-            state.subjectCatalog = {
-              subjectId: ex.id,
-              subjectName: ex.name || '',
-              mode: 'textbooks',
-            };
-            mount(document.getElementById('app'));
-          });
-        })
-        .catch((e) => {
-          if (authRedirectHandled(e)) return;
-        });
-    }
   }
 
   function mountCatalog(nav) {
@@ -876,7 +884,7 @@
         <div><label>版本</label><input id="tbv" value="${escapeHtml(t.version)}" /></div>
         <div><label>学科（展示）</label><input id="tbs" value="${escapeHtml(t.subject)}" /></div>
         <div style="grid-column:1/-1"><label>备注</label><input id="tbr" value="${escapeHtml(t.remarks)}" /></div>
-        <div><label>状态 1启用/0停用</label><input id="tbst" type="number" min="0" max="1" value="${t.status}" /></div>
+        <div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10('admTbStatus', t.status, '激活', '未激活')}</div>
       </div>
       <div class="row"><button type="button" class="btn" id="tbok">保存</button><button type="button" class="btn secondary" id="tbx">取消</button></div>
       </div></div>`;
@@ -896,7 +904,7 @@
             version: mr.querySelector('#tbv').value.trim(),
             subject: mr.querySelector('#tbs').value.trim(),
             remarks: mr.querySelector('#tbr').value,
-            status: Number(mr.querySelector('#tbst').value),
+            status: readAdminStatus10(mr, 'admTbStatus'),
           },
         });
         close();
@@ -997,7 +1005,7 @@
         <div style="grid-column:1/-1"><label>完整标题</label><input id="chft" value="${escapeHtml(
           c.full_title || ''
         )}" /></div>
-        <div><label>状态</label><input id="chst" type="number" min="0" max="1" value="${c.status}" /></div>
+        <div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10('admChStatus', c.status, '激活', '未激活')}</div>
       </div>
       <div class="row"><button type="button" class="btn" id="chok">保存</button><button type="button" class="btn secondary" id="chx">取消</button></div>
       </div></div>`;
@@ -1016,7 +1024,7 @@
             number: Number(mr.querySelector('#chnu').value),
             title: mr.querySelector('#cht').value.trim(),
             full_title: mr.querySelector('#chft').value.trim(),
-            status: Number(mr.querySelector('#chst').value),
+            status: readAdminStatus10(mr, 'admChStatus'),
           },
         });
         close();
@@ -1101,7 +1109,7 @@
         <div style="grid-column:1/-1"><label>完整标题</label><input id="seft" value="${escapeHtml(
           srow.full_title || ''
         )}" /></div>
-        <div><label>状态</label><input id="sest" type="number" min="0" max="1" value="${srow.status}" /></div>
+        <div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10('admSeStatus', srow.status, '激活', '未激活')}</div>
       </div>
       <div class="row"><button type="button" class="btn" id="seok">保存</button><button type="button" class="btn secondary" id="sex">取消</button></div>
       </div></div>`;
@@ -1120,7 +1128,7 @@
             number: Number(mr.querySelector('#senu').value),
             title: mr.querySelector('#set').value.trim(),
             full_title: mr.querySelector('#seft').value.trim(),
-            status: Number(mr.querySelector('#sest').value),
+            status: readAdminStatus10(mr, 'admSeStatus'),
           },
         });
         close();
@@ -1166,7 +1174,16 @@
       <div class="form-grid">
         <div><label>名称</label><input id="sn" value="${edit ? escapeHtml(ex.name) : ''}" /></div>
         <div><label>说明</label><input id="sd" value="${edit && ex.description ? escapeHtml(ex.description) : ''}" /></div>
-        ${edit ? `<div><label>状态</label><input id="ss" type="number" value="${ex.status}" /></div>` : ''}
+        ${
+          edit
+            ? `<div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10(
+                'admStageStatus',
+                ex.status,
+                '激活',
+                '未激活'
+              )}</div>`
+            : ''
+        }
       </div>
       <div class="row"><button type="button" class="btn" id="sok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
       </div></div>`;
@@ -1185,7 +1202,7 @@
             jsonBody: {
               name: mr.querySelector('#sn').value.trim(),
               description: mr.querySelector('#sd').value,
-              status: Number(mr.querySelector('#ss').value),
+              status: readAdminStatus10(mr, 'admStageStatus'),
             },
           });
         } else {
@@ -1262,7 +1279,16 @@
         <div><label>URL</label><input id="u" value="${edit ? escapeHtml(ex.url) : ''}" /></div>
         <div><label>model（上游 chat model）</label><input id="k" value="${edit ? escapeHtml((ex.model != null && ex.model !== '' ? ex.model : ex.app_key) || '') : ''}" /></div>
         <div><label>app_secret（${edit ? '留空不改' : '必填'}）</label><input id="s" type="password" /></div>
-        ${edit ? `<div><label>状态 1 激活</label><input id="st" type="number" value="${ex.status}" /></div>` : ''}
+        ${
+          edit
+            ? `<div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10(
+                'admModelStatus',
+                ex.status,
+                '激活',
+                '未激活'
+              )}</div>`
+            : ''
+        }
       </div>
       <div class="row"><button type="button" class="btn" id="ok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
       </div></div>`;
@@ -1283,7 +1309,7 @@
         const sec = mr.querySelector('#s').value;
         if (edit) {
           if (sec) body.app_secret = sec;
-          body.status = Number(mr.querySelector('#st').value);
+          body.status = readAdminStatus10(mr, 'admModelStatus');
           await api('/api/v1/admin/ai-models/' + ex.id, { method: 'PATCH', jsonBody: body });
         } else {
           body.app_secret = sec;
@@ -1333,7 +1359,12 @@
         <div><label>key（只读）</label><input id="k" value="${escapeHtml(ex.key)}" readonly /></div>
         <div><label>说明</label><input id="d" value="${ex.description ? escapeHtml(ex.description) : ''}" /></div>
         <div><label>内容</label><textarea id="c">${escapeHtml(ex.content)}</textarea></div>
-        <div><label>状态</label><input id="st" type="number" value="${ex.status}" /></div>
+        <div style="grid-column:1/-1"><label>状态</label>${htmlAdminStatus10(
+          'admPromptStatus',
+          ex.status,
+          '启用',
+          '停用'
+        )}</div>
       </div>
       <p class="muted" style="margin-top:8px">占位符：<code>%subject</code> <code>%stage</code> <code>%file_name</code></p>
       <div class="row"><button type="button" class="btn" id="ok">保存</button><button type="button" class="btn secondary" id="sx">取消</button></div>
@@ -1352,7 +1383,7 @@
           jsonBody: {
             description: mr.querySelector('#d').value,
             content: mr.querySelector('#c').value,
-            status: Number(mr.querySelector('#st').value),
+            status: readAdminStatus10(mr, 'admPromptStatus'),
           },
         });
         close();

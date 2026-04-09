@@ -282,3 +282,21 @@ pre.ai-fold-pre {
 .kpi { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
 .kpi .label { font-size: 12px; color: var(--muted); }
 .kpi .value { margin-top: 6px; font-size: 22px; font-weight: 700; }
+
+.radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  margin-top: 4px;
+}
+.radio-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: normal;
+}
+.radio-line input[type="radio"] {
+  margin: 0;
+}

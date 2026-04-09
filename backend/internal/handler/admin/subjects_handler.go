@@ -32,20 +32,22 @@ func (h *SubjectsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type row struct {
-		ID          uint64      `json:"id"`
-		Name        string      `json:"name"`
-		Description *string     `json:"description"`
-		Status      int         `json:"status"`
-		CreatedAt   RFC3339Time `json:"created_at"`
+		ID             uint64      `json:"id"`
+		Name           string      `json:"name"`
+		Description    *string     `json:"description"`
+		Status         int         `json:"status"`
+		CreatedAt      RFC3339Time `json:"created_at"`
+		TextbookCount  int         `json:"textbook_count"`
 	}
 	out := make([]row, 0, len(items))
 	for _, s := range items {
 		out = append(out, row{
-			ID:          s.ID,
-			Name:        s.Name,
-			Description: s.Description,
-			Status:      s.Status,
-			CreatedAt:   RFC3339Time(s.CreatedAt),
+			ID:             s.ID,
+			Name:           s.Name,
+			Description:    s.Description,
+			Status:         s.Status,
+			CreatedAt:      RFC3339Time(s.CreatedAt),
+			TextbookCount:  s.TextbookCount,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
