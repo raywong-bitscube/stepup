@@ -1,4 +1,4 @@
-/* 章节幻灯片：与 slideRenderer.js / slide_deck_design 模版 id 对应 */
+/* 章节幻灯片：与 app.js 内 SlideDeckRenderer / slide_deck_design 模版 id 对应 */
 
 .slide-deck-root {
   --slide-bg: #f8fafc;
