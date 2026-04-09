@@ -274,6 +274,19 @@ Header: `Authorization: Bearer <admin_token>`
 | `GET` | `/api/v1/admin/chapters/{chapterId}/sections` | 章须存在。`items`：`id`、`chapter_id`、`number`、`title`、`full_title`、`status`、`updated_at`。 |
 | `PATCH` | `/api/v1/admin/sections/{sectionId}` | 可选：`number`、`title`、`full_title`、`status`（至少一项）。 |
 
+#### 章节幻灯片 Slide Deck（管理端）
+
+表 **`slide_deck`**：挂载 **`section_id`**；`deck_status` 为 `draft` | `active` | `archived`；同一节仅一条 `active`（将某套设为 `active` 时，其余同节 `active` 自动改为 `archived`）。`content` 为 JSON，须含 `schemaVersion: 1` 与 `slides` 数组（结构见 **`docs/core/slide_deck_design_v0.1_260403.md`**）。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 节须存在。返回 `items[]`：`id`、`section_id`、`title`、`deck_status`、`schema_version`、`updated_at`（**不含**正文 `content`）。 |
+| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 体：`title`（必填）、`content`（必填，合法 JSON 对象）、`deck_status`（可选，默认 `draft`）、`schema_version`（可选，默认 1）。成功：`201` + `{ "id", "status":"ok" }`。 |
+| `GET` | `/api/v1/admin/slide-decks/{deckId}` | 单条含完整 `content`。 |
+| `PATCH` | `/api/v1/admin/slide-decks/{deckId}` | 可选：`title`、`content`、`deck_status`（至少一项）。设为 `active` 时同节其他 `active` 归档。 |
+
+均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；需已执行 **`db/migrations/2026-04-10#01_slide_deck.sql`**（或基线 schema 已含 `slide_deck`）。
+
 ### 3.8 阶段（管理端）
 
 与科目相同模式：
@@ -537,6 +550,10 @@ curl -X POST "http://localhost:8080/api/v1/student/papers" \
 
 - `GET /api/v1/student/essay-outline/practices?limit=50` — 当前学生已保存的练习（`essay_outline_practice`，未删除），`limit` 默认 50、最大 100。响应 `items[]`：`id`、`created_at`、`topic_label`、`topic_source`、`topic_preview`（题目摘要）。另含 **`meta`**：`row_count_total`（该 `student_id` 总行数）、`row_count_active`（`is_deleted=0` 行数），便于排查「库里有行但列表为空」（多为已软删）。
 - `GET /api/v1/student/essay-outline/practices/{practiceId}` — 单条详情（含 `topic_text`、`outline_text`、`review`、`raw_review` 等）。非本人或不存在：`404` + `NOT_FOUND`。
+
+#### 5.5.5 章节幻灯片（当前 active deck）
+
+- `GET /api/v1/student/sections/{sectionId}/slide-deck` — 返回该节 **`deck_status = active`** 且未删除的一套幻灯片。响应：`id`、`section_id`、`title`、`schema_version`、`updated_at`、`content`（完整 deck JSON）。**`content` 内 `type: question` 节点会移除 `answer` 字段**（若存在），避免暴露标答。节不存在、或无 active deck：`404` + `NOT_FOUND`。
 
 `ai_call_log.action`：`essay_outline_generate_topic` / `essay_outline_ocr_topic` / `essay_outline_review`。
 

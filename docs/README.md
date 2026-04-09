@@ -23,6 +23,7 @@
 | **领域与实体** | [core/实体分析](./core/entity_analyze_v0.1_260403.md) |
 | **拓扑与组件职责** | [core/架构与部署设计](./core/architecture_deployment_v0.1_260403.md) |
 | **AI 调用日志（表结构、接口、隐私边界）** | [core/ai_model_log](./core/ai_model_log_v0.1_260403.md) |
+| **章节互动幻灯片（JSON 模版、AI 填空、SlideRenderer）** | [core/slide_deck_design](./core/slide_deck_design_v0.1_260403.md) |
 
 **增量说明列表**：见 [**releases/README.md**](./releases/README.md)。
 

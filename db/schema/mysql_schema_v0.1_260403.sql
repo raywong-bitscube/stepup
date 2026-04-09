@@ -469,4 +469,27 @@ CREATE TABLE IF NOT EXISTS section (
   CONSTRAINT fk_section_chapter FOREIGN KEY (chapter_id) REFERENCES chapter (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- =====================================
+-- 16) slide_deck（章节互动幻灯片 JSON）
+-- =====================================
+CREATE TABLE IF NOT EXISTS slide_deck (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  section_id BIGINT UNSIGNED NOT NULL COMMENT '挂载教材节',
+  title VARCHAR(200) NOT NULL DEFAULT '' COMMENT '版本/说明',
+  deck_status VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft, active, archived',
+  schema_version INT NOT NULL DEFAULT 1 COMMENT '与 JSON 内 schemaVersion 对齐',
+  content JSON NOT NULL COMMENT 'Slide Deck JSON',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_by BIGINT UNSIGNED NOT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  updated_by BIGINT UNSIGNED NOT NULL,
+  is_deleted TINYINT(1) NOT NULL DEFAULT 0,
+  deleted_at DATETIME NULL,
+  deleted_by BIGINT UNSIGNED NULL,
+  PRIMARY KEY (id),
+  KEY idx_slide_deck_section (section_id),
+  KEY idx_slide_deck_lookup (section_id, deck_status, is_deleted),
+  CONSTRAINT fk_slide_deck_section FOREIGN KEY (section_id) REFERENCES section (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

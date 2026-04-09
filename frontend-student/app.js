@@ -138,6 +138,12 @@
       物理: [
         PAPER_ANALYZE,
         {
+          id: 'chapter_slides',
+          title: '章节互动课件',
+          desc: '按教材节学习幻灯片（本节 ID）；右侧可查看供 AI 使用的上下文摘要',
+          available: true,
+        },
+        {
           id: 'lab_think',
           title: '实验与探究',
           desc: '实验思路与数据处理（即将开放）',
@@ -294,7 +300,10 @@
           bindHub(root, hub);
           const paperListCard = root.querySelector('#paperListCard');
           if (paperListCard) {
-            paperListCard.hidden = !!(state.hubSubject && state.hubFeature === 'essay_outline');
+            paperListCard.hidden = !!(
+              state.hubSubject &&
+              (state.hubFeature === 'essay_outline' || state.hubFeature === 'chapter_slides')
+            );
           }
           if (state.hubSubject && state.hubFeature === 'paper_analyze') {
             const fb = hub.querySelector('#featureBody');
@@ -303,6 +312,10 @@
           if (state.hubSubject && state.hubFeature === 'essay_outline') {
             const fb = hub.querySelector('#featureBody');
             if (fb) bindEssayOutline(root, fb);
+          }
+          if (state.hubSubject && state.hubFeature === 'chapter_slides') {
+            const fb = hub.querySelector('#featureBody');
+            if (fb) bindChapterSlides(root, fb);
           }
           try {
             await refreshPapers(root);
@@ -544,6 +557,8 @@
       panel = `<div class="feature-panel" id="featureBody">${renderUploadForm()}</div>`;
     } else if (state.hubFeature === 'essay_outline') {
       panel = `<div class="feature-panel" id="featureBody">${renderEssayOutlinePanel()}</div>`;
+    } else if (state.hubFeature === 'chapter_slides') {
+      panel = `<div class="feature-panel" id="featureBody">${renderChapterSlidesPanel()}</div>`;
     }
     return `
       <div class="hub-nav">
@@ -577,6 +592,85 @@
         state.hubFeature = b.getAttribute('data-fid');
         mount(document.getElementById('app'));
       });
+    });
+  }
+
+  function renderChapterSlidesPanel() {
+    return `
+      <p class="muted">加载指定「教材节」下当前 <strong>active</strong> 的幻灯片 JSON。节 ID 可在管理端教材目录中查看（<code>section.id</code>）。</p>
+      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+        <div><label>节 ID（section_id）</label><input type="number" id="slideSectionId" min="1" placeholder="如 15" style="width:140px" /></div>
+        <button type="button" class="btn" id="btnLoadSlideDeck">加载课件</button>
+      </div>
+      <p class="muted" id="slideDeckHint" style="margin-top:8px"></p>
+      <div class="slide-learn-layout" style="margin-top:14px">
+        <div id="slideLearMount"></div>
+        <div class="slide-learn-ai" id="slideAiPane">
+          <strong>AI 上下文（可复制）</strong>
+          <p class="muted" style="margin:6px 0 0;font-size:13px">将摘要粘贴到外部大模型或后续本系统对话；会随翻页与作答更新。</p>
+          <pre id="slideAiContext" style="margin-top:10px;white-space:pre-wrap;font-size:12px;line-height:1.4;max-height:220px;overflow:auto;background:rgba(0,0,0,0.04);padding:10px;border-radius:8px"></pre>
+        </div>
+      </div>`;
+  }
+
+  function bindChapterSlides(root, fb) {
+    const hint = fb.querySelector('#slideDeckHint');
+    const mountEl = fb.querySelector('#slideLearMount');
+    const ctxPre = fb.querySelector('#slideAiContext');
+    let ctl = null;
+
+    function refreshCtx() {
+      if (!ctl || !ctxPre) return;
+      try {
+        const snap = ctl.getContext();
+        ctxPre.textContent = JSON.stringify(snap, null, 2);
+      } catch {
+        ctxPre.textContent = '';
+      }
+    }
+
+    fb.querySelector('#btnLoadSlideDeck')?.addEventListener('click', async () => {
+      const raw = fb.querySelector('#slideSectionId')?.value?.trim() || '';
+      const sid = parseInt(raw, 10);
+      if (!sid || sid < 1) {
+        if (hint) hint.textContent = '请输入有效的节 ID。';
+        return;
+      }
+      if (hint) hint.textContent = '加载中…';
+      if (mountEl) mountEl.innerHTML = '';
+      if (ctl && typeof ctl.destroy === 'function') ctl.destroy();
+      ctl = null;
+      if (ctxPre) ctxPre.textContent = '';
+      try {
+        const data = await api('/api/v1/student/sections/' + sid + '/slide-deck');
+        const deck = data.content;
+        if (!deck || typeof deck !== 'object') {
+          throw new Error('invalid deck');
+        }
+        if (!window.SlideDeckRenderer || typeof window.SlideDeckRenderer.mount !== 'function') {
+          throw new Error('SlideDeckRenderer 未加载');
+        }
+        if (hint) {
+          hint.textContent =
+            '已加载 deck #' + escapeHtml(String(data.id)) + ' · ' + escapeHtml(data.title || '') + '';
+        }
+        ctl = window.SlideDeckRenderer.mount(mountEl, deck, {
+          onNavigate: function () {
+            refreshCtx();
+          },
+          onAnswer: function () {
+            refreshCtx();
+          },
+        });
+        refreshCtx();
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        const code = e.data && e.data.code ? e.data.code : e.message;
+        if (hint) {
+          hint.textContent =
+            code === 'NOT_FOUND' ? '该节暂无已发布的课件（或节不存在）。' : '加载失败：' + code;
+        }
+      }
     });
   }
 

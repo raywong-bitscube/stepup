@@ -8,6 +8,7 @@
 - `entity_analyze_v0.1_260403.md`
 - `db/schema/mysql_schema_v0.1_260403.sql`（见 [`db/README.md`](../../db/README.md)）
 - `docs/core/ai_model_log_v0.1_260403.md`（AI 调用日志需求与设计）
+- `slide_deck_design_v0.1_260403.md`（章节幻灯片：模版 + JSON + AI 填空 + SlideRenderer）
 
 ---
 
@@ -48,6 +49,7 @@ v0.1 目标：完成「后台管理 + 浏览器学生端」最小可用闭环。
 | 审计 | 全系统操作日志记录与查询 | 必做 | P0 |
 | 后台管理 | AI 调用日志（模型调用结果 / 错误 / 超时 / 回退 mock）与按条件查询 | 必做 | P0 |
 | 通用 | 统一软删除与审计字段规范 | 必做 | P0 |
+| 学生学习 | 章节互动幻灯片（Slide Deck JSON、多版本仅一套 active、SlideRenderer + 右侧 AI 伴学） | 规划中 | P2 |
 
 ---
 
@@ -253,7 +255,15 @@ v0.1 目标：完成「后台管理 + 浏览器学生端」最小可用闭环。
 
 ---
 
-## 7. 开发优先级建议（直接开工顺序）
+## 7. 章节幻灯片（Slide Deck，扩展）
+
+**定位**：在教材节（首选）或章上挂载多套幻灯片 JSON；**模版 + `role` + 扁平 `elements` + `step` 步进揭示**；学生端 **SlideRenderer** 渲染，右侧 AI 可消费当前页/步/作答摘要。
+
+**详细设计（JSON `schemaVersion`、8 个 `layoutTemplate` 白名单、`question.mode`、AI Prompt 附录、SlideRenderer 职责、存库要点）** 见 **[slide_deck_design_v0.1_260403.md](./slide_deck_design_v0.1_260403.md)**。
+
+---
+
+## 8. 开发优先级建议（直接开工顺序）
 
 1. 公共底座：配置、DB连接、迁移、日志、错误码、鉴权中间件、审计中间件  
 2. 后台登录与 session：`admin + admin_session`  
@@ -264,7 +274,7 @@ v0.1 目标：完成「后台管理 + 浏览器学生端」最小可用闭环。
 
 ---
 
-## 8. 验收标准（v0.1）
+## 9. 验收标准（v0.1）
 
 - 管理员可登录后台，并保持有效 session
 - 学生可完成登录并上传试卷

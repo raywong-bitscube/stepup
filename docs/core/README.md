@@ -13,5 +13,6 @@
 | [system_runtime_guide_v0.1_260403.md](./system_runtime_guide_v0.1_260403.md) | 运行时与代码结构 |
 | [ai_model_log_v0.1_260403.md](./ai_model_log_v0.1_260403.md) | AI 调用日志需求与设计 |
 | [feature_essay_outline_v0.1_260403.md](./feature_essay_outline_v0.1_260403.md) | 作文提纲练习（学生端）需求与数据设计 |
+| [slide_deck_design_v0.1_260403.md](./slide_deck_design_v0.1_260403.md) | 章节幻灯片 Slide Deck：JSON schema、模版库、AI Prompt、SlideRenderer |
 
 返回 [**文档总索引**](../README.md)。

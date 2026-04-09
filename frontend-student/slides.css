@@ -1,0 +1,303 @@
+/* 章节幻灯片：与 slideRenderer.js / slide_deck_design 模版 id 对应 */
+
+.slide-deck-root {
+  --slide-bg: #f8fafc;
+  --slide-fg: #0f172a;
+  --slide-muted: #64748b;
+  --slide-card: #ffffff;
+  --slide-border: #e2e8f0;
+  --slide-accent: #3158ec;
+  border: 1px solid var(--slide-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--slide-bg);
+  color: var(--slide-fg);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.slide-deck-root.theme-dark-physics {
+  --slide-bg: #0f172a;
+  --slide-fg: #e2e8f0;
+  --slide-muted: #94a3b8;
+  --slide-card: #1e293b;
+  --slide-border: #334155;
+  --slide-accent: #38bdf8;
+}
+
+.slide-stage-wrap {
+  padding: 16px;
+  min-height: 280px;
+}
+
+.slide-stage {
+  min-height: 260px;
+  background: var(--slide-card);
+  border: 1px solid var(--slide-border);
+  border-radius: 10px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.slide-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--slide-card);
+  border-top: 1px solid var(--slide-border);
+}
+
+.slide-progress {
+  flex: 1;
+  min-width: 140px;
+  font-size: 13px;
+  color: var(--slide-muted);
+}
+
+.slide-toolbar .btn.sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* —— 模版：整页 grid —— */
+.slide-tpl {
+  display: block;
+  min-height: 220px;
+}
+
+.slide-el {
+  margin-bottom: 12px;
+}
+.slide-el:last-child {
+  margin-bottom: 0;
+}
+
+/* cover-image */
+.slide-tpl-cover-image {
+  position: relative;
+  min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+}
+.slide-tpl-cover-image .slide-role-background {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  z-index: 0;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.slide-tpl-cover-image .slide-role-background .slide-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.slide-tpl-cover-image .slide-role-title,
+.slide-tpl-cover-image .slide-role-subtitle,
+.slide-tpl-cover-image .slide-role-tagline {
+  position: relative;
+  z-index: 1;
+}
+.slide-tpl-cover-image .slide-role-title .slide-md {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.slide-tpl-cover-image .slide-role-subtitle .slide-md {
+  font-size: 1.15rem;
+  color: var(--slide-muted);
+}
+
+/* title-body */
+.slide-tpl-title-body .slide-role-title .slide-md {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.slide-tpl-title-body .slide-role-body .slide-md {
+  font-size: 1rem;
+}
+.slide-tpl-title-body .slide-role-callout {
+  border-left: 4px solid var(--slide-accent);
+  padding: 8px 12px;
+  background: rgba(49, 88, 236, 0.06);
+  border-radius: 0 8px 8px 0;
+}
+
+/* formula-focus */
+.slide-tpl-formula-focus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 16px;
+}
+.slide-tpl-formula-focus .slide-role-main-formula {
+  font-size: 1.25rem;
+}
+.slide-tpl-formula-focus .slide-role-annotation .slide-md {
+  color: var(--slide-muted);
+  font-size: 0.95rem;
+}
+
+/* split-left-right */
+.slide-tpl-split-left-right {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.slide-tpl-split-left-right .slide-role-title {
+  grid-column: 1 / -1;
+}
+.slide-tpl-split-left-right .slide-role-main-formula {
+  grid-column: 1;
+  grid-row: 2;
+}
+.slide-tpl-split-left-right .slide-role-illustration {
+  grid-column: 2;
+  grid-row: 2;
+}
+.slide-tpl-split-left-right .slide-role-body {
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+
+/* split-top-bottom */
+.slide-tpl-split-top-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.slide-tpl-split-top-bottom .slide-role-illustration .slide-img {
+  max-height: 220px;
+  width: 100%;
+  object-fit: contain;
+}
+
+/* quiz-center */
+.slide-tpl-quiz-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.slide-tpl-quiz-center .slide-role-title {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 8px;
+}
+.slide-tpl-quiz-center .slide-question {
+  width: 100%;
+  max-width: 640px;
+}
+
+/* bullet-steps */
+.slide-tpl-bullet-steps .slide-role-bullet .slide-md {
+  margin: 4px 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--slide-accent);
+}
+
+/* two-column-text */
+.slide-tpl-two-column-text {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.slide-tpl-two-column-text .slide-role-title {
+  grid-column: 1 / -1;
+}
+
+/* Markdown 块 */
+.slide-md-ul {
+  margin: 8px 0;
+  padding-left: 1.25rem;
+}
+.slide-md-p {
+  margin: 6px 0;
+}
+
+/* 图片 */
+.slide-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+.slide-caption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--slide-muted);
+}
+
+/* 题目 */
+.slide-q-prompt {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.slide-q-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+.slide-q-opt input {
+  margin-top: 4px;
+}
+.slide-latex-fallback {
+  margin: 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 14px;
+  overflow-x: auto;
+}
+
+.theme-dark-physics .slide-latex-fallback {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 双栏在小屏叠成单列 */
+@media (max-width: 640px) {
+  .slide-tpl-split-left-right,
+  .slide-tpl-two-column-text {
+    grid-template-columns: 1fr;
+  }
+  .slide-tpl-split-left-right .slide-role-main-formula,
+  .slide-tpl-split-left-right .slide-role-illustration,
+  .slide-tpl-split-left-right .slide-role-body {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* 学生端：幻灯片 + AI 占位双栏 */
+.slide-learn-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+  align-items: start;
+}
+.slide-learn-ai {
+  border: 1px dashed var(--border, #e2e8f2);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--muted, #64748b);
+  min-height: 200px;
+}
+@media (max-width: 860px) {
+  .slide-learn-layout {
+    grid-template-columns: 1fr;
+  }
+}

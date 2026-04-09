@@ -15,6 +15,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminpapers"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminprompts"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidedecks"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
@@ -24,6 +25,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentessayoutline"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/studentslidedeck"
 )
 
 func New(cfg config.Config, db *sql.DB) http.Handler {
@@ -55,10 +57,12 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminStudentPapersHandler := admin.NewStudentPapersHandler(adminpapers.New(db))
 	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
 	adminAICallLogsHandler := admin.NewAICallLogsHandler(ailog.NewListService(db))
+	adminSlideDecksHandler := admin.NewSlideDecksHandler(adminslidedecks.New(db), auditWriter)
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
 	studentEssayHandler := student.NewEssayOutlineHandler(studentessayoutline.New(cfg, db))
+	studentSlideDeckHandler := student.NewSlideDeckHandler(studentslidedeck.New(db))
 
 	// Admin routes
 	mux.HandleFunc("POST /api/v1/admin/auth/login", adminAuthHandler.Login)
@@ -87,6 +91,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("GET /api/v1/student/essay-outline/practices", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.ListPractices))
 	mux.HandleFunc("GET /api/v1/student/essay-outline/practices/{practiceId}", middleware.RequireStudentAuth(studentAuthService, studentEssayHandler.GetPractice))
 
+	mux.HandleFunc("GET /api/v1/student/sections/{sectionId}/slide-deck", middleware.RequireStudentAuth(studentAuthService, studentSlideDeckHandler.GetActive))
+
 	// Admin management routes
 	mux.HandleFunc("GET /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/students", middleware.RequireAdminAuth(adminAuthService, adminStudentsHandler.Create))
@@ -106,6 +112,11 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	mux.HandleFunc("GET /api/v1/admin/chapters/{chapterId}/sections", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.ListSections))
 	mux.HandleFunc("PATCH /api/v1/admin/chapters/{chapterId}", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.PatchChapter))
 	mux.HandleFunc("PATCH /api/v1/admin/sections/{sectionId}", middleware.RequireAdminAuth(adminAuthService, adminTextbookCatalogHandler.PatchSection))
+
+	mux.HandleFunc("GET /api/v1/admin/sections/{sectionId}/slide-decks", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.ListBySection))
+	mux.HandleFunc("POST /api/v1/admin/sections/{sectionId}/slide-decks", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Create))
+	mux.HandleFunc("GET /api/v1/admin/slide-decks/{deckId}", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Get))
+	mux.HandleFunc("PATCH /api/v1/admin/slide-decks/{deckId}", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Patch))
 
 	mux.HandleFunc("GET /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.List))
 	mux.HandleFunc("POST /api/v1/admin/stages", middleware.RequireAdminAuth(adminAuthService, adminStagesHandler.Create))
