@@ -58,6 +58,12 @@ p.muted { margin: 0; color: var(--muted); }
   color: #2f4fc9;
   font-weight: 600;
 }
+/*
+ * 按钮语义（管理端统一，勿混用）：
+ * - .btn（主色，蓝）：当前界面上的**主路径正向动作**——会提交/创建/启动主流程，如「保存」「新建」「登录」「生成」「查询」、工具栏主 CTA。
+ * - .btn.secondary（中性灰）：**辅助或低风险动作**——取消、关闭、返回上一级列表、仅导航或不改写关键数据的操作，如「取消」「← 返回」「目录」「章节」「试播」「上一页」（分页）等。
+ * 同一行多个操作时：通常最多一个主按钮；其余用 .secondary，避免视觉竞争。
+ */
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
 input, select, textarea {
   padding: 8px 10px;

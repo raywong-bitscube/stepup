@@ -211,24 +211,26 @@ func (h *TextbookCatalogHandler) ListSections(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 	default:
 		type row struct {
-			ID        uint64      `json:"id"`
-			ChapterID uint64      `json:"chapter_id"`
-			Number    uint32      `json:"number"`
-			Title     string      `json:"title"`
-			FullTitle *string     `json:"full_title"`
-			Status    int         `json:"status"`
-			UpdatedAt RFC3339Time `json:"updated_at"`
+			ID             uint64      `json:"id"`
+			ChapterID      uint64      `json:"chapter_id"`
+			Number         uint32      `json:"number"`
+			Title          string      `json:"title"`
+			FullTitle      *string     `json:"full_title"`
+			Status         int         `json:"status"`
+			SlideDeckCount int         `json:"slide_deck_count"`
+			UpdatedAt      RFC3339Time `json:"updated_at"`
 		}
 		out := make([]row, 0, len(items))
 		for _, s := range items {
 			out = append(out, row{
-				ID:        s.ID,
-				ChapterID: s.ChapterID,
-				Number:    s.Number,
-				Title:     s.Title,
-				FullTitle: s.FullTitle,
-				Status:    s.Status,
-				UpdatedAt: RFC3339Time(s.UpdatedAt),
+				ID:             s.ID,
+				ChapterID:      s.ChapterID,
+				Number:         s.Number,
+				Title:          s.Title,
+				FullTitle:      s.FullTitle,
+				Status:         s.Status,
+				SlideDeckCount: s.SlideDeckCount,
+				UpdatedAt:      RFC3339Time(s.UpdatedAt),
 			})
 		}
 		w.Header().Set("Content-Type", "application/json")

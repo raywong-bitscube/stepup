@@ -271,7 +271,7 @@ Header: `Authorization: Bearer <admin_token>`
 | `PATCH` | `/api/v1/admin/textbooks/{textbookId}` | 可选字段（至少一项）：`name`、`version`、`subject`、`remarks`、`status`（0/1）。**不可**改 `category` / `subject_id`。`remarks` 空串置 `NULL`。`name+version` 与现唯一键冲突时 `409` `CONFLICT`。 |
 | `GET` | `/api/v1/admin/textbooks/{textbookId}/chapters` | 教材须存在。`items`：`id`、`textbook_id`、`number`、`title`、`full_title`、`status`、`updated_at`。 |
 | `PATCH` | `/api/v1/admin/chapters/{chapterId}` | 可选：`number`、`title`、`full_title`、`status`（至少一项）。`full_title` 空串置 `NULL`。 |
-| `GET` | `/api/v1/admin/chapters/{chapterId}/sections` | 章须存在。`items`：`id`、`chapter_id`、`number`、`title`、`full_title`、`status`、`updated_at`。 |
+| `GET` | `/api/v1/admin/chapters/{chapterId}/sections` | 章须存在。`items`：`id`、`chapter_id`、`number`、`title`、`full_title`、`status`、`slide_deck_count`（该节未删除的 `slide_deck` 条数）、`updated_at`。 |
 | `PATCH` | `/api/v1/admin/sections/{sectionId}` | 可选：`number`、`title`、`full_title`、`status`（至少一项）。 |
 
 #### 章节幻灯片 Slide Deck（管理端）

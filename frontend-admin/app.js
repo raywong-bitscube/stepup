@@ -500,6 +500,41 @@
     return Number(el.value);
   }
 
+  /** 列表展示：业务 status 0/1（教材目录、科目、Prompt 等）。非 0/1 时原样标出（设计约定见 feature_design）。 */
+  function formatAdminListStatus10(v) {
+    if (v === null || v === undefined || v === '') {
+      return '<span class="muted">—</span>';
+    }
+    const n = Number(v);
+    if (!Number.isFinite(n)) {
+      return '<span class="badge" title="非数字状态">' + escapeHtml(String(v)) + '</span>';
+    }
+    if (n === 1) return '<span class="badge on">激活</span>';
+    if (n === 0) return '<span class="badge off">未激活</span>';
+    return (
+      '<span class="badge" title="非标准值（一般为 0=未激活，1=激活）">' + escapeHtml(String(n)) + '</span>'
+    );
+  }
+
+  function tdAdminListStatus10(v) {
+    const n = Number(v);
+    const attr = Number.isFinite(n) ? n : 0;
+    return '<td data-admin-status="' + attr + '">' + formatAdminListStatus10(v) + '</td>';
+  }
+
+  function tdSlideDeckSummary(count) {
+    const c = Math.max(0, Math.floor(Number(count)) || 0);
+    const inner =
+      c <= 0
+        ? '<span class="muted">无</span>'
+        : '<span class="badge on" title="该节已有 ' +
+          c +
+          ' 套幻灯片记录（含草稿/生效/归档）">' +
+          c +
+          ' 套</span>';
+    return '<td data-slide-deck-count="' + c + '">' + inner + '</td>';
+  }
+
   function isAdminLoginPOST(path, opts) {
     const p = String(path || '').split('?')[0];
     const m = (opts.method || 'GET').toUpperCase();
@@ -967,7 +1002,9 @@
         return `<tr>
           <td>${s.id}</td><td>${escapeHtml(String(phone))}</td><td>${escapeHtml(String(email))}</td>
           <td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.stage)}</td>
-          <td>${s.status === 1 ? '<span class="badge on">active</span>' : '<span class="badge off">off</span>'}</td>
+          <td data-admin-status="${Number.isFinite(Number(s.status)) ? Number(s.status) : 0}">${formatAdminListStatus10(
+            s.status
+          )}</td>
           <td>
             <button type="button" class="btn small" data-act="edit" data-id="${s.id}">编辑</button>
             <button type="button" class="btn secondary small" data-act="papers" data-id="${s.id}">试卷</button>
@@ -1125,7 +1162,7 @@
         (s) =>
           `<tr><td>${s.id}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(
             s.description || '—'
-          )}</td><td>${s.status}</td>
+          )}</td>${tdAdminListStatus10(s.status)}
         <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-sid="${s.id}">编辑</button>${
           (s.textbook_count || 0) > 0
             ? `<button type="button" class="btn small secondary" data-catalog-sid="${s.id}">目录</button>`
@@ -1232,7 +1269,7 @@
             t.subject
           )}</td><td>${escapeHtml(t.category)}</td><td>${escapeHtml(
             (t.remarks || '').trim() || '—'
-          )}</td><td>${t.status}</td>
+          )}</td>${tdAdminListStatus10(t.status)}
         <td class="row" style="gap:6px;flex-wrap:wrap">
           <button type="button" class="btn small" data-edit-tb="${t.id}">编辑</button>
           <button type="button" class="btn small secondary" data-chapters-tb="${t.id}">章节</button>
@@ -1267,13 +1304,14 @@
         const id = Number(b.getAttribute('data-edit-tb'));
         const cells = tr ? tr.querySelectorAll('td') : [];
         const rm = cells[5] ? cells[5].textContent.trim() : '';
+        const stTb = tr.querySelector('td[data-admin-status]');
         const rec = {
           id,
           name: cells[1] ? cells[1].textContent.trim() : '',
           version: cells[2] ? cells[2].textContent.trim() : '',
           subject: cells[3] ? cells[3].textContent.trim() : '',
           remarks: rm === '—' ? '' : rm,
-          status: cells[6] ? Number(cells[6].textContent.trim()) || 1 : 1,
+          status: stTb ? Number(stTb.getAttribute('data-admin-status')) || 1 : 1,
         };
         openTextbookEditModal(mr, rec, () => mountCatalog(Object.assign({}, nav, { mode: 'textbooks' })));
       });
@@ -1341,7 +1379,7 @@
         (c) =>
           `<tr><td>${c.id}</td><td>${c.number}</td><td>${escapeHtml(c.title)}</td><td>${escapeHtml(
             (c.full_title || '').trim() || '—'
-          )}</td><td>${c.status}</td>
+          )}</td>${tdAdminListStatus10(c.status)}
         <td class="row" style="gap:6px;flex-wrap:wrap">
           <button type="button" class="btn small" data-edit-ch="${c.id}">编辑</button>
           <button type="button" class="btn small secondary" data-sects-ch="${c.id}">小节</button>
@@ -1378,12 +1416,13 @@
         const id = Number(b.getAttribute('data-edit-ch'));
         const cells = tr ? tr.querySelectorAll('td') : [];
         const ftRaw = cells[3] ? cells[3].textContent.trim() : '';
+        const stCh = tr.querySelector('td[data-admin-status]');
         const rec = {
           id,
           number: cells[1] ? Number(cells[1].textContent) : 0,
           title: cells[2] ? cells[2].textContent.trim() : '',
           full_title: ftRaw === '—' ? '' : ftRaw,
-          status: cells[4] ? Number(cells[4].textContent) : 1,
+          status: stCh ? Number(stCh.getAttribute('data-admin-status')) || 1 : 1,
         };
         openChapterEditModal(mr, rec, () =>
           mountCatalog({
@@ -1461,7 +1500,7 @@
         (s) =>
           `<tr><td>${s.id}</td><td>${s.number}</td><td>${escapeHtml(s.title)}</td><td>${escapeHtml(
             (s.full_title || '').trim() || '—'
-          )}</td><td>${s.status}</td>
+          )}</td>${tdSlideDeckSummary(s.slide_deck_count)}${tdAdminListStatus10(s.status)}
         <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button><button type="button" class="btn small secondary" data-slide-gen-se="${s.id}">生成幻灯片</button><button type="button" class="btn small secondary" data-slide-preview-se="${s.id}">试播</button></td></tr>`
       )
       .join('');
@@ -1475,8 +1514,8 @@
         </div>
       </div>
       <p class="muted" style="margin-top:8px">仅可编辑序号、标题、完整标题、状态；不提供新增或删除。</p>
-      <table class="data"><thead><tr><th>ID</th><th>序号</th><th>标题</th><th>完整标题</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
-        '<tr><td colspan="6">暂无小节</td></tr>'}</tbody></table>
+      <table class="data"><thead><tr><th>ID</th><th>序号</th><th>标题</th><th>完整标题</th><th>幻灯片</th><th>状态</th><th></th></tr></thead><tbody>${rows ||
+        '<tr><td colspan="7">暂无小节</td></tr>'}</tbody></table>
       <div id="catalogModalRoot"></div>`;
   }
 
@@ -1497,12 +1536,13 @@
         const id = Number(b.getAttribute('data-edit-se'));
         const cells = tr ? tr.querySelectorAll('td') : [];
         const ftRaw = cells[3] ? cells[3].textContent.trim() : '';
+        const stSe = tr.querySelector('td[data-admin-status]');
         const rec = {
           id,
           number: cells[1] ? Number(cells[1].textContent) : 0,
           title: cells[2] ? cells[2].textContent.trim() : '',
           full_title: ftRaw === '—' ? '' : ftRaw,
-          status: cells[4] ? Number(cells[4].textContent) : 1,
+          status: stSe ? Number(stSe.getAttribute('data-admin-status')) || 1 : 1,
         };
         openSectionEditModal(mr, rec, () =>
           mountCatalog({
@@ -1560,7 +1600,7 @@
       mr.innerHTML = `
       <div class="modal-backdrop" id="sgd"><div class="modal" style="max-width:720px;width:95vw">
         <h3>生成幻灯片 · ${escapeHtml(sectionTitle || '小节 #' + sectionId)}</h3>
-        <p class="muted" style="margin:8px 0 0">可编辑提示词；生成成功后将写入幻灯片草稿并记入 AI 日志。</p>
+        <p class="muted" style="margin:8px 0 0">可编辑提示词。默认要求约 3～10 页、题目含标答与解析；生成成功后将写入幻灯片草稿并记入 AI 日志。</p>
         <div style="margin-top:12px"><label class="muted" style="display:block;margin-bottom:6px">Prompt</label>
         <textarea id="sgPrompt" rows="14" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:13px;padding:10px;border-radius:8px;border:1px solid #cbd5e1"></textarea></div>
         <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
@@ -1739,7 +1779,7 @@
         (s) =>
           `<tr><td>${s.id}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(
             s.description || '—'
-          )}</td><td>${s.status}</td>
+          )}</td>${tdAdminListStatus10(s.status)}
         <td><button type="button" class="btn small" data-stid="${s.id}">编辑</button></td></tr>`
       )
       .join('');
@@ -1822,9 +1862,7 @@
         (m) =>
           `<tr><td>${m.id}</td><td>${escapeHtml(m.name)}</td><td style="word-break:break-all">${escapeHtml(
             m.url
-          )}</td><td>${escapeHtml(m.model != null && m.model !== '' ? m.model : m.app_key || '')}</td><td>${
-            m.status === 1 ? '<span class="badge on">激活</span>' : '<span class="badge off">未激活</span>'
-          }</td>
+          )}</td><td>${escapeHtml(m.model != null && m.model !== '' ? m.model : m.app_key || '')}</td>${tdAdminListStatus10(m.status)}
         <td>
           <button type="button" class="btn small" data-mid="${m.id}">编辑</button>
           ${
@@ -1923,7 +1961,7 @@
         (p) =>
           `<tr><td>${p.id}</td><td><code>${escapeHtml(p.key)}</code></td><td>${escapeHtml(
             (p.description || '—') + ''
-          )}</td><td>${p.status}</td>
+          )}</td>${tdAdminListStatus10(p.status)}
         <td><button type="button" class="btn small" data-pid="${p.id}">编辑</button></td></tr>`
       )
       .join('');

@@ -129,14 +129,16 @@ func DefaultPrompt(c *SectionContext) string {
 	}
 	return fmt.Sprintf(`你是 StepUp 课件结构生成助手。根据以下教材节信息，输出**仅一个**合法 JSON 对象（不要 Markdown 代码围栏），符合 slide schemaVersion 1：
 - 顶层：schemaVersion:1，meta:{ "title": string, "theme":"dark-physics" }，slides: 数组
+- 页数：根据内容复杂度安排 **3～10 页**，通常 **不少于 3 页**、**不超过 10 页**（硬上限 10）。
 - 每页：id, layoutTemplate（选用 cover-image | title-body | formula-focus | split-left-right | split-top-bottom | quiz-center | bullet-steps | two-column-text），elements: 扁平数组；每项含 type(text|latex|image|question)、role、step（从 1 起的整数）
 - question：mode 为 single 或 multi；data:{ "text", "options":[{ "id","text" }] }
+- **凡含 type: question 的题目**，必须在同一元素下补充 **answer** 对象，供管理与自动判分：至少含 **correctOptionIds**（字符串数组，对应 options 里的 id，单选长度为 1，多选可多选）与 **explanation**（Markdown 子集亦可，简明讲解「为什么对/错」）。勿遗漏选项的答案与解析。
 
 教材：《%s》 %s，学科 %s
 章：第 %d 章 %s
 节：第 %d 节 %s（%s）
 
-请生成约 3～5 页、适合课堂讲解的幻灯片 JSON。`,
+请生成适合课堂讲解的幻灯片 JSON。`,
 		c.TextbookName, c.TextbookVersion, c.Subject,
 		c.ChapterNum, c.ChapterTitle,
 		c.SecNum, c.SectionTitle, ft,

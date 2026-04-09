@@ -298,13 +298,14 @@ func (s *Service) PatchChapter(ctx context.Context, id uint64, in ChapterPatch) 
 }
 
 type SectionRow struct {
-	ID        uint64
-	ChapterID uint64
-	Number    uint32
-	Title     string
-	FullTitle *string
-	Status    int
-	UpdatedAt time.Time
+	ID             uint64
+	ChapterID      uint64
+	Number         uint32
+	Title          string
+	FullTitle      *string
+	Status         int
+	SlideDeckCount int
+	UpdatedAt      time.Time
 }
 
 func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]SectionRow, error) {
@@ -327,10 +328,11 @@ func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]Section
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, chapter_id, number, title, full_title, status, updated_at
-FROM section
-WHERE chapter_id = ? AND is_deleted = 0
-ORDER BY number ASC, id ASC`, chapterID)
+SELECT s.id, s.chapter_id, s.number, s.title, s.full_title, s.status, s.updated_at,
+       (SELECT COUNT(*) FROM slide_deck sd WHERE sd.section_id = s.id AND sd.is_deleted = 0) AS slide_deck_count
+FROM section s
+WHERE s.chapter_id = ? AND s.is_deleted = 0
+ORDER BY s.number ASC, s.id ASC`, chapterID)
 	if err != nil {
 		return nil, err
 	}
@@ -343,10 +345,12 @@ ORDER BY number ASC, id ASC`, chapterID)
 			ft        sql.NullString
 			updatedAt time.Time
 			num       int
+			sdc       int
 		)
-		if err := rows.Scan(&r.ID, &r.ChapterID, &num, &r.Title, &ft, &r.Status, &updatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.ChapterID, &num, &r.Title, &ft, &r.Status, &updatedAt, &sdc); err != nil {
 			return nil, err
 		}
+		r.SlideDeckCount = sdc
 		r.Number = uint32(num)
 		r.UpdatedAt = updatedAt
 		if ft.Valid && ft.String != "" {
