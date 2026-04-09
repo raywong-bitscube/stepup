@@ -583,6 +583,48 @@
     return !!(e && e.authRedirectDone);
   }
 
+  /**
+   * 长耗时请求 UI（与学生端「生成中…」「识别中…」一致）：主按钮改文案并禁用，锁定表单控件，禁用取消，backdrop 标记 data-busy（点击遮罩不误关）。
+   */
+  function setAdminModalLongTask(modalContainer, busy, o) {
+    o = o || {};
+    const idleLabel = o.idleLabel || '确定';
+    const busyLabel = o.busyLabel || '处理中…';
+    const bd = o.backdropSel ? modalContainer.querySelector(o.backdropSel) : modalContainer.querySelector('.modal-backdrop');
+    const submit = o.submitSel ? modalContainer.querySelector(o.submitSel) : null;
+    const cancel = o.cancelSel ? modalContainer.querySelector(o.cancelSel) : null;
+    const lock = (o.lockSelectors || []).map(function (sel) {
+      return modalContainer.querySelector(sel);
+    }).filter(Boolean);
+    if (busy) {
+      if (bd) bd.setAttribute('data-busy', '1');
+      if (submit) {
+        if (!submit.dataset.adminIdleLabel) {
+          submit.dataset.adminIdleLabel = (submit.textContent || '').trim() || idleLabel;
+        }
+        submit.textContent = busyLabel;
+        submit.disabled = true;
+      }
+      if (cancel) cancel.disabled = true;
+      lock.forEach(function (el) {
+        el.readOnly = true;
+        el.setAttribute('aria-busy', 'true');
+      });
+    } else {
+      if (bd) bd.removeAttribute('data-busy');
+      if (submit) {
+        submit.textContent = submit.dataset.adminIdleLabel || idleLabel;
+        submit.disabled = false;
+        delete submit.dataset.adminIdleLabel;
+      }
+      if (cancel) cancel.disabled = false;
+      lock.forEach(function (el) {
+        el.readOnly = false;
+        el.removeAttribute('aria-busy');
+      });
+    }
+  }
+
   function aiLogErrLine(e) {
     const p = String(e.error_phase || '').trim();
     const m = String(e.error_message || '').trim();
@@ -1637,7 +1679,7 @@
       mr.innerHTML = `
       <div class="modal-backdrop" id="sgd"><div class="modal" style="max-width:720px;width:95vw">
         <h3>生成幻灯片 · ${escapeHtml(sectionTitle || '小节 #' + sectionId)}</h3>
-        <p class="muted" style="margin:8px 0 0">可编辑提示词。默认要求约 3～10 页、题目含标答与解析；生成成功后将写入幻灯片草稿并记入 AI 日志。</p>
+        <p class="muted" style="margin:8px 0 0">可编辑提示词。默认约 10～20 页、多例题与讲解；题目须含标答与解析。生成可能需数十秒，请点击后稍候。</p>
         <div style="margin-top:12px"><label class="muted" style="display:block;margin-bottom:6px">Prompt</label>
         <textarea id="sgPrompt" rows="14" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:13px;padding:10px;border-radius:8px;border:1px solid #cbd5e1"></textarea></div>
         <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
@@ -1652,14 +1694,25 @@
       };
       mr.querySelector('#sgCancel').addEventListener('click', close);
       mr.querySelector('#sgd').addEventListener('click', function (e) {
-        if (e.target.id === 'sgd') close();
+        if (e.target.id === 'sgd') {
+          if (mr.querySelector('#sgd') && mr.querySelector('#sgd').getAttribute('data-busy') === '1') return;
+          close();
+        }
       });
       mr.querySelector('#sgRun').addEventListener('click', async function () {
         const ta = mr.querySelector('#sgPrompt');
         const prompt = ta ? ta.value : '';
         localStorage.setItem(slideGenPromptStorageKey(sectionId), prompt);
+        const longTaskOpt = {
+          backdropSel: '#sgd',
+          submitSel: '#sgRun',
+          cancelSel: '#sgCancel',
+          lockSelectors: ['#sgPrompt'],
+          idleLabel: '生成',
+          busyLabel: '生成中…',
+        };
         try {
-          mr.querySelector('#sgRun').disabled = true;
+          setAdminModalLongTask(mr, true, longTaskOpt);
           await api('/api/v1/admin/sections/' + sectionId + '/slide-decks/generate-ai', {
             method: 'POST',
             jsonBody: { prompt: prompt },
@@ -1673,8 +1726,7 @@
           const msg = e.data && e.data.message ? e.data.message : '';
           alert('生成失败: ' + code + (msg ? '\n' + msg : ''));
         } finally {
-          const btn = mr.querySelector('#sgRun');
-          if (btn) btn.disabled = false;
+          if (mr.querySelector('#sgRun')) setAdminModalLongTask(mr, false, longTaskOpt);
         }
       });
     };

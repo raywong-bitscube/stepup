@@ -119,6 +119,9 @@ table.data th { background: #f8fafc; }
   z-index: 50;
   overflow-y: auto;
 }
+.modal-backdrop[data-busy='1'] {
+  cursor: wait;
+}
 .modal {
   background: #fff;
   border-radius: 12px;

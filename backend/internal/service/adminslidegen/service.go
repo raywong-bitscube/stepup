@@ -127,18 +127,33 @@ func DefaultPrompt(c *SectionContext) string {
 	if ft == "" {
 		ft = c.SectionTitle
 	}
-	return fmt.Sprintf(`你是 StepUp 课件结构生成助手。根据以下教材节信息，输出**仅一个**合法 JSON 对象（不要 Markdown 代码围栏），符合 slide schemaVersion 1：
+	return fmt.Sprintf(`你是 StepUp 课件结构生成助手。根据以下教材节信息，输出**仅一个**合法 JSON 对象（不要 Markdown 代码围栏），符合 slide schemaVersion 1。
+## 体量（必须遵守）
+- 总页数：**10～20 页**（建议 **14～18 页**）；硬上限 **20 页**，硬下限 **10 页**。内容要充实，禁止只做提纲式几页。
+
+## 教学深度（必须遵守）
+- **把学生讲懂为首要目标**：除封面与小结外，多数页面要有足够正文；用「概念→关键词→典型情景→易错点→巩固」的节奏铺陈。
+- **例子与例题要多**：至少 **4～6 组**有头有尾的例子或演算/分析（可分布在多页）。每组尽量包含：**条件复述、关键步骤、简短总结**；必要时用 bullet-steps、split-left-right、formula-focus 等模版呈现对比（对错、有无、变式）。
+- **变式与反例**：至少 **2 处**「常见错误」「易混辨析」或反例说明（可用 callout 区或独立页）。
+- 适用处使用 **LaTeX**（type: latex，role 符合模版）与 **文字中的 $行内公式$**，保证公式与叙述同屏可读。
+
+## JSON 结构（与之前一致）
 - 顶层：schemaVersion:1，meta:{ "title": string, "theme":"dark-physics" }，slides: 数组
-- 页数：根据内容复杂度安排 **3～10 页**，通常 **不少于 3 页**、**不超过 10 页**（硬上限 10）。
-- 每页：id, layoutTemplate（选用 cover-image | title-body | formula-focus | split-left-right | split-top-bottom | quiz-center | bullet-steps | two-column-text），elements: 扁平数组；每项含 type(text|latex|image|question)、role、step（从 1 起的整数）
+- 每页：id, layoutTemplate（cover-image | title-body | formula-focus | split-left-right | split-top-bottom | quiz-center | bullet-steps | two-column-text），elements: 扁平数组；每项含 type(text|latex|image|question)、role、step（从 1 起的整数）
 - question：mode 为 single 或 multi；data:{ "text", "options":[{ "id","text" }] }
-- **凡含 type: question 的题目**，必须在同一元素下补充 **answer** 对象，供管理与自动判分：至少含 **correctOptionIds**（字符串数组，对应 options 里的 id，单选长度为 1，多选可多选）与 **explanation**（Markdown 子集亦可，简明讲解「为什么对/错」）。勿遗漏选项的答案与解析。
+
+## 题目与答案（硬性要求，缺一即视为不合格输出）
+- **每一个 type 为 question 的元素**，除 data 外**必须在同一 JSON 对象上**包含 **answer** 字段（与 data 同级），结构如下，**不得省略**：
+  - "answer": { "correctOptionIds": ["A"], "explanation": "…" }
+  - correctOptionIds：与 options 的 id 一致；单选仅 1 个；多选可多个。
+  - explanation：**多句 Markdown 子集**，必须写清：① 正确选项为何对；② 其它常见错选错在何处；③ 本题考查点/口诀/易错点。**禁止**空字符串或泛泛一句「略」。
+- 若某页以测验为主，优先用 layoutTemplate **quiz-center**；题干 data.text 中可含 $公式$。
 
 教材：《%s》 %s，学科 %s
 章：第 %d 章 %s
 节：第 %d 节 %s（%s）
 
-请生成适合课堂讲解的幻灯片 JSON。`,
+请生成一套**信息量大、例题丰富、每道选择题都有完整 answer** 的课堂幻灯片 JSON。`,
 		c.TextbookName, c.TextbookVersion, c.Subject,
 		c.ChapterNum, c.ChapterTitle,
 		c.SecNum, c.SectionTitle, ft,
