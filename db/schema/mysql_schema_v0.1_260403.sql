@@ -361,8 +361,9 @@ CREATE TABLE IF NOT EXISTS ai_call_log (
   endpoint_host VARCHAR(255) NOT NULL DEFAULT '',
   chat_model VARCHAR(128) NOT NULL DEFAULT '',
   fallback_to_mock TINYINT(1) NOT NULL DEFAULT 0,
-  paper_id BIGINT UNSIGNED NULL,
   student_id BIGINT UNSIGNED NULL,
+  ref_table VARCHAR(64) NULL COMMENT '关联业务表，如 exam_paper、section、student',
+  ref_id BIGINT UNSIGNED NULL COMMENT '关联业务主键',
   request_meta JSON NULL COMMENT 'subject, stage, file_name',
   response_meta JSON NULL COMMENT 'summary_len, weak_points_n, ...',
   request_body LONGTEXT NULL COMMENT 'chat请求JSON（图片base64已脱敏，可截断）',
@@ -373,10 +374,9 @@ CREATE TABLE IF NOT EXISTS ai_call_log (
   KEY idx_ai_call_log_action (action),
   KEY idx_ai_call_log_status (result_status),
   KEY idx_ai_call_log_adapter (adapter_kind),
-  KEY idx_ai_call_log_paper (paper_id),
   KEY idx_ai_call_log_student (student_id),
-  CONSTRAINT fk_ai_call_log_model FOREIGN KEY (ai_model_id) REFERENCES ai_model (id) ON DELETE SET NULL,
-  CONSTRAINT fk_ai_call_log_paper FOREIGN KEY (paper_id) REFERENCES exam_paper (id) ON DELETE SET NULL
+  KEY idx_ai_call_log_ref (ref_table, ref_id),
+  CONSTRAINT fk_ai_call_log_model FOREIGN KEY (ai_model_id) REFERENCES ai_model (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================
@@ -479,6 +479,7 @@ CREATE TABLE IF NOT EXISTS slide_deck (
   deck_status VARCHAR(20) NOT NULL DEFAULT 'draft' COMMENT 'draft, active, archived',
   schema_version INT NOT NULL DEFAULT 1 COMMENT '与 JSON 内 schemaVersion 对齐',
   content JSON NOT NULL COMMENT 'Slide Deck JSON',
+  generation_prompt LONGTEXT NULL COMMENT '最近一次 AI 生成使用的完整 prompt',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NOT NULL,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

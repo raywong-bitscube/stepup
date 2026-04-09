@@ -154,6 +154,8 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID u
 	lat := tr.LatencyMS
 	latPtr := &lat
 	stuPtr := &studentID
+	rt := "student"
+	rid := studentID
 	s.aiLog.Write(ctx, ailog.InsertRow{
 		AIModelID:        aid,
 		ModelNameSnap:    nameSnap,
@@ -167,8 +169,9 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID u
 		EndpointHost:     tr.EndpointHost,
 		ChatModel:        tr.ChatModel,
 		FallbackToMock:   tr.FallbackToMock,
-		PaperID:          nil,
 		StudentID:        stuPtr,
+		RefTable:         &rt,
+		RefID:            &rid,
 		RequestMetaJSON:  reqM,
 		ResponseMetaJSON: respM,
 		RequestBody:      tr.RequestBody,

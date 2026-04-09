@@ -72,7 +72,7 @@ func (s *ListService) List(ctx context.Context, p ListParams) ([]ListEntry, erro
 	q := `
 SELECT id, created_at, ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
        http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-       fallback_to_mock, paper_id, student_id, request_meta, response_meta,
+       fallback_to_mock, student_id, ref_table, ref_id, request_meta, response_meta,
        request_body, response_body
 FROM ai_call_log`
 	if len(conds) > 0 {
@@ -94,8 +94,9 @@ FROM ai_call_log`
 			aid          sql.NullInt64
 			httpSt       sql.NullInt64
 			lat          sql.NullInt64
-			paper        sql.NullInt64
 			stu          sql.NullInt64
+			refTbl       sql.NullString
+			refID        sql.NullInt64
 			reqM         sql.NullString
 			respM        sql.NullString
 			reqB         sql.NullString
@@ -105,7 +106,7 @@ FROM ai_call_log`
 		if err := rows.Scan(
 			&e.ID, &e.CreatedAt, &aid, &e.ModelNameSnap, &e.Action, &e.AdapterKind, &e.ResultStatus,
 			&httpSt, &lat, &e.ErrorPhase, &e.ErrorMessage, &e.EndpointHost, &e.ChatModel,
-			&fallbackTiny, &paper, &stu, &reqM, &respM, &reqB, &respB,
+			&fallbackTiny, &stu, &refTbl, &refID, &reqM, &respM, &reqB, &respB,
 		); err != nil {
 			return nil, err
 		}
@@ -121,13 +122,17 @@ FROM ai_call_log`
 			v := lat.Int64
 			e.LatencyMS = &v
 		}
-		if paper.Valid {
-			v := uint64(paper.Int64)
-			e.PaperID = &v
-		}
 		if stu.Valid {
 			v := uint64(stu.Int64)
 			e.StudentID = &v
+		}
+		if refTbl.Valid && refTbl.String != "" {
+			t := refTbl.String
+			e.RefTable = &t
+		}
+		if refID.Valid {
+			v := uint64(refID.Int64)
+			e.RefID = &v
 		}
 		e.FallbackToMock = fallbackTiny != 0
 		if reqM.Valid && reqM.String != "" {

@@ -32,7 +32,8 @@ type Summary struct {
 
 type Full struct {
 	Summary
-	Content json.RawMessage `json:"content"`
+	Content          json.RawMessage `json:"content"`
+	GenerationPrompt *string         `json:"generation_prompt,omitempty"`
 }
 
 type Service struct {
@@ -127,11 +128,12 @@ func (s *Service) Get(ctx context.Context, deckID uint64) (*Full, error) {
 
 	var f Full
 	var content []byte
+	var genPrompt sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-SELECT id, section_id, title, deck_status, schema_version, updated_at, content
+SELECT id, section_id, title, deck_status, schema_version, updated_at, content, generation_prompt
 FROM slide_deck
 WHERE id = ? AND is_deleted = 0`, deckID).Scan(
-		&f.ID, &f.SectionID, &f.Title, &f.DeckStatus, &f.SchemaVersion, &f.UpdatedAt, &content,
+		&f.ID, &f.SectionID, &f.Title, &f.DeckStatus, &f.SchemaVersion, &f.UpdatedAt, &content, &genPrompt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -140,14 +142,19 @@ WHERE id = ? AND is_deleted = 0`, deckID).Scan(
 		return nil, err
 	}
 	f.Content = content
+	if genPrompt.Valid && genPrompt.String != "" {
+		g := genPrompt.String
+		f.GenerationPrompt = &g
+	}
 	return &f, nil
 }
 
 type CreateInput struct {
-	Title         string
-	Content       json.RawMessage
-	DeckStatus    string
-	SchemaVersion int
+	Title            string
+	Content          json.RawMessage
+	DeckStatus       string
+	SchemaVersion    int
+	GenerationPrompt *string
 }
 
 func (s *Service) Create(ctx context.Context, sectionID uint64, adminID uint64, in CreateInput) (uint64, error) {
@@ -209,11 +216,15 @@ WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`,
 		}
 	}
 
+	var gen any
+	if in.GenerationPrompt != nil && strings.TrimSpace(*in.GenerationPrompt) != "" {
+		gen = strings.TrimSpace(*in.GenerationPrompt)
+	}
 	res, err := tx.ExecContext(ctx, `
 INSERT INTO slide_deck
-  (section_id, title, deck_status, schema_version, content, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, CAST(? AS JSON), NOW(), ?, NOW(), ?, 0)`,
-		sectionID, title, st, sv, string(in.Content), adminID, adminID)
+  (section_id, title, deck_status, schema_version, content, generation_prompt, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, NOW(), ?, NOW(), ?, 0)`,
+		sectionID, title, st, sv, string(in.Content), gen, adminID, adminID)
 	if err != nil {
 		return 0, err
 	}
@@ -228,9 +239,10 @@ VALUES (?, ?, ?, ?, CAST(? AS JSON), NOW(), ?, NOW(), ?, 0)`,
 }
 
 type PatchInput struct {
-	Title      *string
-	Content    *json.RawMessage
-	DeckStatus *string
+	Title            *string
+	Content          *json.RawMessage
+	DeckStatus       *string
+	GenerationPrompt *string
 }
 
 func (s *Service) Patch(ctx context.Context, deckID uint64, adminID uint64, in PatchInput) error {
@@ -240,7 +252,7 @@ func (s *Service) Patch(ctx context.Context, deckID uint64, adminID uint64, in P
 	if deckID == 0 || adminID == 0 {
 		return ErrInvalidInput
 	}
-	if in.Title == nil && in.Content == nil && in.DeckStatus == nil {
+	if in.Title == nil && in.Content == nil && in.DeckStatus == nil && in.GenerationPrompt == nil {
 		return ErrInvalidInput
 	}
 
@@ -308,6 +320,10 @@ WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`,
 	if in.DeckStatus != nil {
 		sets = append(sets, "deck_status = ?")
 		args = append(args, newStatus)
+	}
+	if in.GenerationPrompt != nil {
+		sets = append(sets, "generation_prompt = ?")
+		args = append(args, strings.TrimSpace(*in.GenerationPrompt))
 	}
 	if len(sets) == 0 {
 		return ErrInvalidInput

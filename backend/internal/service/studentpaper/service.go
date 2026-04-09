@@ -159,15 +159,18 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 	}
 	lat := tr.LatencyMS
 	latPtr := &lat
-	var paperPtr *uint64
-	if paperID != 0 {
-		v := paperID
-		paperPtr = &v
-	}
 	var stuPtr *uint64
 	if studentID != 0 {
 		v := studentID
 		stuPtr = &v
+	}
+	var refTbl *string
+	var refIDPtr *uint64
+	if paperID != 0 {
+		t := "exam_paper"
+		refTbl = &t
+		v := paperID
+		refIDPtr = &v
 	}
 	s.aiLog.Write(ctx, ailog.InsertRow{
 		AIModelID:        aid,
@@ -182,8 +185,9 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 		EndpointHost:     tr.EndpointHost,
 		ChatModel:        tr.ChatModel,
 		FallbackToMock:   tr.FallbackToMock,
-		PaperID:          paperPtr,
 		StudentID:        stuPtr,
+		RefTable:         refTbl,
+		RefID:            refIDPtr,
 		RequestMetaJSON:  reqM,
 		ResponseMetaJSON: respM,
 		RequestBody:      tr.RequestBody,

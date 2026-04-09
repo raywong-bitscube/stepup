@@ -15,6 +15,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminpapers"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminprompts"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidegen"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidedecks"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
@@ -58,6 +59,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 	adminAuditLogsHandler := admin.NewAuditLogsHandler(adminaudit.New(db))
 	adminAICallLogsHandler := admin.NewAICallLogsHandler(ailog.NewListService(db))
 	adminSlideDecksHandler := admin.NewSlideDecksHandler(adminslidedecks.New(db), auditWriter)
+	adminSlideDeckGenHandler := admin.NewSlideDeckGenHandler(adminslidegen.New(cfg, db))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
@@ -115,6 +117,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sql.DB) {
 
 	mux.HandleFunc("GET /api/v1/admin/sections/{sectionId}/slide-decks", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.ListBySection))
 	mux.HandleFunc("POST /api/v1/admin/sections/{sectionId}/slide-decks", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Create))
+	mux.HandleFunc("GET /api/v1/admin/sections/{sectionId}/slide-generate/default-prompt", middleware.RequireAdminAuth(adminAuthService, adminSlideDeckGenHandler.DefaultPrompt))
+	mux.HandleFunc("POST /api/v1/admin/sections/{sectionId}/slide-decks/generate-ai", middleware.RequireAdminAuth(adminAuthService, adminSlideDeckGenHandler.GenerateAI))
 	mux.HandleFunc("GET /api/v1/admin/slide-decks/{deckId}", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Get))
 	mux.HandleFunc("PATCH /api/v1/admin/slide-decks/{deckId}", middleware.RequireAdminAuth(adminAuthService, adminSlideDecksHandler.Patch))
 

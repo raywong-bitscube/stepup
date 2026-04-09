@@ -15,7 +15,7 @@ body {
   font-size: 14px;
   line-height: 1.5;
 }
-.wrap { max-width: 960px; margin: 0 auto; padding: 16px; }
+.wrap { width: 100%; max-width: none; margin: 0 auto; padding: 16px; box-sizing: border-box; }
 .card {
   background: var(--card);
   border: 1px solid var(--border);

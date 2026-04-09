@@ -1,8 +1,421 @@
+/**
+ * Slide Deck 渲染（schemaVersion 1）— 与 docs/core/slide_deck_design_v0.1_260403.md 一致。
+ * 依赖（可选）：window.katex — 用于 LaTeX；无则退化为等宽文本。
+ */
+(function (global) {
+  'use strict';
+
+  const VALID_TEMPLATES = new Set([
+    'cover-image',
+    'title-body',
+    'formula-focus',
+    'split-left-right',
+    'split-top-bottom',
+    'quiz-center',
+    'bullet-steps',
+    'two-column-text',
+  ]);
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** 极简 Markdown：换行、**粗体**、以 "- " 开头的行转为列表项（块级简单处理） */
+  function renderSimpleMarkdown(text) {
+    if (text == null) return '';
+    const raw = String(text);
+    const lines = raw.split(/\r?\n/);
+    let inList = false;
+    let html = '';
+    function closeList() {
+      if (inList) {
+        html += '</ul>';
+        inList = false;
+      }
+    }
+    for (const line of lines) {
+      const listM = /^-\s+(.+)$/.exec(line);
+      if (listM) {
+        if (!inList) {
+          html += '<ul class="slide-md-ul">';
+          inList = true;
+        }
+        html += '<li>' + inlineFormat(escapeHtml(listM[1])) + '</li>';
+      } else {
+        closeList();
+        if (line.trim() === '') {
+          html += '<br/>';
+        } else {
+          html += '<p class="slide-md-p">' + inlineFormat(escapeHtml(line)) + '</p>';
+        }
+      }
+    }
+    closeList();
+    return html || '<p class="slide-md-p">—</p>';
+  }
+
+  function inlineFormat(escapedLine) {
+    return escapedLine.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  }
+
+  function renderLatex(tex, display) {
+    const t = String(tex || '');
+    if (!global.katex || !global.katex.renderToString) {
+      return '<pre class="slide-latex-fallback">' + escapeHtml(t) + '</pre>';
+    }
+    try {
+      return global.katex.renderToString(t, {
+        displayMode: display !== 'inline',
+        throwOnError: false,
+        strict: 'ignore',
+      });
+    } catch {
+      return '<pre class="slide-latex-fallback">' + escapeHtml(t) + '</pre>';
+    }
+  }
+
+  function maxStepOnSlide(slide) {
+    let m = 1;
+    const els = slide.elements || [];
+    for (let i = 0; i < els.length; i++) {
+      const s = Number(els[i].step);
+      if (!isNaN(s) && s > m) m = s;
+    }
+    return m;
+  }
+
+  function filterVisible(slide, currentStep) {
+    return (slide.elements || []).filter((e) => {
+      const s = Number(e.step);
+      const step = isNaN(s) ? 1 : s;
+      return step <= currentStep;
+      });
+  }
+
+  function renderQuestion(el, slideId, qIndex, answers) {
+    const mode = el.mode === 'multi' ? 'multi' : 'single';
+    const data = el.data || {};
+    const qtext = data.text || '';
+    const opts = data.options || [];
+    const name = 'q-' + slideId + '-' + qIndex;
+    const selected = answers[name] != null ? answers[name] : mode === 'multi' ? [] : '';
+    let body = '<div class="slide-question"><div class="slide-q-prompt slide-md">' + renderSimpleMarkdown(qtext) + '</div><div class="slide-q-options">';
+    opts.forEach((opt) => {
+      const oid = escapeHtml(String(opt.id != null ? opt.id : ''));
+      const otext = opt.text != null ? String(opt.text) : '';
+      const idAttr = name + '-' + oid;
+      if (mode === 'multi') {
+        const checked = Array.isArray(selected) && selected.indexOf(opt.id) >= 0 ? ' checked' : '';
+        body +=
+          '<label class="slide-q-opt"><input type="checkbox" name="' +
+          escapeHtml(name) +
+          '" value="' +
+          oid +
+          '"' +
+          checked +
+          '/> <span class="slide-q-opt-text slide-md">' +
+          renderSimpleMarkdown(otext) +
+          '</span></label>';
+      } else {
+        const checked = selected === opt.id ? ' checked' : '';
+        body +=
+          '<label class="slide-q-opt"><input type="radio" name="' +
+          escapeHtml(name) +
+          '" value="' +
+          oid +
+          '"' +
+          checked +
+          '/> <span class="slide-q-opt-text slide-md">' +
+          renderSimpleMarkdown(otext) +
+          '</span></label>';
+      }
+    });
+    body += '</div></div>';
+    return body;
+  }
+
+  function bindQuestions(hostEl, slide, answers, onAnswer) {
+    const slideId = slide.id || 'slide';
+    const els = filterVisible(slide, hostEl._currentStep || 1);
+    let qi = 0;
+    els.forEach((el) => {
+      if (el.type !== 'question') return;
+      const name = 'q-' + slideId + '-' + qi;
+      qi++;
+      const mode = el.mode === 'multi' ? 'multi' : 'single';
+      const inputs = [];
+      hostEl.querySelectorAll('input').forEach((inp) => {
+        if (inp.name === name) inputs.push(inp);
+      });
+      inputs.forEach((inp) => {
+        inp.addEventListener('change', () => {
+          if (mode === 'multi') {
+            const ids = [];
+            hostEl.querySelectorAll('input').forEach((b) => {
+              if (b.name === name && b.checked) ids.push(b.value);
+            });
+            answers[name] = ids;
+          } else {
+            answers[name] = inp.value;
+          }
+          if (typeof onAnswer === 'function') {
+            onAnswer({
+              slideId: slideId,
+              questionKey: name,
+              mode: mode,
+              selected: answers[name],
+            });
+          }
+        });
+      });
+    });
+  }
+
+  function renderElementHTML(el, slide, qCounterRef) {
+    const role = el.role || 'body';
+    const typ = el.type || 'text';
+    if (typ === 'text') {
+      return (
+        '<div class="slide-el slide-type-text slide-role-' +
+        escapeHtml(role) +
+        '"><div class="slide-md">' +
+        renderSimpleMarkdown(el.content) +
+        '</div></div>'
+      );
+    }
+    if (typ === 'latex') {
+      const disp = el.display === 'inline' ? 'inline' : 'block';
+      const inner = renderLatex(el.content, disp);
+      return (
+        '<div class="slide-el slide-type-latex slide-role-' +
+        escapeHtml(role) +
+        '">' +
+        inner +
+        '</div>'
+      );
+    }
+    if (typ === 'image') {
+      const src = el.src ? String(el.src) : '';
+      const alt = el.alt != null ? String(el.alt) : '';
+      const cap = el.caption != null ? String(el.caption) : '';
+      let h =
+        '<div class="slide-el slide-type-image slide-role-' +
+        escapeHtml(role) +
+        '"><img src="' +
+        escapeHtml(src) +
+        '" alt="' +
+        escapeHtml(alt) +
+        '" class="slide-img" loading="lazy"/>';
+      if (cap) h += '<div class="slide-caption slide-md">' + renderSimpleMarkdown(cap) + '</div>';
+      h += '</div>';
+      return h;
+    }
+    if (typ === 'question') {
+      const idx = qCounterRef.v++;
+      return renderQuestion(el, slide.id || 'slide', idx, qCounterRef.answers || {});
+    }
+    return '<div class="slide-el slide-unknown">未知类型</div>';
+  }
+
+  function buildSlideInner(slide, currentStep, answers) {
+    const tpl = slide.layoutTemplate || 'title-body';
+    const safeTpl = VALID_TEMPLATES.has(tpl) ? tpl : 'title-body';
+    const qRef = { v: 0, answers: answers };
+    const visible = filterVisible(slide, currentStep);
+    let inner = visible.map((el) => renderElementHTML(el, slide, qRef)).join('');
+
+    const wrap =
+      '<div class="slide-tpl slide-tpl-' +
+      escapeHtml(safeTpl) +
+      '" data-template="' +
+      escapeHtml(safeTpl) +
+      '">' +
+      inner +
+      '</div>';
+    return wrap;
+  }
+
+  /**
+   * @param {HTMLElement} container
+   * @param {object} deck - 完整 deck JSON
+   * @param {object} [options]
+   * @param {number} [options.initialSlide]
+   * @param {function} [options.onNavigate] ({ slideIndex, slideId, step, maxStep })
+   * @param {function} [options.onAnswer] ({ slideId, questionKey, mode, selected })
+   */
+  function mount(container, deck, options) {
+    if (!container || !deck || !Array.isArray(deck.slides)) {
+      throw new Error('SlideDeckRenderer.mount: invalid args');
+    }
+    const schemaVersion = Number(deck.schemaVersion);
+    if (schemaVersion !== 1) {
+      container.innerHTML =
+        '<p class="muted">不支持的 schemaVersion（需要 1）。</p>';
+      return { destroy: function () {}, getContext: function () {} };
+    }
+
+    options = options || {};
+    const theme = (deck.meta && deck.meta.theme) || 'light-default';
+    let slideIndex = options.initialSlide != null ? Number(options.initialSlide) : 0;
+    if (slideIndex < 0) slideIndex = 0;
+    if (slideIndex >= deck.slides.length) slideIndex = Math.max(0, deck.slides.length - 1);
+
+    let currentStep = 1;
+    const answers = {};
+
+    const host = document.createElement('div');
+    host.className = 'slide-deck-root theme-' + String(theme).replace(/[^a-z0-9-]/gi, '-');
+    host.innerHTML =
+      '<div class="slide-stage-wrap"><div class="slide-stage" id="slideStage"></div></div>' +
+      '<div class="slide-toolbar">' +
+      '<span class="slide-progress" id="slideProg"></span>' +
+      '<button type="button" class="btn secondary sm" id="btnSlidePrev">上一页</button>' +
+      '<button type="button" class="btn secondary sm" id="btnStepNext">下一步</button>' +
+      '<button type="button" class="btn sm" id="btnSlideNext">下一页</button>' +
+      '</div>';
+
+    container.innerHTML = '';
+    container.appendChild(host);
+
+    const stage = host.querySelector('#slideStage');
+    const prog = host.querySelector('#slideProg');
+    const btnPrev = host.querySelector('#btnSlidePrev');
+    const btnStep = host.querySelector('#btnStepNext');
+    const btnNext = host.querySelector('#btnSlideNext');
+
+    function getSlide() {
+      return deck.slides[slideIndex] || { elements: [], id: '' };
+    }
+
+    function paint() {
+      const sl = getSlide();
+      currentStep = Math.min(currentStep, Math.max(1, maxStepOnSlide(sl)));
+      host._currentStep = currentStep;
+      stage.innerHTML = buildSlideInner(sl, currentStep, answers);
+      bindQuestions(host, sl, answers, options.onAnswer);
+      const mx = maxStepOnSlide(sl);
+      prog.textContent = '第 ' + (slideIndex + 1) + ' / ' + deck.slides.length + ' 页 · 步 ' + currentStep + ' / ' + mx;
+      btnStep.disabled = currentStep >= mx && slideIndex >= deck.slides.length - 1;
+      btnPrev.disabled = slideIndex <= 0 && currentStep <= 1;
+      btnNext.disabled = slideIndex >= deck.slides.length - 1;
+      if (typeof options.onNavigate === 'function') {
+        options.onNavigate({
+          slideIndex: slideIndex,
+          slideId: sl.id || '',
+          step: currentStep,
+          maxStep: mx,
+        });
+      }
+    }
+
+    btnPrev.addEventListener('click', () => {
+      const sl = getSlide();
+      const mx = maxStepOnSlide(sl);
+      if (currentStep > 1) {
+        currentStep--;
+        paint();
+        return;
+      }
+      if (slideIndex > 0) {
+        slideIndex--;
+        currentStep = Math.max(1, maxStepOnSlide(getSlide()));
+        paint();
+      }
+    });
+
+    btnStep.addEventListener('click', () => {
+      const sl = getSlide();
+      const mx = maxStepOnSlide(sl);
+      if (currentStep < mx) {
+        currentStep++;
+        paint();
+        return;
+      }
+      if (slideIndex < deck.slides.length - 1) {
+        slideIndex++;
+        currentStep = 1;
+        paint();
+      }
+    });
+
+    btnNext.addEventListener('click', () => {
+      if (slideIndex < deck.slides.length - 1) {
+        slideIndex++;
+        currentStep = 1;
+        paint();
+      }
+    });
+
+    paint();
+
+    return {
+      destroy: function () {
+        if (host.parentNode) host.parentNode.removeChild(host);
+      },
+      getContext: function () {
+        const sl = getSlide();
+        return {
+          deckTitle: (deck.meta && deck.meta.title) || '',
+          slideIndex: slideIndex,
+          slideId: sl.id || '',
+          step: currentStep,
+          maxStep: maxStepOnSlide(sl),
+          answers: JSON.parse(JSON.stringify(answers)),
+        };
+      },
+      nextStep: function () {
+        btnStep.click();
+      },
+    };
+  }
+
+  global.SlideDeckRenderer = {
+    mount: mount,
+    renderSimpleMarkdown: renderSimpleMarkdown,
+    VALID_TEMPLATES: VALID_TEMPLATES,
+  };
+})(typeof window !== 'undefined' ? window : this);
 (function () {
   'use strict';
 
   const LS_TOKEN = 'stepup_admin_token';
   const LS_API = 'stepup_api_base';
+  const LS_SLIDE_GEN_PROMPT_PREFIX = 'stepup_admin_slide_gen_prompt';
+
+  function slideGenPromptStorageKey(sectionId) {
+    return LS_SLIDE_GEN_PROMPT_PREFIX + '_' + String(sectionId);
+  }
+
+  function appendAdminSlideLog(preEl, text) {
+    if (!preEl) return;
+    preEl.textContent += '[' + new Date().toLocaleTimeString('zh-CN') + '] ' + text + '\n';
+    preEl.scrollTop = preEl.scrollHeight;
+  }
+
+  function pickDeckForPreview(items) {
+    if (!items || !items.length) return null;
+    const active = items.find(function (x) {
+      return x.deck_status === 'active';
+    });
+    return active || items[0];
+  }
+
+  function parseDeckContent(content) {
+    if (content == null) return null;
+    if (typeof content === 'object') return content;
+    if (typeof content === 'string') {
+      try {
+        return JSON.parse(content);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  }
 
   /** 与部署约定一致时可不配置 meta：`?api=` / localStorage / meta / 登录框端口 仍可覆盖。 */
   const PAGE_PORT_TO_API_PORT = { '7010': '7012', '7011': '7012' };
@@ -138,6 +551,12 @@
       <tr><th scope="row">错误</th><td class="ai-detail-td"><div class="ai-detail-text">${errCell}</div></td></tr>
       ${cell('Endpoint', e.endpoint_host || '')}
       ${cell('mock 回退', mockTxt)}
+      ${cell(
+        'student_id',
+        e.student_id != null && e.student_id !== '' ? String(e.student_id) : ''
+      )}
+      ${cell('ref_table', e.ref_table || '')}
+      ${cell('ref_id', e.ref_id != null && e.ref_id !== '' ? String(e.ref_id) : '')}
       ${cell('请求 JSON', req)}
       ${cell('响应原文', res)}
       ${cell('结构化 Meta', meta)}
@@ -707,11 +1126,11 @@
           `<tr><td>${s.id}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(
             s.description || '—'
           )}</td><td>${s.status}</td>
-        <td class="row" style="gap:6px;flex-wrap:wrap">${
+        <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-sid="${s.id}">编辑</button>${
           (s.textbook_count || 0) > 0
             ? `<button type="button" class="btn small secondary" data-catalog-sid="${s.id}">目录</button>`
             : ''
-        }<button type="button" class="btn small" data-sid="${s.id}">编辑</button></td></tr>`
+        }</td></tr>`
       )
       .join('');
     return `
@@ -1043,7 +1462,7 @@
           `<tr><td>${s.id}</td><td>${s.number}</td><td>${escapeHtml(s.title)}</td><td>${escapeHtml(
             (s.full_title || '').trim() || '—'
           )}</td><td>${s.status}</td>
-        <td><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button></td></tr>`
+        <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button><button type="button" class="btn small secondary" data-slide-gen-se="${s.id}">生成幻灯片</button><button type="button" class="btn small secondary" data-slide-preview-se="${s.id}">试播</button></td></tr>`
       )
       .join('');
     return `
@@ -1098,6 +1517,180 @@
         );
       });
     });
+    pane.querySelectorAll('button[data-slide-gen-se]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        const tr = b.closest('tr');
+        const id = Number(b.getAttribute('data-slide-gen-se'));
+        const title = tr && tr.querySelectorAll('td').length > 2 ? tr.querySelectorAll('td')[2].textContent.trim() : '';
+        openSlideGenerateModal(mr, id, title, function () {
+          mountCatalog({
+            subjectId: nav.subjectId,
+            subjectName: nav.subjectName,
+            mode: 'sections',
+            textbookId: nav.textbookId,
+            textbookName: nav.textbookName,
+            chapterId: nav.chapterId,
+            chapterTitle: nav.chapterTitle,
+          });
+        });
+      });
+    });
+    pane.querySelectorAll('button[data-slide-preview-se]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        const id = Number(b.getAttribute('data-slide-preview-se'));
+        openSlidePreviewAdmin(id);
+      });
+    });
+  }
+
+  function openSlideGenerateModal(mr, sectionId, sectionTitle, onDone) {
+    const run = async function () {
+      let defaultPrompt = '';
+      try {
+        const res = await api('/api/v1/admin/sections/' + sectionId + '/slide-generate/default-prompt');
+        defaultPrompt = res.prompt || '';
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('加载默认提示词失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        return;
+      }
+      const cached = localStorage.getItem(slideGenPromptStorageKey(sectionId));
+      const initial = cached != null && cached !== '' ? cached : defaultPrompt;
+
+      mr.innerHTML = `
+      <div class="modal-backdrop" id="sgd"><div class="modal" style="max-width:720px;width:95vw">
+        <h3>生成幻灯片 · ${escapeHtml(sectionTitle || '小节 #' + sectionId)}</h3>
+        <p class="muted" style="margin:8px 0 0">可编辑提示词；生成成功后将写入幻灯片草稿并记入 AI 日志。</p>
+        <div style="margin-top:12px"><label class="muted" style="display:block;margin-bottom:6px">Prompt</label>
+        <textarea id="sgPrompt" rows="14" style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:13px;padding:10px;border-radius:8px;border:1px solid #cbd5e1"></textarea></div>
+        <div class="row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+          <button type="button" class="btn" id="sgRun">生成</button>
+          <button type="button" class="btn secondary" id="sgCancel">取消</button>
+        </div>
+      </div></div>`;
+      mr.querySelector('#sgPrompt').value = initial;
+
+      const close = function () {
+        mr.innerHTML = '';
+      };
+      mr.querySelector('#sgCancel').addEventListener('click', close);
+      mr.querySelector('#sgd').addEventListener('click', function (e) {
+        if (e.target.id === 'sgd') close();
+      });
+      mr.querySelector('#sgRun').addEventListener('click', async function () {
+        const ta = mr.querySelector('#sgPrompt');
+        const prompt = ta ? ta.value : '';
+        localStorage.setItem(slideGenPromptStorageKey(sectionId), prompt);
+        try {
+          mr.querySelector('#sgRun').disabled = true;
+          await api('/api/v1/admin/sections/' + sectionId + '/slide-decks/generate-ai', {
+            method: 'POST',
+            jsonBody: { prompt: prompt },
+          });
+          alert('已生成幻灯片草稿（可稍后在试播中查看）。');
+          close();
+          if (typeof onDone === 'function') onDone();
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          const code = e.data && e.data.code ? e.data.code : e.message;
+          const msg = e.data && e.data.message ? e.data.message : '';
+          alert('生成失败: ' + code + (msg ? '\n' + msg : ''));
+        } finally {
+          const btn = mr.querySelector('#sgRun');
+          if (btn) btn.disabled = false;
+        }
+      });
+    };
+    run();
+  }
+
+  function openSlidePreviewAdmin(sectionId) {
+    const run = async function () {
+      let list;
+      try {
+        list = await api('/api/v1/admin/sections/' + sectionId + '/slide-decks');
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('加载幻灯片列表失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        return;
+      }
+      const items = list.items || [];
+      if (!items.length) {
+        alert('幻灯片不存在：请先生成幻灯片。');
+        return;
+      }
+      const pick = pickDeckForPreview(items);
+      let deckRow;
+      try {
+        deckRow = await api('/api/v1/admin/slide-decks/' + pick.id);
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('加载幻灯片失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        return;
+      }
+      const deck = parseDeckContent(deckRow.content);
+      if (!deck || !Array.isArray(deck.slides)) {
+        alert('幻灯片内容无效或为空。');
+        return;
+      }
+      if (typeof window.SlideDeckRenderer === 'undefined' || !window.SlideDeckRenderer.mount) {
+        alert('幻灯片渲染器未加载。');
+        return;
+      }
+
+      const overlay = document.createElement('div');
+      overlay.className = 'admin-slide-preview-overlay';
+      overlay.innerHTML =
+        '<div class="admin-slide-preview-panel"><div class="toolbar row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
+        '<strong>试播 · 小节 ' +
+        sectionId +
+        '</strong><button type="button" class="btn secondary" id="admSlidePrevClose">关闭</button></div>' +
+        '<div class="admin-slide-preview-grid"><div id="admSlideStageHost"></div>' +
+        '<div class="admin-slide-preview-log"><div class="muted" style="font-weight:600">动作日志</div>' +
+        '<pre class="admin-slide-log-pre" id="admSlideLogPre"></pre></div></div></div>';
+
+      document.body.appendChild(overlay);
+      const host = overlay.querySelector('#admSlideStageHost');
+      const logPre = overlay.querySelector('#admSlideLogPre');
+      const deckTitle = (deck.meta && deck.meta.title) || deckRow.title || '';
+      appendAdminSlideLog(logPre, '已加载 deck id=' + pick.id + ' · ' + deckTitle);
+
+      let ctl = window.SlideDeckRenderer.mount(host, deck, {
+        onNavigate: function (ctx) {
+          appendAdminSlideLog(
+            logPre,
+            '翻页/步进 slideIndex=' +
+              (ctx.slideIndex + 1) +
+              ' slideId=' +
+              (ctx.slideId || '—') +
+              ' step=' +
+              ctx.step +
+              '/' +
+              ctx.maxStep
+          );
+        },
+        onAnswer: function (ctx) {
+          appendAdminSlideLog(
+            logPre,
+            '作答 slideId=' + (ctx.slideId || '—') + ' key=' + ctx.questionKey + ' mode=' + ctx.mode + ' → ' + JSON.stringify(ctx.selected)
+          );
+        },
+      });
+
+      overlay.querySelector('#admSlidePrevClose').addEventListener('click', function () {
+        if (ctl && typeof ctl.destroy === 'function') ctl.destroy();
+        ctl = null;
+        overlay.remove();
+      });
+      overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) {
+          if (ctl && typeof ctl.destroy === 'function') ctl.destroy();
+          ctl = null;
+          overlay.remove();
+        }
+      });
+    };
+    run();
   }
 
   function openSectionEditModal(mr, srow, onSaved) {

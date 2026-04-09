@@ -3,6 +3,7 @@ package ailog
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -33,13 +34,17 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 	if row.LatencyMS != nil {
 		lat = sql.NullInt64{Int64: *row.LatencyMS, Valid: true}
 	}
-	var paper sql.NullInt64
-	if row.PaperID != nil {
-		paper = sql.NullInt64{Int64: int64(*row.PaperID), Valid: true}
-	}
 	var stu sql.NullInt64
 	if row.StudentID != nil {
 		stu = sql.NullInt64{Int64: int64(*row.StudentID), Valid: true}
+	}
+	var refTbl sql.NullString
+	if row.RefTable != nil && strings.TrimSpace(*row.RefTable) != "" {
+		refTbl = sql.NullString{String: strings.TrimSpace(*row.RefTable), Valid: true}
+	}
+	var refID sql.NullInt64
+	if row.RefID != nil {
+		refID = sql.NullInt64{Int64: int64(*row.RefID), Valid: true}
 	}
 
 	req := row.RequestMetaJSON
@@ -65,13 +70,13 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 INSERT INTO ai_call_log (
   ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
   http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-  fallback_to_mock, paper_id, student_id, request_meta, response_meta,
+  fallback_to_mock, student_id, ref_table, ref_id, request_meta, response_meta,
   request_body, response_body
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `, nullInt64(aid), row.ModelNameSnap, row.Action, row.AdapterKind, row.ResultStatus,
 		nullInt64(httpSt), nullInt64(lat), row.ErrorPhase, row.ErrorMessage,
 		row.EndpointHost, row.ChatModel, fallback,
-		nullInt64(paper), nullInt64(stu), req, resp, rb, rsp)
+		nullInt64(stu), nullString(refTbl), nullInt64(refID), req, resp, rb, rsp)
 }
 
 func nullInt64(n sql.NullInt64) any {
@@ -79,4 +84,11 @@ func nullInt64(n sql.NullInt64) any {
 		return nil
 	}
 	return n.Int64
+}
+
+func nullString(n sql.NullString) any {
+	if !n.Valid {
+		return nil
+	}
+	return n.String
 }

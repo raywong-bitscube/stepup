@@ -76,7 +76,7 @@ func (h *SlideDecksHandler) Get(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		payload := map[string]any{
 			"id":             f.ID,
 			"section_id":     f.SectionID,
 			"title":          f.Title,
@@ -84,15 +84,20 @@ func (h *SlideDecksHandler) Get(w http.ResponseWriter, r *http.Request) {
 			"schema_version": f.SchemaVersion,
 			"updated_at":     RFC3339Time(f.UpdatedAt),
 			"content":        json.RawMessage(f.Content),
-		})
+		}
+		if f.GenerationPrompt != nil {
+			payload["generation_prompt"] = *f.GenerationPrompt
+		}
+		_ = json.NewEncoder(w).Encode(payload)
 	}
 }
 
 type createSlideDeckRequest struct {
-	Title         string          `json:"title"`
-	Content       json.RawMessage `json:"content"`
-	DeckStatus    string          `json:"deck_status"`
-	SchemaVersion int             `json:"schema_version"`
+	Title              string          `json:"title"`
+	Content            json.RawMessage `json:"content"`
+	DeckStatus         string          `json:"deck_status"`
+	SchemaVersion      int             `json:"schema_version"`
+	GenerationPrompt   *string         `json:"generation_prompt"`
 }
 
 func (h *SlideDecksHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -112,10 +117,11 @@ func (h *SlideDecksHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	nid, err := h.svc.Create(r.Context(), sid, sess.AdminID, adminslidedecks.CreateInput{
-		Title:         req.Title,
-		Content:       req.Content,
-		DeckStatus:    req.DeckStatus,
-		SchemaVersion: req.SchemaVersion,
+		Title:              req.Title,
+		Content:            req.Content,
+		DeckStatus:         req.DeckStatus,
+		SchemaVersion:      req.SchemaVersion,
+		GenerationPrompt:   req.GenerationPrompt,
 	})
 	switch {
 	case errors.Is(err, adminslidedecks.ErrNoDatabase):
@@ -145,9 +151,10 @@ func (h *SlideDecksHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 type patchSlideDeckRequest struct {
-	Title      *string          `json:"title"`
-	Content    *json.RawMessage `json:"content"`
-	DeckStatus *string          `json:"deck_status"`
+	Title              *string          `json:"title"`
+	Content            *json.RawMessage `json:"content"`
+	DeckStatus         *string          `json:"deck_status"`
+	GenerationPrompt   *string          `json:"generation_prompt"`
 }
 
 func (h *SlideDecksHandler) Patch(w http.ResponseWriter, r *http.Request) {
@@ -162,9 +169,10 @@ func (h *SlideDecksHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := adminslidedecks.PatchInput{
-		Title:      req.Title,
-		Content:    req.Content,
-		DeckStatus: req.DeckStatus,
+		Title:              req.Title,
+		Content:            req.Content,
+		DeckStatus:         req.DeckStatus,
+		GenerationPrompt:   req.GenerationPrompt,
 	}
 	sess, ok2 := middleware.AdminSession(r.Context())
 	if !ok2 || sess.AdminID == 0 {

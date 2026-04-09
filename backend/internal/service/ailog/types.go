@@ -19,8 +19,9 @@ type InsertRow struct {
 	EndpointHost     string
 	ChatModel        string
 	FallbackToMock   bool
-	PaperID          *uint64
 	StudentID        *uint64
+	RefTable         *string
+	RefID            *uint64
 	RequestMetaJSON  json.RawMessage
 	ResponseMetaJSON json.RawMessage
 	RequestBody      string
@@ -43,8 +44,9 @@ type ListEntry struct {
 	EndpointHost   string          `json:"endpoint_host"`
 	ChatModel      string          `json:"chat_model"`
 	FallbackToMock bool            `json:"fallback_to_mock"`
-	PaperID        *uint64         `json:"paper_id"`
 	StudentID      *uint64         `json:"student_id"`
+	RefTable       *string         `json:"ref_table"`
+	RefID          *uint64         `json:"ref_id"`
 	RequestMeta    json.RawMessage `json:"request_meta"`
 	ResponseMeta   json.RawMessage `json:"response_meta"`
 	RequestBody    string          `json:"request_body"`

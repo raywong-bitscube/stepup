@@ -18,7 +18,7 @@ body {
   line-height: 1.45;
 }
 a { color: var(--primary); }
-.wrap { max-width: 1400px; margin: 0 auto; padding: 16px; }
+.wrap { width: 100%; max-width: none; margin: 0 auto; padding: 16px; box-sizing: border-box; }
 .card {
   background: var(--card);
   border: 1px solid var(--border);

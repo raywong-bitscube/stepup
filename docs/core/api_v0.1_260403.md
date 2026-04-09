@@ -13,7 +13,7 @@
 - `admin` 和 `student` token 不通用。
 - **试卷 HTTP 分析**（环境变量 `ANALYSIS_ADAPTER=http`）：在 **`DB_DSN` 已配置** 时，分析请求发往 MySQL **`ai_model`** 中 **当前激活** 模型（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若无激活模型则用 **`AI_ENDPOINT`**；再无可则用 mock。`paper_analysis` 中保存的模型信息为 `name` + `url`，不含密钥。
 - **审计**：同上，仅在 **`DB_DSN` 已配置** 时向 **`audit_log`** 追加记录；`GET /api/v1/admin/audit-logs` 为只读查询。快照字段不落密码 / `app_secret` 正文；AI 模型 PATCH 若包含 `app_secret` 更新，动作为 **`credential_change`**；改学生密码为 **`password_change`**。
-- **AI 调用轨迹**：在 **`DB_DSN` 已配置** 且已建 **`ai_call_log`** 表时，学生上传触发 **`paper_analyze`** 后写入一条调用记录（适配器类型、HTTP 状态、耗时、错误摘要、`endpoint` 主机、`chat` 模型 id、是否回退 mock、关联 `paper_id`/`student_id` 等）；**不落** API Key 与完整请求/响应正文。管理端 `GET /api/v1/admin/ai-call-logs` 支持筛选与分页；详见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md)。
+- **AI 调用轨迹**：在 **`DB_DSN` 已配置** 且已建 **`ai_call_log`** 表时，各 AI 入口（如 **`paper_analyze`**、幻灯片 **`slide_deck_generate_ai`**、作文提纲等）写入调用记录（适配器类型、HTTP 状态、耗时、错误摘要、`endpoint` 主机、`chat` 模型 id、是否回退 mock、可选 **`student_id`**、业务关联 **`ref_table` + `ref_id`** 等）；**不落** API Key 与完整请求/响应正文。管理端 `GET /api/v1/admin/ai-call-logs` 支持筛选与分页；详见 [`ai_model_log_v0.1_260403.md`](./ai_model_log_v0.1_260403.md)。
 
 ---
 
@@ -276,16 +276,18 @@ Header: `Authorization: Bearer <admin_token>`
 
 #### 章节幻灯片 Slide Deck（管理端）
 
-表 **`slide_deck`**：挂载 **`section_id`**；`deck_status` 为 `draft` | `active` | `archived`；同一节仅一条 `active`（将某套设为 `active` 时，其余同节 `active` 自动改为 `archived`）。`content` 为 JSON，须含 `schemaVersion: 1` 与 `slides` 数组（结构见 **`docs/core/slide_deck_design_v0.1_260403.md`**）。
+表 **`slide_deck`**：挂载 **`section_id`**；`deck_status` 为 `draft` | `active` | `archived`；同一节仅一条 `active`（将某套设为 `active` 时，其余同节 `active` 自动改为 `archived`）。`content` 为 JSON，须含 `schemaVersion: 1` 与 `slides` 数组（结构见 **`docs/core/slide_deck_design_v0.1_260403.md`**）。可选列 **`generation_prompt`**：最近一次 AI 生成使用的完整提示词（由 **`generate-ai`** 写入）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 节须存在。返回 `items[]`：`id`、`section_id`、`title`、`deck_status`、`schema_version`、`updated_at`（**不含**正文 `content`）。 |
-| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 体：`title`（必填）、`content`（必填，合法 JSON 对象）、`deck_status`（可选，默认 `draft`）、`schema_version`（可选，默认 1）。成功：`201` + `{ "id", "status":"ok" }`。 |
-| `GET` | `/api/v1/admin/slide-decks/{deckId}` | 单条含完整 `content`。 |
-| `PATCH` | `/api/v1/admin/slide-decks/{deckId}` | 可选：`title`、`content`、`deck_status`（至少一项）。设为 `active` 时同节其他 `active` 归档。 |
+| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 体：`title`（必填）、`content`（必填，合法 JSON 对象）、`deck_status`（可选，默认 `draft`）、`schema_version`（可选，默认 1）、`generation_prompt`（可选）。成功：`201` + `{ "id", "status":"ok" }`。 |
+| `GET` | `/api/v1/admin/sections/{sectionId}/slide-generate/default-prompt` | 节须存在。返回 `{ "prompt": "<默认提示词>" }`，供管理端「生成幻灯片」弹窗预填（可再经本地缓存覆盖）。 |
+| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks/generate-ai` | 体：`{ "prompt": "..." }`。调用当前环境配置的 chat 模型生成合法 slide deck JSON，校验后以 **`draft`** 入库并写入 **`generation_prompt`**；同时追加 **`ai_call_log`**（`action`：`slide_deck_generate_ai`，`ref_table`：`section`，`ref_id`：节 id）。成功：`201` + `{ "id", "status":"ok" }`；模型返回非合法 JSON 时 `400` `AI_SLIDE_JSON_INVALID`。 |
+| `GET` | `/api/v1/admin/slide-decks/{deckId}` | 单条含完整 `content`；若存在则含 **`generation_prompt`**。 |
+| `PATCH` | `/api/v1/admin/slide-decks/{deckId}` | 可选：`title`、`content`、`deck_status`、`generation_prompt`（至少一项）。设为 `active` 时同节其他 `active` 归档。 |
 
-均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；需已执行 **`db/migrations/2026-04-10#01_slide_deck.sql`**（或基线 schema 已含 `slide_deck`）。
+均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；需已执行 **`db/migrations/2026-04-10#01_slide_deck.sql`** 及后续幻灯片/AI 日志相关迁移（或当前基线 schema 已含 **`slide_deck.generation_prompt`** 与 **`ai_call_log.ref_table`/`ref_id`**）。
 
 ### 3.8 阶段（管理端）
 
