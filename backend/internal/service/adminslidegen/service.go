@@ -269,6 +269,124 @@ func isJSONUnicodeHex4(h []byte) bool {
 	return true
 }
 
+// fixRawNewlinesTabsInJSONStrings escapes raw control chars inside JSON string literals (RFC 8259).
+// LLMs often emit literal newlines inside "content" values, causing Expecting ',' delimiter.
+func fixRawNewlinesTabsInJSONStrings(s string) string {
+	bs := []byte(s)
+	out := make([]byte, 0, len(bs)+16)
+	inString := false
+	escape := false
+	for i := 0; i < len(bs); i++ {
+		ch := bs[i]
+		if escape {
+			out = append(out, ch)
+			escape = false
+			continue
+		}
+		if ch == '\\' {
+			out = append(out, ch)
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			out = append(out, ch)
+			continue
+		}
+		if inString {
+			switch ch {
+			case '\n':
+				out = append(out, '\\', 'n')
+				continue
+			case '\r':
+				out = append(out, '\\', 'r')
+				continue
+			case '\t':
+				out = append(out, '\\', 't')
+				continue
+			}
+		}
+		out = append(out, ch)
+	}
+	return string(out)
+}
+
+// fixInteriorASCIIQuotesInJSONStrings escapes ASCII " inside JSON string literals when they
+// are clearly Markdown wrappers (e.g. "**标题**") rather than the closing quote of the value.
+func fixInteriorASCIIQuotesInJSONStrings(s string) string {
+	bs := []byte(s)
+	out := make([]byte, 0, len(bs)+8)
+	inString := false
+	escape := false
+	for i := 0; i < len(bs); i++ {
+		ch := bs[i]
+		if escape {
+			out = append(out, ch)
+			escape = false
+			continue
+		}
+		if ch == '\\' {
+			out = append(out, ch)
+			escape = true
+			continue
+		}
+		if ch != '"' {
+			if inString {
+				switch ch {
+				case '\n':
+					out = append(out, '\\', 'n')
+					continue
+				case '\r':
+					out = append(out, '\\', 'r')
+					continue
+				case '\t':
+					out = append(out, '\\', 't')
+					continue
+				}
+			}
+			out = append(out, ch)
+			continue
+		}
+		if !inString {
+			inString = true
+			out = append(out, ch)
+			continue
+		}
+		j := i + 1
+		for j < len(bs) && (bs[j] == ' ' || bs[j] == '\t' || bs[j] == '\n' || bs[j] == '\r') {
+			j++
+		}
+		if j >= len(bs) || bs[j] == ',' || bs[j] == '}' || bs[j] == ']' {
+			inString = false
+			out = append(out, ch)
+			continue
+		}
+		out = append(out, '\\', '"')
+	}
+	return string(out)
+}
+
+func slideJSONParseVariants(c string) []string {
+	seen := make(map[string]struct{})
+	order := make([]string, 0, 12)
+	add := func(v string) {
+		if _, ok := seen[v]; ok {
+			return
+		}
+		seen[v] = struct{}{}
+		order = append(order, v)
+	}
+	nl := fixRawNewlinesTabsInJSONStrings(c)
+	bs := fixLLMJSONBackslashes(c)
+	bsAfterNl := fixLLMJSONBackslashes(nl)
+	nlAfterBs := fixRawNewlinesTabsInJSONStrings(bs)
+	for _, v := range []string{c, nl, bs, bsAfterNl, nlAfterBs} {
+		add(v)
+		add(fixInteriorASCIIQuotesInJSONStrings(v))
+	}
+	return order
+}
+
 // fixLLMJSONBackslashes fixes invalid JSON \\ escapes from model output (e.g. LaTeX \\sin, \\().
 // Standard JSON only allows \" \\ \/ \\b \\f \\n \\r \\t \\uXXXX; we omit b/f so \\frac and \\begin
 // are not mis-read as form feed / backspace (same as docs/scripts/phys_textbook/phys_tb_slide.py).
@@ -341,11 +459,7 @@ func normalizeSlideJSON(raw string) (json.RawMessage, error) {
 	}
 	var lastErr error
 	for _, c := range cands {
-		variants := []string{c}
-		if fixed := fixLLMJSONBackslashes(c); fixed != c {
-			variants = append(variants, fixed)
-		}
-		for _, variant := range variants {
+		for _, variant := range slideJSONParseVariants(c) {
 			b := []byte(variant)
 			if err := adminslidedecks.ValidateSlideJSON(b); err != nil {
 				lastErr = err

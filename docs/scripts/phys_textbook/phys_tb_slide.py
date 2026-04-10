@@ -462,6 +462,113 @@ def extract_first_json_object(s: str) -> tuple[str, bool]:
     return "", False
 
 
+def fix_raw_newlines_tabs_in_json_strings(s: str) -> str:
+    """
+    RFC 8259：字符串值内不能含未转义的控制字符（含真实换行、制表）。
+    模型常在长 content 里直接按回车，json.loads 常报 Expecting ',' delimiter。
+    仅在「双引号字符串」上下文中把 \\n \\r \\t 写成转义序列（尊重已存在的 \\" \\\\\\）。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    in_string = False
+    escape = False
+    while i < n:
+        ch = s[i]
+        if escape:
+            out.append(ch)
+            escape = False
+            i += 1
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escape = True
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out.append(ch)
+            i += 1
+            continue
+        if in_string:
+            if ch == "\n":
+                out.append("\\n")
+                i += 1
+                continue
+            if ch == "\r":
+                out.append("\\r")
+                i += 1
+                continue
+            if ch == "\t":
+                out.append("\\t")
+                i += 1
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def fix_interior_ascii_double_quotes_in_json_strings(s: str) -> str:
+    """
+    模型常在 Markdown 式正文里用 ASCII 双引号包裹短语（如 " **标题** "），这在 JSON
+    字符串内未写成 \\" 会提前结束字符串，导致 Expecting ',' delimiter。
+
+    在「双引号字符串」内：若遇未转义的 \\"，且其后第一个非空白字符不是 , } ]，则视为
+    正文内的引号，输出为 \\"（不切换「在串内/串外」状态）。否则视为字符串结束符。
+    已转义的 \\" 仍由 escape 状态处理，不会进入此分支。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    in_string = False
+    escape = False
+    while i < n:
+        ch = s[i]
+        if escape:
+            out.append(ch)
+            escape = False
+            i += 1
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escape = True
+            i += 1
+            continue
+        if ch != '"':
+            if in_string:
+                if ch == "\n":
+                    out.append("\\n")
+                    i += 1
+                    continue
+                if ch == "\r":
+                    out.append("\\r")
+                    i += 1
+                    continue
+                if ch == "\t":
+                    out.append("\\t")
+                    i += 1
+                    continue
+            out.append(ch)
+            i += 1
+            continue
+        # ch == '"'
+        if not in_string:
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        j = i + 1
+        while j < n and s[j] in " \t\n\r":
+            j += 1
+        if j >= n or s[j] in ",}]":
+            in_string = False
+            out.append(ch)
+        else:
+            out.append('\\"')
+        i += 1
+    return "".join(out)
+
+
 def fix_llm_json_backslashes(s: str) -> str:
     """
     大模型常在幻灯片 JSON 字符串里写 LaTeX（\\sin、\\(、\\frac 等）。标准 json.loads
@@ -557,10 +664,20 @@ def normalize_slide_json(raw: str) -> str:
 
     last_err: Exception | None = None
     for c in cands:
-        variants: list[str] = [c]
-        fixed = fix_llm_json_backslashes(c)
-        if fixed != c:
-            variants.append(fixed)
+        base = (
+            c,
+            fix_raw_newlines_tabs_in_json_strings(c),
+            fix_llm_json_backslashes(c),
+            fix_llm_json_backslashes(fix_raw_newlines_tabs_in_json_strings(c)),
+            fix_raw_newlines_tabs_in_json_strings(fix_llm_json_backslashes(c)),
+        )
+        variants = dict.fromkeys(
+            [
+                v
+                for b in base
+                for v in (b, fix_interior_ascii_double_quotes_in_json_strings(b))
+            ]
+        )
         for raw in variants:
             try:
                 m = json.loads(raw)
@@ -577,7 +694,9 @@ def normalize_slide_json(raw: str) -> str:
                 continue
             out = json.dumps(m, ensure_ascii=False, separators=(",", ":"))
             if raw != c:
-                log.info("幻灯片 JSON 经反斜杠修复后解析成功（模型原文含非法 JSON 转义，如 LaTeX）")
+                log.info(
+                    "幻灯片 JSON 经预处理解析成功（换行/制表、LaTeX 反斜杠、串内 ASCII 引号等）"
+                )
             return out
     if last_err:
         raise ValueError(f"no valid deck json: {last_err}") from last_err
