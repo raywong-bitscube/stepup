@@ -1,3 +1,4 @@
 # Pip deps for seed_gdcd_compulsory1_textbook_qwen.py (under phys_textbook/)
+# 种子脚本在模型未给 full_title 时会按库内粤教版种子格式补全：第X章/第X节 + 短标题
 psycopg2-binary>=2.9.9
 requests>=2.31.0

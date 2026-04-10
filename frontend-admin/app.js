@@ -1268,11 +1268,11 @@
           `<tr><td>${s.id}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(
             s.description || '—'
           )}</td>${tdAdminListStatus10(s.status)}
-        <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-sid="${s.id}">编辑</button>${
+        <td class="td-actions"><span class="td-actions-inner"><button type="button" class="btn small" data-sid="${s.id}">编辑</button>${
           (s.textbook_count || 0) > 0
             ? `<button type="button" class="btn small secondary" data-catalog-sid="${s.id}">目录</button>`
             : ''
-        }</td></tr>`
+        }</span></td></tr>`
       )
       .join('');
     return `
@@ -1375,10 +1375,10 @@
           )}</td><td>${escapeHtml(t.category)}</td><td>${escapeHtml(
             (t.remarks || '').trim() || '—'
           )}</td>${tdAdminListStatus10(t.status)}
-        <td class="row" style="gap:6px;flex-wrap:wrap">
+        <td class="td-actions"><span class="td-actions-inner">
           <button type="button" class="btn small" data-edit-tb="${t.id}">编辑</button>
           <button type="button" class="btn small secondary" data-chapters-tb="${t.id}">章节</button>
-        </td></tr>`
+        </span></td></tr>`
       )
       .join('');
     return `
@@ -1485,10 +1485,10 @@
           `<tr><td>${c.id}</td><td>${c.number}</td><td>${escapeHtml(c.title)}</td><td>${escapeHtml(
             (c.full_title || '').trim() || '—'
           )}</td>${tdAdminListStatus10(c.status)}
-        <td class="row" style="gap:6px;flex-wrap:wrap">
+        <td class="td-actions"><span class="td-actions-inner">
           <button type="button" class="btn small" data-edit-ch="${c.id}">编辑</button>
           <button type="button" class="btn small secondary" data-sects-ch="${c.id}">小节</button>
-        </td></tr>`
+        </span></td></tr>`
       )
       .join('');
     return `
@@ -1606,7 +1606,7 @@
           `<tr><td>${s.id}</td><td>${s.number}</td><td>${escapeHtml(s.title)}</td><td>${escapeHtml(
             (s.full_title || '').trim() || '—'
           )}</td>${tdSlideDeckSummary(s.slide_deck_count)}${tdAdminListStatus10(s.status)}
-        <td class="row" style="gap:6px;flex-wrap:wrap"><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button><button type="button" class="btn small secondary" data-slide-gen-se="${s.id}">生成幻灯片</button><button type="button" class="btn small secondary" data-slide-preview-se="${s.id}">试播</button></td></tr>`
+        <td class="td-actions"><span class="td-actions-inner"><button type="button" class="btn small" data-edit-se="${s.id}">编辑</button><button type="button" class="btn small secondary" data-slide-gen-se="${s.id}">生成幻灯片</button><button type="button" class="btn small secondary" data-slide-preview-se="${s.id}">试播</button></span></td></tr>`
       )
       .join('');
     return `

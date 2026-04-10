@@ -104,6 +104,17 @@ table.data th, table.data td {
   text-align: left;
   vertical-align: top;
 }
+/* 操作列：勿用 .row（含 margin-top，且 flex 直接作用在 td 上易产生双边线感与行高错位） */
+table.data td.td-actions {
+  vertical-align: middle;
+}
+table.data .td-actions-inner {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
 table.data th { background: #f8fafc; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; background: #e2e8f0; }
 .badge.on { background: #dcfce7; color: #14532d; }

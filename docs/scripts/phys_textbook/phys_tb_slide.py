@@ -21,6 +21,10 @@
   环境变量 EXECUTE_DB=0|1 可覆盖命令行默认值。
 
 可选: LOG_LEVEL, --quiet, --timeout, --prompt-file, --limit
+
+每次模型调用成功后，会向 **stdout** 打印两块内容：① 最终 POST 的 JSON 请求体；
+② 助手正文（去掉 ``` 围栏与 BOM；若能解析为 JSON 则缩进排版），不含 API 外层的 choices/id 等字段。
+HTTP 失败时也会打印请求体与错误响应原文。
 """
 
 from __future__ import annotations
@@ -128,6 +132,67 @@ def trunc_title_runes(s: str, max_runes: int = 200) -> str:
     if len(chars) <= max_runes:
         return s
     return "".join(chars[:max_runes])
+
+
+def trim_utf8_bom(s: str) -> str:
+    s = s.strip()
+    if s.startswith("\ufeff"):
+        s = s[1:]
+    return s
+
+
+def strip_code_fence(s: str) -> str:
+    s = s.strip()
+    if not s.startswith("```"):
+        return s
+    rest = s[3:]
+    rest = rest.lstrip()
+    if rest.lower().startswith("json"):
+        rest = rest[4:].lstrip()
+    idx = rest.rfind("```")
+    if idx >= 0:
+        rest = rest[:idx]
+    return rest.strip()
+
+
+def strip_fence_from_anywhere(s: str) -> str:
+    s = s.strip()
+    idx = s.find("```")
+    if idx < 0:
+        return s
+    rest = s[idx + 3 :].strip()
+    if len(rest) >= 4 and rest[:4].lower() == "json":
+        rest = rest[4:].strip()
+    close_idx = rest.find("```")
+    if close_idx >= 0:
+        rest = rest[:close_idx]
+    return rest.strip()
+
+
+def meaningful_assistant_text_for_log(raw: str) -> str:
+    """
+    控制台打印用：去掉 ``` / ```json 围栏与 BOM；若内容为合法 JSON 则格式化缩进，
+    不打印 OpenAI 外层的 id/object/choices 等包装。
+    """
+    s = trim_utf8_bom((raw or "").strip())
+    if not s:
+        return ""
+    s = strip_fence_from_anywhere(s)
+    s = strip_code_fence(s).strip()
+    try:
+        obj = json.loads(s)
+        return json.dumps(obj, ensure_ascii=False, indent=2)
+    except json.JSONDecodeError:
+        return s
+
+
+def print_final_ai_exchange(request_payload: dict[str, Any], assistant_content: str) -> None:
+    """向 stdout 打印最终请求体与去包装后的助手正文（不经日志格式裁剪）。"""
+    req_str = json.dumps(request_payload, ensure_ascii=False, indent=2)
+    resp_str = meaningful_assistant_text_for_log(assistant_content)
+    bar = "=" * 76
+    print(f"\n{bar}\n[phys_tb_slide] 发给 AI 的 HTTP 请求体 JSON（最终）\n{bar}\n{req_str}\n")
+    print(f"{bar}\n[phys_tb_slide] 模型返回正文（已去掉代码围栏等；可解析则为格式化 JSON）\n{bar}\n{resp_str}\n{bar}\n", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +307,13 @@ def chat_completions_user_only(
         trace["error_message"] = f"HTTP {r.status_code}"
         trace["response_body"] = trunc_body(r.text)
         log.error("AI 错误响应: %s", r.text[:1200])
+        bar = "=" * 76
+        print(
+            f"\n{bar}\n[phys_tb_slide] 发给 AI 的 HTTP 请求体 JSON（最终）\n{bar}\n"
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}\n"
+            f"{bar}\n[phys_tb_slide] HTTP 错误响应原文（{r.status_code}）\n{bar}\n{r.text}\n{bar}\n",
+            flush=True,
+        )
         raise RuntimeError(f"chat/completions HTTP {r.status_code}: {r.text[:500]}")
 
     data = r.json()
@@ -271,6 +343,7 @@ def chat_completions_user_only(
         trace["error_message"] = "empty assistant content"
         raise RuntimeError("模型返回空 content")
 
+    print_final_ai_exchange(payload, content)
     log.info("assistant 正文预览:\n%s", clip_text(content, head=800, tail=400))
     trace["result_status"] = "success"
     return content, trace
@@ -351,41 +424,6 @@ def default_prompt(c: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # slide JSON 规范化（对齐 adminslidegen.normalizeSlideJSON + ValidateSlideJSON）
 # ---------------------------------------------------------------------------
-
-
-def trim_utf8_bom(s: str) -> str:
-    s = s.strip()
-    if s.startswith("\ufeff"):
-        s = s[1:]
-    return s
-
-
-def strip_code_fence(s: str) -> str:
-    s = s.strip()
-    if not s.startswith("```"):
-        return s
-    rest = s[3:]
-    rest = rest.lstrip()
-    if rest.lower().startswith("json"):
-        rest = rest[4:].lstrip()
-    idx = rest.rfind("```")
-    if idx >= 0:
-        rest = rest[:idx]
-    return rest.strip()
-
-
-def strip_fence_from_anywhere(s: str) -> str:
-    s = s.strip()
-    idx = s.find("```")
-    if idx < 0:
-        return s
-    rest = s[idx + 3 :].strip()
-    if len(rest) >= 4 and rest[:4].lower() == "json":
-        rest = rest[4:].strip()
-    close_idx = rest.find("```")
-    if close_idx >= 0:
-        rest = rest[:close_idx]
-    return rest.strip()
 
 
 def extract_first_json_object(s: str) -> tuple[str, bool]:

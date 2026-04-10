@@ -384,6 +384,57 @@ def trunc(s: str | None, n: int) -> str | None:
     return s[: n - 1] + "…"
 
 
+def number_to_chinese_ordinal(n: int) -> str:
+    """
+    将正整数转为汉字数字，用于「第一章」「第一节」中与种子 SQL 一致的写法（1–99）。
+    大于 99 时退回阿拉伯数字字符串。
+    """
+    if n <= 0:
+        return str(n)
+    if n > 99:
+        return str(n)
+    digits = "零一二三四五六七八九"
+    if n < 10:
+        return digits[n]
+    if n == 10:
+        return "十"
+    if n < 20:
+        return "十" + (digits[n % 10] if n > 10 else "")
+    tens, ones = divmod(n, 10)
+    head = digits[tens] + "十"
+    if ones:
+        head += digits[ones]
+    return head
+
+
+def resolve_chapter_full_title(cnum: int, ctitle: str, raw: Any) -> str:
+    """
+    与 db/seed 中 chapter 格式一致：full_title 优先模型返回值，否则「第{n}章 {title}」。
+    """
+    ft = trunc(raw, FULL_TITLE_MAX) if raw is not None else None
+    if ft:
+        return ft
+    cn = number_to_chinese_ordinal(cnum)
+    base = f"第{cn}章 {ctitle}".strip()
+    if len(base) > FULL_TITLE_MAX:
+        return base[: FULL_TITLE_MAX - 1] + "…"
+    return base
+
+
+def resolve_section_full_title(snum: int, stitle: str, raw: Any) -> str:
+    """
+    与 db/seed 中 section 格式一致：否则「第{n}节 {title}」。
+    """
+    ft = trunc(raw, FULL_TITLE_MAX) if raw is not None else None
+    if ft:
+        return ft
+    cn = number_to_chinese_ordinal(snum)
+    base = f"第{cn}节 {stitle}".strip()
+    if len(base) > FULL_TITLE_MAX:
+        return base[: FULL_TITLE_MAX - 1] + "…"
+    return base
+
+
 # ---------------------------------------------------------------------------
 # 主流程
 # ---------------------------------------------------------------------------
@@ -397,12 +448,12 @@ def build_prompt(subject_display: str, textbook_label: str, edition_note: str) -
 
 严格要求：
 1. 结构应接近国内主流新课标教材（如人教版等）中与**上述教材册次、知识进度**相匹配的常见编排；若有多套主流版本差异，以使用面最广的一种为准，并在小节标题中可略体现知识点名称。
-2. 每章包含字段：number（整数，从 1 起全书连续）、title（短标题）、full_title（可选，更长全称，没有则 null）。
-3. 每章下 sections 数组：每节 number 从 1 起在本章内连续；title、full_title 同理。
+2. 每章包含字段：number（整数，从 1 起全书连续）、title（短标题）、full_title（建议填写如「第一章 运动的描述」，与 title 呼应；若省略脚本会按此格式自动补全）。
+3. 每章下 sections 数组：每节 number 从 1 起在本章内连续；full_title 建议如「第一节 xxx」；若省略脚本会补全。
 4. **只输出一个 JSON 对象**，不要 markdown 代码围栏，不要任何前言或结语。
 
 JSON 形状示例（仅示意结构）：
-{{"chapters":[{{"number":1,"title":"……","full_title":null,"sections":[{{"number":1,"title":"……","full_title":null}}]}}]}}
+{{"chapters":[{{"number":1,"title":"……","full_title":"第一章 ……","sections":[{{"number":1,"title":"……","full_title":"第一节 ……"}}]}}]}}
 """
 
 
@@ -548,7 +599,7 @@ def insert_chapters_sections(
     for idx, ch in enumerate(chapters, start=1):
         cnum = int(ch.get("number") or 0)
         ctitle = trunc(ch.get("title"), TITLE_MAX) or f"第{cnum}章"
-        cfull = trunc(ch.get("full_title"), FULL_TITLE_MAX)
+        cfull = resolve_chapter_full_title(cnum, ctitle, ch.get("full_title"))
         ch_params = (textbook_id, cnum, ctitle, cfull, created_by, created_by)
 
         if not execute_db:
@@ -586,7 +637,7 @@ def insert_chapters_sections(
                 continue
             snum = int(sec.get("number") or 0)
             stitle = trunc(sec.get("title"), TITLE_MAX) or f"第{snum}节"
-            sfull = trunc(sec.get("full_title"), FULL_TITLE_MAX)
+            sfull = resolve_section_full_title(snum, stitle, sec.get("full_title"))
             sec_params = (chapter_id, snum, stitle, sfull, created_by, created_by)
             if not execute_db:
                 print_sql_block(
