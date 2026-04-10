@@ -1,0 +1,3 @@
+# Pip deps for seed_gdcd_compulsory1_textbook_qwen.py (under phys_textbook/)
+psycopg2-binary>=2.9.9
+requests>=2.31.0

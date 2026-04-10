@@ -2,3 +2,7 @@
 .gopath/
 .gomodcache/
 *.log
+
+# Python
+__pycache__/
+*.py[cod]
