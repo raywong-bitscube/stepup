@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -39,6 +40,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, adminauth.ErrUnauthorized):
 			writeJSON(w, http.StatusUnauthorized, map[string]any{"code": "UNAUTHORIZED"})
 		default:
+			log.Printf("admin auth login failed: %v", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 		}
 		return
