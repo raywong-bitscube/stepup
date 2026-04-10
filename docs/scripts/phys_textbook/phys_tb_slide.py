@@ -179,11 +179,13 @@ def meaningful_assistant_text_for_log(raw: str) -> str:
         return ""
     s = strip_fence_from_anywhere(s)
     s = strip_code_fence(s).strip()
-    try:
-        obj = json.loads(s)
-        return json.dumps(obj, ensure_ascii=False, indent=2)
-    except json.JSONDecodeError:
-        return s
+    for variant in dict.fromkeys((s, fix_llm_json_backslashes(s))):
+        try:
+            obj = json.loads(variant)
+            return json.dumps(obj, ensure_ascii=False, indent=2)
+        except json.JSONDecodeError:
+            continue
+    return s
 
 
 def print_final_ai_exchange(request_payload: dict[str, Any], assistant_content: str) -> None:
@@ -460,6 +462,55 @@ def extract_first_json_object(s: str) -> tuple[str, bool]:
     return "", False
 
 
+def fix_llm_json_backslashes(s: str) -> str:
+    """
+    大模型常在幻灯片 JSON 字符串里写 LaTeX（\\sin、\\(、\\frac 等）。标准 json.loads
+    仅允许 \\\" \\\\ \\/ \\b \\f \\n \\r \\t \\uXXXX；遇 \\(、\\s 等会报 Invalid \\escape。
+
+    将「非合法双字符转义」的 \\ 改为 \\\\，使后续为字面反斜杠。
+
+    另：不在此将 \\f、\\b 视为合法转义（幻灯片几乎不用 formfeed/backspace），避免把
+    \\frac、\\begin 等错误拆成 \\f + rac。仅保留 \\n \\r \\t 与 \\uXXXX。
+    """
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        if s[i] == "\\" and i + 1 < n:
+            c = s[i + 1]
+            if c == "\\":
+                out.append("\\\\")
+                i += 2
+                continue
+            if c == '"':
+                out.append('\\"')
+                i += 2
+                continue
+            if c == "/":
+                out.append("\\/")
+                i += 2
+                continue
+            if c in "nrt":
+                out.append(s[i : i + 2])
+                i += 2
+                continue
+            if c == "u" and i + 6 <= n:
+                hx = s[i + 2 : i + 6]
+                if len(hx) == 4 and all(
+                    ch in "0123456789abcdefABCDEF" for ch in hx
+                ):
+                    out.append(s[i : i + 6])
+                    i += 6
+                    continue
+            out.append("\\\\")
+            out.append(c)
+            i += 2
+            continue
+        out.append(s[i])
+        i += 1
+    return "".join(out)
+
+
 def validate_slide_json_obj(root: dict[str, Any]) -> None:
     sv = root.get("schemaVersion")
     if sv is None:
@@ -506,21 +557,28 @@ def normalize_slide_json(raw: str) -> str:
 
     last_err: Exception | None = None
     for c in cands:
-        try:
-            m = json.loads(c)
-        except json.JSONDecodeError as e:
-            last_err = e
-            continue
-        if not isinstance(m, dict):
-            last_err = ValueError("root not object")
-            continue
-        try:
-            validate_slide_json_obj(m)
-        except ValueError as e:
-            last_err = e
-            continue
-        out = json.dumps(m, ensure_ascii=False, separators=(",", ":"))
-        return out
+        variants: list[str] = [c]
+        fixed = fix_llm_json_backslashes(c)
+        if fixed != c:
+            variants.append(fixed)
+        for raw in variants:
+            try:
+                m = json.loads(raw)
+            except json.JSONDecodeError as e:
+                last_err = e
+                continue
+            if not isinstance(m, dict):
+                last_err = ValueError("root not object")
+                continue
+            try:
+                validate_slide_json_obj(m)
+            except ValueError as e:
+                last_err = e
+                continue
+            out = json.dumps(m, ensure_ascii=False, separators=(",", ":"))
+            if raw != c:
+                log.info("幻灯片 JSON 经反斜杠修复后解析成功（模型原文含非法 JSON 转义，如 LaTeX）")
+            return out
     if last_err:
         raise ValueError(f"no valid deck json: {last_err}") from last_err
     raise ValueError("no valid deck json found in model output")

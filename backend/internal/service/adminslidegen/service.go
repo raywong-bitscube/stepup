@@ -257,6 +257,60 @@ func mockDeckJSON(c *SectionContext) json.RawMessage {
 	return json.RawMessage(raw)
 }
 
+func isJSONUnicodeHex4(h []byte) bool {
+	if len(h) != 4 {
+		return false
+	}
+	for _, x := range h {
+		if !((x >= '0' && x <= '9') || (x >= 'a' && x <= 'f') || (x >= 'A' && x <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// fixLLMJSONBackslashes fixes invalid JSON \\ escapes from model output (e.g. LaTeX \\sin, \\().
+// Standard JSON only allows \" \\ \/ \\b \\f \\n \\r \\t \\uXXXX; we omit b/f so \\frac and \\begin
+// are not mis-read as form feed / backspace (same as docs/scripts/phys_textbook/phys_tb_slide.py).
+func fixLLMJSONBackslashes(s string) string {
+	bs := []byte(s)
+	out := make([]byte, 0, len(bs)+8)
+	i := 0
+	for i < len(bs) {
+		if bs[i] == '\\' && i+1 < len(bs) {
+			c := bs[i+1]
+			switch {
+			case c == '\\':
+				out = append(out, '\\', '\\')
+				i += 2
+				continue
+			case c == '"':
+				out = append(out, '\\', '"')
+				i += 2
+				continue
+			case c == '/':
+				out = append(out, '\\', '/')
+				i += 2
+				continue
+			case c == 'n' || c == 'r' || c == 't':
+				out = append(out, '\\', c)
+				i += 2
+				continue
+			case c == 'u' && i+6 <= len(bs) && isJSONUnicodeHex4(bs[i+2:i+6]):
+				out = append(out, bs[i:i+6]...)
+				i += 6
+				continue
+			}
+			out = append(out, '\\', '\\', c)
+			i += 2
+			continue
+		}
+		out = append(out, bs[i])
+		i++
+	}
+	return string(out)
+}
+
 func normalizeSlideJSON(raw string) (json.RawMessage, error) {
 	s := trimUTF8BOM(strings.TrimSpace(raw))
 	seen := map[string]struct{}{}
@@ -287,22 +341,28 @@ func normalizeSlideJSON(raw string) (json.RawMessage, error) {
 	}
 	var lastErr error
 	for _, c := range cands {
-		b := []byte(c)
-		if err := adminslidedecks.ValidateSlideJSON(b); err != nil {
-			lastErr = err
-			continue
+		variants := []string{c}
+		if fixed := fixLLMJSONBackslashes(c); fixed != c {
+			variants = append(variants, fixed)
 		}
-		var m map[string]interface{}
-		if err := json.Unmarshal(b, &m); err != nil {
-			lastErr = err
-			continue
+		for _, variant := range variants {
+			b := []byte(variant)
+			if err := adminslidedecks.ValidateSlideJSON(b); err != nil {
+				lastErr = err
+				continue
+			}
+			var m map[string]interface{}
+			if err := json.Unmarshal(b, &m); err != nil {
+				lastErr = err
+				continue
+			}
+			out, err := json.Marshal(m)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			return out, nil
 		}
-		out, err := json.Marshal(m)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return out, nil
 	}
 	if lastErr != nil {
 		return nil, lastErr
