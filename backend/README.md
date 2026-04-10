@@ -25,16 +25,17 @@ docker compose up -d --build
 
 `docker-compose` 默认 **`ANALYSIS_ADAPTER=http`**：导入 seed 后优先调用库内激活的 `ai_model`（含 DeepSeek）。若仅想用 **mock-ai** 协议、不配库内密钥，可在 `.env` 里把激活模型关掉或设 `AI_ENDPOINT=http://mock-ai:8090/analyze` 并保证解析不会命中带 `app_secret` 的模型（见环境变量说明）。
 
-Initialize schema and seed:
+Initialize schema (PostgreSQL baseline):
 
 ```bash
-docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/schema/mysql_schema_v0.1_260403.sql
-docker compose exec -T mysql mysql -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" < db/seed/dev_seed.sql
+docker compose exec -T postgres psql -U "${POSTGRES_USER:-stepup_user}" -d "${POSTGRES_DB:-stepup}" < db/schema/postgresql_schema_v0.1_260403.sql
 ```
 
-When `DB_DSN` is set, the process opens **one** shared `*sql.DB` connection pool; admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
+`db/seed/*.sql` 仍以 MySQL 语法为主；迁到 Postgres 后请用手写 `psql`/`COPY` 或待补充的 PG 种子，勿直接执行原 MySQL seed。
 
-**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表见 `db/schema/mysql_schema_v0.1_260403.sql` 与增量 `db/migrations/2026-04-04#05_ai_call_log_request_response_body.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
+When `DB_DSN` is set, the process opens **one** shared `*sqlx.DB` pool (PostgreSQL via pgx); admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
+
+**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表定义见 `db/schema/postgresql_schema_v0.1_260403.sql`（MySQL 历史见 `db/schema/mysql_schema_v0.1_260403.sql`）；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
 
 ## Environment Variables
 
@@ -45,13 +46,13 @@ Copy `backend/.env.example` and export values in your shell.
 - `APP_ENV` - `dev` by default
 - `HTTP_HOST` - `0.0.0.0` by default
 - `HTTP_PORT` - `8080` by default
-- `DB_DSN` - MySQL DSN (e.g. `user:pass@tcp(127.0.0.1:3306)/stepup?parseTime=true&loc=Local`); when unset, auth and papers stay in-memory
+- `DB_DSN` - PostgreSQL URL for pgx (e.g. `postgres://user:pass@127.0.0.1:5432/stepup?sslmode=disable`); when unset, auth and papers stay in-memory
 - `CORS_ALLOWED_ORIGINS` - 逗号分隔 Origin；可含 `*`（回显 Origin，见上文，勿滥用）
 - `ANALYSIS_ADAPTER` - `mock` (default) or `http`
 - `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
 - `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls (default **180**; vision / slow networks may need more)
 
-**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用 MySQL **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，表字段 **`model`** 作为 JSON **`model`** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
+**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用数据库 **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，表字段 **`model`** 作为 JSON **`model`** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
 
 ## Current Scope
 

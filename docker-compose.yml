@@ -1,21 +1,20 @@
 version: "3.9"
 
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: stepup-mysql
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: stepup-postgres
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-stepup}
-      MYSQL_USER: ${MYSQL_USER:-stepup_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-stepup_pass}
+      POSTGRES_USER: ${POSTGRES_USER:-stepup_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stepup_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-stepup}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - stepup_mysql_data:/var/lib/mysql
+      - stepup_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u${MYSQL_USER:-stepup_user}", "-p${MYSQL_PASSWORD:-stepup_pass}"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -33,7 +32,7 @@ services:
       ANALYSIS_ADAPTER: ${ANALYSIS_ADAPTER:-http}
       AI_ENDPOINT: ${AI_ENDPOINT:-}
       AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-180}
-      DB_DSN: "${MYSQL_USER:-stepup_user}:${MYSQL_PASSWORD:-stepup_pass}@tcp(mysql:3306)/${MYSQL_DATABASE:-stepup}?charset=utf8mb4&parseTime=True&loc=Local"
+      DB_DSN: "postgres://${POSTGRES_USER:-stepup_user}:${POSTGRES_PASSWORD:-stepup_pass}@postgres:5432/${POSTGRES_DB:-stepup}?sslmode=disable"
       STATIC_DIR: ${STATIC_DIR:-/srv/static}
       UPLOAD_DIR: ${UPLOAD_DIR:-/srv/uploads}
       # 默认含 `*`：任意浏览器 Origin（http/https）回显允许，免写死 IP。生产请在 .env 设严格白名单并去掉 `*`。
@@ -46,7 +45,7 @@ services:
     volumes:
       - stepup_uploads:/srv/uploads
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
       mock-ai:
         condition: service_started
@@ -85,5 +84,5 @@ services:
       - "${MOCK_AI_PORT:-8090}:8090"
 
 volumes:
-  stepup_mysql_data:
+  stepup_postgres_data:
   stepup_uploads:
