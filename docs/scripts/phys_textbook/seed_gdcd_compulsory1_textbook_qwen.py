@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 从 StepUp 的 PostgreSQL 读取「通义千问 / Qwen」ai_model 配置，调用 OpenAI 兼容
-chat/completions，生成指定学科的「广东省普通高中 · 必修第一册」章/小节目录，
-写入 textbook、chapter、section 表。
+chat/completions，按 --textbook-name / --version 等生成「广东省普通高中」对应分册的
+章/小节目录，写入 textbook、chapter、section 表。
 
 用法示例（仓库根目录）::
 
@@ -13,6 +13,9 @@ chat/completions，生成指定学科的「广东省普通高中 · 必修第一
         --textbook-name '物理（必修第一册）' --version '人教版2019' --category 必修
 
 加 --execute-db 0 时只打印 INSERT SQL（mogrify），不写库；默认 1 为真实 INSERT。
+
+textbook.subject_id：未传 --subject-id 时，会按 subject.name 等于 --subject 在库中解析并写入；
+若无匹配科目则 subject_id 为 NULL（需先种子 subject 或显式传入 --subject-id）。
 
 说明与大模型生成内容可能不完全与纸书一致，导入后请在管理端核对。
 
@@ -122,6 +125,60 @@ def connect_dsn() -> str:
         )
         sys.exit(2)
     return dsn
+
+
+def resolve_subject_id(
+    cur, subject_display: str, explicit_id: int | None
+) -> int | None:
+    """
+    textbook.subject_id：优先使用命令行 --subject-id（须存在于 subject 表）；
+    否则按 subject.name 精确匹配 --subject（去空格），取 status=1 且未删除的一条。
+    """
+    if explicit_id is not None:
+        cur.execute(
+            """
+            SELECT id FROM subject
+            WHERE id = %s AND is_deleted = 0
+            LIMIT 1
+            """,
+            (explicit_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise RuntimeError(
+                f"--subject-id={explicit_id} 在 subject 表中不存在或已删除，请核对"
+            )
+        log.info("subject_id 使用显式参数: id=%s", explicit_id)
+        return int(row[0])
+
+    name = (subject_display or "").strip()
+    if not name:
+        log.warning("学科名为空，无法解析 subject_id，textbook.subject_id 将为 NULL")
+        return None
+
+    cur.execute(
+        """
+        SELECT id, status FROM subject
+        WHERE name = %s AND is_deleted = 0
+        ORDER BY (status = 1) DESC, id DESC
+        LIMIT 1
+        """,
+        (name,),
+    )
+    row = cur.fetchone()
+    if not row:
+        log.warning(
+            "subject 表中无 name=%s 的记录，textbook.subject_id 将为 NULL；"
+            "请先插入 subject 或传入 --subject-id",
+            name,
+        )
+        return None
+    sid, st = int(row[0]), int(row[1])
+    if st != 1:
+        log.warning("subject id=%s name=%s 的 status=%s（非 1），仍作为外键使用", sid, name, st)
+    else:
+        log.info("subject_id 已由学科名解析: name=%s -> id=%s", name, sid)
+    return sid
 
 
 def load_qwen_model(cur) -> tuple[str, str, str, int | None]:
@@ -339,7 +396,7 @@ def build_prompt(subject_display: str, textbook_label: str, edition_note: str) -
 （{edition_note}）的 **全部章（chapter）与每章下各小节（section）** 目录。
 
 严格要求：
-1. 结构应接近国内主流新课标教材（如人教版等）必修第一册的常见编排；若有多套主流版本差异，以使用面最广的一种为准，并在小节标题中可略体现知识点名称。
+1. 结构应接近国内主流新课标教材（如人教版等）中与**上述教材册次、知识进度**相匹配的常见编排；若有多套主流版本差异，以使用面最广的一种为准，并在小节标题中可略体现知识点名称。
 2. 每章包含字段：number（整数，从 1 起全书连续）、title（短标题）、full_title（可选，更长全称，没有则 null）。
 3. 每章下 sections 数组：每节 number 从 1 起在本章内连续；title、full_title 同理。
 4. **只输出一个 JSON 对象**，不要 markdown 代码围栏，不要任何前言或结语。
@@ -444,7 +501,10 @@ def ensure_textbook(
         created_by,
     )
     if not execute_db:
-        print_sql_block("INSERT textbook（预览；execute_db=0 未执行）", mogrify_sql(cur, ins_q, ins_params))
+        print_sql_block(
+            "INSERT textbook（预览；execute_db=0 未执行）",
+            mogrify_sql(cur, ins_q, ins_params),
+        )
         print(
             f"\n-- 后续 INSERT chapter 若为新教材，将使用占位 textbook_id={PLACEHOLDER_TEXTBOOK_ID}",
             f"--（正式上线请替换为上一句 RETURNING 的实际 id）\n",
@@ -575,19 +635,19 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--edition-note",
-        default="依据普通高中课程标准实验教学的主流必修第一册编排",
-        help="写入提示词，说明教材版本口径",
+        default="依据普通高中课程标准，按本教材书名与版本所对应分册的常见教学编排",
+        help="写入提示词括号内说明；若分册与默认口径不符请自行改写",
     )
     p.add_argument(
         "--textbook-label",
         default="",
-        help="传给模型的完整教材描述；默认同「学科 + 必修第一册」",
+        help="传给模型的教材描述（教材为「…」）；默认「textbook-name · version · category」",
     )
     p.add_argument(
         "--subject-id",
         type=int,
         default=None,
-        help="可选：关联 subject.id 外键",
+        help="可选：直接指定 subject id；省略时按 subject.name = --subject 自动解析",
     )
     p.add_argument(
         "--dry-run",
@@ -663,7 +723,9 @@ def main() -> None:
 
     textbook_label = (args.textbook_label or "").strip()
     if not textbook_label:
-        textbook_label = f"{args.subject.strip()} 普通高中教科书 · 必修第一册"
+        textbook_label = (
+            f"{args.textbook_name.strip()} · {args.version.strip()} · {args.category.strip()}"
+        )
     log.info("模型侧教材描述 textbook_label=%s", textbook_label)
 
     log.info(step_msg(2, "连接 PostgreSQL…"))
@@ -717,6 +779,8 @@ def main() -> None:
                 log.info(step_msg(7, "结束（dry-run，未提交事务）"))
                 return
 
+            subject_id = resolve_subject_id(cur, args.subject.strip(), args.subject_id)
+
             if not execute_db:
                 log.info(
                     step_msg(
@@ -736,7 +800,7 @@ def main() -> None:
                 args.version.strip(),
                 args.subject.strip(),
                 args.category.strip(),
-                args.subject_id,
+                subject_id,
                 created_by,
                 args.append_to_existing,
                 execute_db,
