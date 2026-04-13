@@ -251,7 +251,7 @@ v0.1 目标：完成「后台管理 + 浏览器学生端」最小可用闭环。
 - 分析唯一性：
   - `paper_analysis.paper_id` 唯一
   - `improvement_plan.paper_id` 唯一
-- 教材目录：`textbook`（书）→ `chapter`（章）→ `section`（节）；`textbook` 上 `(name, version)` 唯一；章/节带 `status`（停用），**序号 `number` 在库表上不做唯一约束**（管理端可调整序号）。示例种子见 `db/seed/textbook_yuedu_physics_required_2019.sql`；管理端在「科目 → 编辑」中对该科目已有教材提供 **目录** 只读树式编辑（仅 PATCH，无新增/删除 API）。
+- 教材目录：`textbook`（书）→ `textbook_chapter`（章）→ `textbook_section`（节）；`textbook` 上 `(name, version)` 唯一；章/节带 `status`（停用），**序号 `number` 在库表上不做唯一约束**（管理端可调整序号）。示例种子见 `db/seed/textbook_yuedu_physics_required_2019.sql`；管理端在「科目 → 编辑」中对该科目已有教材提供 **目录** 只读树式编辑（仅 PATCH，无新增/删除 API）。
 
 ---
 

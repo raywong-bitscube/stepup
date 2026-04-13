@@ -29,7 +29,7 @@ func New(db *sqlx.DB) *Service {
 
 func (s *Service) subjectExists(ctx context.Context, subjectID uint64) error {
 	var one int
-	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT 1 FROM subject WHERE id = ? AND is_deleted = 0 LIMIT 1`), subjectID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT 1 FROM k12_subject WHERE id = ? AND is_deleted = 0 LIMIT 1`), subjectID).Scan(&one)
 	if err == sql.ErrNoRows {
 		return ErrNotFound
 	}
@@ -65,7 +65,7 @@ func (s *Service) ListTextbooksBySubject(ctx context.Context, subjectID uint64) 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, name, version, subject, category, remarks, status, updated_at
 FROM textbook
-WHERE subject_id = ? AND is_deleted = 0
+WHERE k12_subject_id = ? AND is_deleted = 0
 ORDER BY id ASC`), subjectID)
 	if err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func (s *Service) ListChapters(ctx context.Context, textbookID uint64) ([]Chapte
 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, textbook_id, number, title, full_title, status, updated_at
-FROM chapter
+FROM textbook_chapter
 WHERE textbook_id = ? AND is_deleted = 0
 ORDER BY number ASC, id ASC`), textbookID)
 	if err != nil {
@@ -289,7 +289,7 @@ func (s *Service) PatchChapter(ctx context.Context, id uint64, in ChapterPatch) 
 	now := time.Now()
 	args = append(args, now, id)
 
-	q := `UPDATE chapter SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE textbook_chapter SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err
@@ -323,7 +323,7 @@ func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]Section
 	defer cancel()
 
 	var one uint64
-	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT id FROM chapter WHERE id = ? AND is_deleted = 0`), chapterID).Scan(&one)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`SELECT id FROM textbook_chapter WHERE id = ? AND is_deleted = 0`), chapterID).Scan(&one)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -333,8 +333,8 @@ func (s *Service) ListSections(ctx context.Context, chapterID uint64) ([]Section
 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.chapter_id, s.number, s.title, s.full_title, s.status, s.updated_at,
-       (SELECT COUNT(*) FROM slide_deck sd WHERE sd.section_id = s.id AND sd.is_deleted = 0) AS slide_deck_count
-FROM section s
+       (SELECT COUNT(*) FROM textbook_slide_deck sd WHERE sd.section_id = s.id AND sd.is_deleted = 0) AS slide_deck_count
+FROM textbook_section s
 WHERE s.chapter_id = ? AND s.is_deleted = 0
 ORDER BY s.number ASC, s.id ASC`), chapterID)
 	if err != nil {
@@ -420,7 +420,7 @@ func (s *Service) PatchSection(ctx context.Context, id uint64, in SectionPatch) 
 	now := time.Now()
 	args = append(args, now, id)
 
-	q := `UPDATE section SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE textbook_section SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err

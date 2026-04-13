@@ -92,7 +92,7 @@ func (s *Service) resolveAdapter(ctx context.Context) (studentpaper.AnalysisAdap
 		var name, url, chatModel, appSecret string
 		err := s.db.QueryRowContext(ctx, `
 SELECT id, name, url, model, app_secret
-FROM ai_model
+FROM ai_provider_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
@@ -160,7 +160,7 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID u
 	rt := "student"
 	rid := studentID
 	s.aiLog.Write(ctx, ailog.InsertRow{
-		AIModelID:        aid,
+		ProviderModelID: aid,
 		ModelNameSnap:    nameSnap,
 		Action:           action,
 		AdapterKind:      tr.AdapterKind,
@@ -172,7 +172,7 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID u
 		EndpointHost:     tr.EndpointHost,
 		ChatModel:        tr.ChatModel,
 		FallbackToMock:   tr.FallbackToMock,
-		StudentID:        stuPtr,
+		SysUserID:        stuPtr,
 		RefTable:         &rt,
 		RefID:            &rid,
 		RequestMetaJSON:  reqM,
@@ -353,7 +353,7 @@ func (s *Service) SubmitReview(ctx context.Context, studentID uint64, topicText,
 
 	var subjectID sql.NullInt64
 	_ = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT id FROM subject WHERE name = ? AND status = 1 AND is_deleted = 0 LIMIT 1
+SELECT id FROM k12_subject WHERE name = ? AND status = 1 AND is_deleted = 0 LIMIT 1
 `), subjectNameChinese).Scan(&subjectID)
 
 	now := time.Now()
@@ -366,8 +366,8 @@ SELECT id FROM subject WHERE name = ? AND status = 1 AND is_deleted = 0 LIMIT 1
 
 	var newID uint64
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO essay_outline_practice (
-  student_id, subject_id, topic_text, topic_label, topic_source, genre, task_type,
+INSERT INTO student_essay_outline_practice (
+  sys_user_id, k12_subject_id, topic_text, topic_label, topic_source, genre, task_type,
   outline_text, review_json, raw_review_response,
   created_at, created_by, updated_at, updated_by, is_deleted
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
@@ -416,8 +416,8 @@ func (s *Service) ListPractices(ctx context.Context, studentID uint64, limit int
 	}
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, created_at, topic_label, topic_source, topic_text
-FROM essay_outline_practice
-WHERE student_id = ? AND is_deleted = 0
+FROM student_essay_outline_practice
+WHERE sys_user_id = ? AND is_deleted = 0
 ORDER BY created_at DESC, id DESC
 LIMIT ?
 `), studentID, limit)
@@ -447,12 +447,12 @@ func (s *Service) PracticeVisibilityCounts(ctx context.Context, studentID uint64
 		return 0, 0, ErrDatabaseRequired
 	}
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ?`), studentID).Scan(&total)
+SELECT COUNT(*) FROM student_essay_outline_practice WHERE sys_user_id = ?`), studentID).Scan(&total)
 	if err != nil {
 		return 0, 0, err
 	}
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT COUNT(*) FROM essay_outline_practice WHERE student_id = ? AND is_deleted = 0`), studentID).Scan(&active)
+SELECT COUNT(*) FROM student_essay_outline_practice WHERE sys_user_id = ? AND is_deleted = 0`), studentID).Scan(&active)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -470,8 +470,8 @@ func (s *Service) GetPractice(ctx context.Context, studentID, practiceID uint64)
 	var rawN sql.NullString
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, created_at, topic_text, topic_label, topic_source, genre, task_type, outline_text, review_json, raw_review_response
-FROM essay_outline_practice
-WHERE id = ? AND student_id = ? AND is_deleted = 0
+FROM student_essay_outline_practice
+WHERE id = ? AND sys_user_id = ? AND is_deleted = 0
 LIMIT 1
 `), practiceID, studentID).Scan(
 		&p.ID, &p.CreatedAt, &p.TopicText, &p.TopicLabel, &p.TopicSource,

@@ -23,7 +23,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-`docker-compose` 默认 **`ANALYSIS_ADAPTER=http`**：导入 seed 后优先调用库内激活的 `ai_model`（含 DeepSeek）。若仅想用 **mock-ai** 协议、不配库内密钥，可在 `.env` 里把激活模型关掉或设 `AI_ENDPOINT=http://mock-ai:8090/analyze` 并保证解析不会命中带 `app_secret` 的模型（见环境变量说明）。
+`docker-compose` 默认 **`ANALYSIS_ADAPTER=http`**：导入 seed 后优先调用库内激活的 `ai_provider_model`（含 DeepSeek/Kimi 等）。若仅想用 **mock-ai** 协议、不配库内密钥，可在 `.env` 里把激活模型关掉或设 `AI_ENDPOINT=http://mock-ai:8090/analyze` 并保证解析不会命中带 `app_secret` 的模型（见环境变量说明）。
 
 Initialize schema (PostgreSQL baseline):
 
@@ -33,9 +33,9 @@ docker compose exec -T postgres psql -U "${POSTGRES_USER:-stepup_user}" -d "${PO
 
 `db/seed/*.sql` 仍以 MySQL 语法为主；迁到 Postgres 后请用手写 `psql`/`COPY` 或待补充的 PG 种子，勿直接执行原 MySQL seed。
 
-When `DB_DSN` is set, the process opens **one** shared `*sqlx.DB` pool (PostgreSQL via pgx); admin sessions use `admin_session`, student sessions use `student_session`, and papers use `exam_paper` / `paper_analysis` / `improvement_plan`. If you initialized the DB before `student_session` existed, re-apply the schema file or add that table manually.
+When `DB_DSN` is set, the process opens **one** shared `*sqlx.DB` pool (PostgreSQL via pgx); login sessions use **`sys_session`** with **`user_type`** `admin` or `student`; papers use **`student_exam_paper`** / **`student_paper_analysis`** / **`student_improvement_plan`**.
 
-**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表定义见 `db/schema/postgresql_schema_v0.1_260403.sql`（MySQL 历史见 `db/schema/mysql_schema_v0.1_260403.sql`）；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
+**AI 调用日志**：学生上传触发同步分析时写入 **`ai_call_log`**（适配器、`outcome`、耗时、错误、`endpoint`、`chat_model`、是否回退 mock、可选 **`sys_user_id`**、**`ref_table`/`ref_id`**、**`request_body`/`response_body`** 等；不落 API Key，**图片 inline base64 在 `request_body` 中脱敏**。表定义见 `db/schema/postgresql_schema_v0.1_260403.sql`；只读 `GET /api/v1/admin/ai-call-logs`；说明见 `docs/core/api_v0.1_260403.md` §3.12。
 
 ## Environment Variables
 
@@ -52,7 +52,7 @@ Copy `backend/.env.example` and export values in your shell.
 - `AI_ENDPOINT` - HTTP adapter fallback URL when `ANALYSIS_ADAPTER=http` (see resolution below)
 - `AI_REQUEST_TIMEOUT_SECONDS` - timeout for HTTP adapter calls (default **180**; vision / slow networks may need more)
 
-**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用数据库 **`ai_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 `paper_analysis` 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，表字段 **`model`** 作为 JSON **`model`** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
+**HTTP 分析地址解析（`ANALYSIS_ADAPTER=http`）**：仅当使用 HTTP 适配器时生效。若已配置 `DB_DSN`，优先使用数据库 **`ai_provider_model` 表中当前激活的一条**（`status=1`、`is_deleted=0`，按 `id` 取最新）的 **`url`**；若没有激活模型或查不到行，则使用 **`AI_ENDPOINT`**；若仍没有可用 URL，则退回 **mock** 行为。写入 **`student_paper_analysis`** 的模型快照为 `name` + `url`（不含密钥）。当该行的 **`app_secret` 非空** 时，请求走 **OpenAI 兼容 `chat/completions`**（`Authorization: Bearer <app_secret>`，表字段 **`model`** 作为 JSON **`model`** 名，例如 `deepseek-chat`）；`app_secret` 为空时仍按 **mock-ai** 协议（JSON：`subject` / `stage` / `file_name`）请求 **`AI_ENDPOINT`** 或自建桥接服务。
 
 ## Current Scope
 
@@ -61,11 +61,11 @@ Copy `backend/.env.example` and export values in your shell.
 - Health endpoints:
   - `GET /healthz`
   - `GET /readyz` — if `DB_DSN` is set, checks DB ping (`503` + `DATABASE_UNAVAILABLE` / `DATABASE_UNREACHABLE` when not healthy)
-- Admin auth minimal flow (in-memory without `DB_DSN`; `admin` + `admin_session` when configured):
+- Admin auth minimal flow (in-memory without `DB_DSN`; `sys_admin_user` + `sys_session` when configured):
   - `POST /api/v1/admin/auth/login`
   - `POST /api/v1/admin/auth/logout`
   - `GET /api/v1/admin/auth/me`
-- Student auth minimal flow (in-memory without `DB_DSN`; `student`, `verification_code`, `student_session` when configured):
+- Student auth minimal flow (in-memory without `DB_DSN`; `sys_user`, `sys_verification_code`, `sys_session` when configured):
   - `POST /api/v1/student/auth/send-code`
   - `POST /api/v1/student/auth/verify-code`
   - `POST /api/v1/student/auth/set-password`
@@ -95,7 +95,7 @@ Copy `backend/.env.example` and export values in your shell.
 ## Notes
 
 - Without `DB_DSN`, admin and student auth (and student papers) use in-memory stores; **audit 写入同样依赖数据库**，无 DB 时不落库。
-- With `DB_DSN`, admin uses `admin` + `admin_session`; student uses `student`, `verification_code`, and `student_session`; papers persist to `exam_paper` and related tables.
+- With `DB_DSN`, admin uses `sys_admin_user` + `sys_session` (`user_type=admin`); end users use `sys_user`, `sys_verification_code`, and `sys_session` (`user_type=student`); papers persist to **`student_exam_paper`** and related tables.
 - Dev seed stores the bootstrap admin password as **bcrypt** (`admin123` by default; regenerate with `go run scripts/gen_admin_bcrypt.go` if you change it).
 - Student paper analysis uses a pluggable `AnalysisAdapter` (default mock).
 - `ANALYSIS_ADAPTER=http` uses the URL resolution order above; HTTP 调用失败或解析失败时仍可能退回 mock 输出。

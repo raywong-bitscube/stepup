@@ -78,7 +78,7 @@ func (s *Service) resolveAdapter(ctx context.Context) (AnalysisAdapter, *activeM
 		var name, url, chatModel, appSecret string
 		err := s.db.QueryRowContext(ctx, `
 SELECT id, name, url, model, app_secret
-FROM ai_model
+FROM ai_provider_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
@@ -170,13 +170,13 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 	var refTbl *string
 	var refIDPtr *uint64
 	if paperID != 0 {
-		t := "exam_paper"
+		t := "student_exam_paper"
 		refTbl = &t
 		v := paperID
 		refIDPtr = &v
 	}
 	s.aiLog.Write(ctx, ailog.InsertRow{
-		AIModelID:        aid,
+		ProviderModelID: aid,
 		ModelNameSnap:    nameSnap,
 		Action:           "paper_analyze",
 		AdapterKind:      tr.AdapterKind,
@@ -188,7 +188,7 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, studentID, 
 		EndpointHost:     tr.EndpointHost,
 		ChatModel:        tr.ChatModel,
 		FallbackToMock:   tr.FallbackToMock,
-		StudentID:        stuPtr,
+		SysUserID:        stuPtr,
 		RefTable:         refTbl,
 		RefID:            refIDPtr,
 		RequestMetaJSON:  reqM,
@@ -322,8 +322,8 @@ func (s *Service) createDB(identifier, subject, stage string, parts []UploadPart
 		stageID   uint64
 	)
 	err := s.db.QueryRowContext(lookupCtx, dbutil.Rebind(`
-SELECT id, stage_id
-FROM student
+SELECT id, k12_grade_id
+FROM sys_user
 WHERE (phone = ? OR email = ?) AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), identifier, identifier).Scan(&studentID, &stageID)
@@ -335,7 +335,7 @@ LIMIT 1
 	var subjectID uint64
 	err = s.db.QueryRowContext(lookupCtx, dbutil.Rebind(`
 SELECT id
-FROM subject
+FROM k12_subject
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), subject).Scan(&subjectID)
@@ -399,8 +399,8 @@ LIMIT 1
 	defer writeCancel()
 	var paperID uint64
 	err = s.db.QueryRowContext(writeCtx, dbutil.Rebind(`
-INSERT INTO exam_paper
-  (student_id, subject_id, file_url, extra_file_urls, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
+INSERT INTO student_exam_paper
+  (sys_user_id, k12_subject_id, file_url, extra_file_urls, file_type, score, exam_date, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, NULL, CURRENT_DATE, ?, ?, ?, ?, 0)
 RETURNING id
 `), studentID, subjectID, fileURL, extrasArg, fileType, now, studentID, now, studentID).Scan(&paperID)
@@ -420,13 +420,13 @@ RETURNING id
 	})
 
 	_, _ = s.db.ExecContext(writeCtx, dbutil.Rebind(`
-INSERT INTO paper_analysis
+INSERT INTO student_paper_analysis
   (paper_id, ai_model_snapshot, raw_content, ai_response, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 2, ?, ?, ?, ?, 0)
 `), paperID, string(snapshotRaw), analysisOut.RawContent, string(aiResponseRaw), now, studentID, now, studentID)
 
 	_, _ = s.db.ExecContext(writeCtx, dbutil.Rebind(`
-INSERT INTO improvement_plan
+INSERT INTO student_improvement_plan
   (paper_id, plan_content, weak_points, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, ?, 0)
 `), paperID, string(planRaw), string(weakRaw), now, studentID, now, studentID)
@@ -452,10 +452,10 @@ func (s *Service) listDB(identifier string) ([]Paper, error) {
 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT p.id, subj.name, stg.name, p.file_url, p.extra_file_urls, p.created_at
-FROM exam_paper p
-JOIN student stu ON stu.id = p.student_id
-JOIN subject subj ON subj.id = p.subject_id
-JOIN stage stg ON stg.id = stu.stage_id
+FROM student_exam_paper p
+JOIN sys_user stu ON stu.id = p.sys_user_id
+JOIN k12_subject subj ON subj.id = p.k12_subject_id
+JOIN k12_grade stg ON stg.id = stu.k12_grade_id
 WHERE (stu.phone = ? OR stu.email = ?) AND p.is_deleted = 0
 ORDER BY p.id DESC
 `), identifier, identifier)
@@ -517,9 +517,9 @@ func (s *Service) getAnalysisDB(identifier, paperIDRaw string) (Analysis, error)
 	)
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT pa.ai_model_snapshot, pa.ai_response, pa.status, pa.updated_at
-FROM paper_analysis pa
-JOIN exam_paper p ON p.id = pa.paper_id
-JOIN student stu ON stu.id = p.student_id
+FROM student_paper_analysis pa
+JOIN student_exam_paper p ON p.id = pa.paper_id
+JOIN sys_user stu ON stu.id = p.sys_user_id
 WHERE pa.paper_id = ?
   AND (stu.phone = ? OR stu.email = ?)
   AND pa.is_deleted = 0
@@ -575,9 +575,9 @@ func (s *Service) getPlanDB(identifier, paperIDRaw string) (map[string]any, erro
 	)
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
-FROM improvement_plan ip
-JOIN exam_paper p ON p.id = ip.paper_id
-JOIN student stu ON stu.id = p.student_id
+FROM student_improvement_plan ip
+JOIN student_exam_paper p ON p.id = ip.paper_id
+JOIN sys_user stu ON stu.id = p.sys_user_id
 WHERE ip.paper_id = ?
   AND (stu.phone = ? OR stu.email = ?)
   AND ip.is_deleted = 0

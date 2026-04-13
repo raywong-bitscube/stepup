@@ -3,7 +3,7 @@
 """
 从 StepUp 的 PostgreSQL 读取「通义千问 / Qwen」ai_model 配置，调用 OpenAI 兼容
 chat/completions，按 --textbook-name / --version 等生成「广东省普通高中」对应分册的
-章/小节目录，写入 textbook、chapter、section 表。
+章/小节目录，写入 textbook、textbook_chapter、textbook_section 表。
 
 用法示例（仓库根目录）::
 
@@ -409,7 +409,7 @@ def number_to_chinese_ordinal(n: int) -> str:
 
 def resolve_chapter_full_title(cnum: int, ctitle: str, raw: Any) -> str:
     """
-    与 db/seed 中 chapter 格式一致：full_title 优先模型返回值，否则「第{n}章 {title}」。
+    与 db/seed 中 textbook_chapter 格式一致：full_title 优先模型返回值，否则「第{n}章 {title}」。
     """
     ft = trunc(raw, FULL_TITLE_MAX) if raw is not None else None
     if ft:
@@ -423,7 +423,7 @@ def resolve_chapter_full_title(cnum: int, ctitle: str, raw: Any) -> str:
 
 def resolve_section_full_title(snum: int, stitle: str, raw: Any) -> str:
     """
-    与 db/seed 中 section 格式一致：否则「第{n}节 {title}」。
+    与 db/seed 中 textbook_section 格式一致：否则「第{n}节 {title}」。
     """
     ft = trunc(raw, FULL_TITLE_MAX) if raw is not None else None
     if ft:
@@ -583,14 +583,14 @@ def insert_chapters_sections(
     chapter_rows = 0
     section_rows = 0
     ch_q = """
-            INSERT INTO chapter
+            INSERT INTO textbook_chapter
               (textbook_id, number, title, full_title, status,
                created_at, created_by, updated_at, updated_by, is_deleted)
             VALUES (%s, %s, %s, %s, 1, NOW(), %s, NOW(), %s, 0)
             RETURNING id
             """
     sec_q = """
-                INSERT INTO section
+                INSERT INTO textbook_section
                   (chapter_id, number, title, full_title, status,
                    created_at, created_by, updated_at, updated_by, is_deleted)
                 VALUES (%s, %s, %s, %s, 1, NOW(), %s, NOW(), %s, 0)

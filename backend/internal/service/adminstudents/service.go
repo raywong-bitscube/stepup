@@ -47,8 +47,8 @@ func (s *Service) List(ctx context.Context) ([]Student, error) {
 
 	const q = `
 SELECT s.id, s.phone, s.email, s.name, stg.name, s.status, s.created_at
-FROM student s
-JOIN stage stg ON stg.id = s.stage_id
+FROM sys_user s
+JOIN k12_grade stg ON stg.id = s.k12_grade_id
 WHERE s.is_deleted = 0
 ORDER BY s.id DESC
 LIMIT 500`
@@ -128,7 +128,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 
 	var stageID uint64
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT id FROM stage
+SELECT id FROM k12_grade
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), stage).Scan(&stageID)
@@ -149,8 +149,8 @@ LIMIT 1
 	now := time.Now()
 	var nid uint64
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO student
-  (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
+INSERT INTO sys_user
+  (phone, email, password, name, k12_grade_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, 1, ?, 0, ?, 0, 0)
 RETURNING id
 `), phone, email, string(hashed), name, stageID, now, now).Scan(&nid)
@@ -197,7 +197,7 @@ func (s *Service) Patch(ctx context.Context, studentID uint64, in UpdateInput) e
 		}
 		var stageID uint64
 		if err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT id FROM stage
+SELECT id FROM k12_grade
 WHERE name = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), stage).Scan(&stageID); err != nil {
@@ -206,7 +206,7 @@ LIMIT 1
 			}
 			return err
 		}
-		sets = append(sets, "stage_id = ?")
+		sets = append(sets, "k12_grade_id = ?")
 		args = append(args, stageID)
 	}
 	if in.Password != nil {
@@ -229,7 +229,7 @@ LIMIT 1
 	args = append(args, time.Now())
 	args = append(args, studentID)
 
-	query := `UPDATE student SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	query := `UPDATE sys_user SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(query), args...)
 	if err != nil {
 		return err

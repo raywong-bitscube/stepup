@@ -50,7 +50,7 @@ func New(db *sqlx.DB) *Service {
 func (s *Service) studentExists(ctx context.Context, studentID uint64) (bool, error) {
 	var one int
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT 1 FROM student WHERE id = ? AND is_deleted = 0 LIMIT 1`), studentID).Scan(&one)
+SELECT 1 FROM sys_user WHERE id = ? AND is_deleted = 0 LIMIT 1`), studentID).Scan(&one)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
@@ -74,11 +74,11 @@ func (s *Service) List(ctx context.Context, studentID uint64) ([]Paper, error) {
 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT p.id, subj.name, stg.name, p.file_url, p.created_at
-FROM exam_paper p
-JOIN student stu ON stu.id = p.student_id
-JOIN subject subj ON subj.id = p.subject_id
-JOIN stage stg ON stg.id = stu.stage_id
-WHERE p.student_id = ? AND p.is_deleted = 0
+FROM student_exam_paper p
+JOIN sys_user stu ON stu.id = p.sys_user_id
+JOIN k12_subject subj ON subj.id = p.k12_subject_id
+JOIN k12_grade stg ON stg.id = stu.k12_grade_id
+WHERE p.sys_user_id = ? AND p.is_deleted = 0
 ORDER BY p.id DESC
 `), studentID)
 	if err != nil {
@@ -149,10 +149,10 @@ func (s *Service) GetAnalysis(ctx context.Context, studentID uint64, paperIDRaw 
 	)
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT pa.ai_model_snapshot, pa.ai_response, pa.status, pa.updated_at
-FROM paper_analysis pa
-JOIN exam_paper p ON p.id = pa.paper_id
+FROM student_paper_analysis pa
+JOIN student_exam_paper p ON p.id = pa.paper_id
 WHERE pa.paper_id = ?
-  AND p.student_id = ?
+  AND p.sys_user_id = ?
   AND pa.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
@@ -198,10 +198,10 @@ func (s *Service) GetPlanSlice(ctx context.Context, studentID, paperID uint64) (
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
-FROM improvement_plan ip
-JOIN exam_paper p ON p.id = ip.paper_id
+FROM student_improvement_plan ip
+JOIN student_exam_paper p ON p.id = ip.paper_id
 WHERE ip.paper_id = ?
-  AND p.student_id = ?
+  AND p.sys_user_id = ?
   AND ip.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1
@@ -239,10 +239,10 @@ func (s *Service) GetPlan(ctx context.Context, studentID uint64, paperIDRaw stri
 	)
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT ip.plan_content, ip.updated_at
-FROM improvement_plan ip
-JOIN exam_paper p ON p.id = ip.paper_id
+FROM student_improvement_plan ip
+JOIN student_exam_paper p ON p.id = ip.paper_id
 WHERE ip.paper_id = ?
-  AND p.student_id = ?
+  AND p.sys_user_id = ?
   AND ip.is_deleted = 0
   AND p.is_deleted = 0
 LIMIT 1

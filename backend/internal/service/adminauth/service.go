@@ -127,7 +127,7 @@ func (s *Service) loginDB(username, password string) (Session, error) {
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, username, password, role
-FROM admin
+FROM sys_admin_user
 WHERE username = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), username).Scan(&adminID, &dbUser, &dbPass, &role)
@@ -149,12 +149,12 @@ LIMIT 1
 	expiresAt := now.Add(s.cfg.SessionTTL)
 
 	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
-INSERT INTO admin_session
-  (admin_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
+INSERT INTO sys_session
+  (user_type, user_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES ('admin', ?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
 `), adminID, token, expiresAt, now, now, adminID, now, adminID)
 	if err != nil {
-		return Session{}, fmt.Errorf("create admin_session failed: %w", err)
+		return Session{}, fmt.Errorf("create sys_session failed: %w", err)
 	}
 
 	return Session{
@@ -180,8 +180,8 @@ func (s *Service) currentDB(token string) (Session, error) {
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT a.id, a.username, a.role, sess.expires_at, sess.last_seen_at
-FROM admin_session sess
-JOIN admin a ON a.id = sess.admin_id
+FROM sys_session sess
+JOIN sys_admin_user a ON a.id = sess.user_id AND sess.user_type = 'admin'
 WHERE sess.session_token = ?
   AND sess.status = 1
   AND sess.is_deleted = 0
@@ -202,9 +202,9 @@ LIMIT 1
 
 	now := time.Now()
 	_, _ = s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE admin_session
+UPDATE sys_session
 SET last_seen_at = ?, updated_at = ?, updated_by = ?
-WHERE session_token = ? AND is_deleted = 0
+WHERE session_token = ? AND is_deleted = 0 AND user_type = 'admin'
 `), now, now, adminID, token)
 
 	return Session{
@@ -221,9 +221,9 @@ func (s *Service) logoutDB(token string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE admin_session
+UPDATE sys_session
 SET status = 0, updated_at = ?, updated_by = COALESCE(updated_by, 0)
-WHERE session_token = ? AND is_deleted = 0
+WHERE session_token = ? AND is_deleted = 0 AND user_type = 'admin'
 `), time.Now(), token)
 	return err
 }

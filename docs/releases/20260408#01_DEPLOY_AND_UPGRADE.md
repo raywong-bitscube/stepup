@@ -1,4 +1,4 @@
-# 2026-04-08#01 — 教材目录表（textbook / chapter / section）、章/节 status 与 admin 目录 API/UI
+# 2026-04-08#01 — 教材目录表（textbook / chapter / section；现基线已更名为 **textbook_chapter** / **textbook_section**，见 `db/migrations/2026-04-12#01_rename_textbook_chapter_section.sql`）、章/节 status 与 admin 目录 API/UI
 
 **范围**: 新增三张业务表；章/节增加 `status`、去掉序号唯一约束以便管理端调整序号；粤教版（2019）物理必修可选种子；**管理端**在科目编辑中提供 **目录** 独立视图（教材 → 章 → 节，仅 PATCH）。
 
@@ -12,7 +12,10 @@
    ```bash
    mysql -u… -p… stepup < "db/migrations/2026-04-08#01_textbook_chapter_section.sql"
    mysql -u… -p… stepup < "db/migrations/2026-04-08#02_chapter_section_status_drop_number_unique.sql"
+   mysql -u… -p… stepup < "db/migrations/2026-04-12#01_rename_textbook_chapter_section.sql"
    ```
+
+   PostgreSQL 维护者请使用同目录下 `2026-04-12#01_rename_textbook_chapter_section.postgresql.sql`（在 `#01`/`#02` 等价结构已就绪后执行）。
 
 2. **全新库**  
    若已更新并执行当前 `db/schema/mysql_schema_v0.1_260403.sql`，表结构已含 `#01`+`#02` 合并结果，仅需按需跑种子。
@@ -30,14 +33,14 @@
 
 ## 应用
 
-- **后端**: 6 个 admin 教材目录接口（见 **`docs/core/api_v0.1_260403.md`** §3.7 教材目录）。任意已登录 admin 可调；须 `DB_DSN` 且库结构含 `chapter.status` / `section.status`。
+- **后端**: 6 个 admin 教材目录接口（见 **`docs/core/api_v0.1_260403.md`** §3.7 教材目录）。任意已登录 admin 可调；须 `DB_DSN` 且库结构含 `textbook_chapter.status` / `textbook_section.status`（或已应用表重命名迁移）。
 - **frontend-admin**: 科目列表 → **编辑** → 若该 `subject_id` 下已有教材则显示 **目录** → 全屏独立视图（侧栏隐藏）；教材表 **编辑** / **章节** → 章表 **编辑** / **小节** → 节表 **编辑**。
 
 ---
 
 ## 表名与约定
 
-- 物理表名：`textbook`、`chapter`、`section`（与仓库其余表一致，采用单数实体名）。  
+- 物理表名：`textbook`、`textbook_chapter`、`textbook_section`（原 `chapter`/`section` 已更名；新库可直接用基线 schema）。  
 - 业务字段：`name` / `version` / `subject` / `category`（书）；`number` + `title` + `full_title`；章/节 **`status`**（0 停用 / 1 启用）。管理端对目录的停用**只改** `status`，不改 `is_deleted`。  
 - 系统字段：`id`、审计四元组、软删除，与 **`db/schema`** 中其它核心表一致。
 
@@ -45,8 +48,8 @@
 
 ## 验收
 
-- `SHOW TABLES` 含 `textbook`、`chapter`、`section`；`DESCRIBE chapter` 含 `status`，且无 `uk_chapter_textbook_number`（仅有 `idx_chapter_textbook_number`）。  
-- 种子执行后：`SELECT COUNT(*) FROM textbook WHERE version='粤教版 2019';` 为 `2`；`section` 行数大于 `40`（两册全部小节）。  
+- `SHOW TABLES` 含 `textbook`、`textbook_chapter`、`textbook_section`；`DESCRIBE textbook_chapter` 含 `status`，且无 `uk_chapter_textbook_number`（仅有 `idx_textbook_chapter_textbook_number` 等）。
+- 种子执行后：`SELECT COUNT(*) FROM textbook WHERE version='粤教版 2019';` 为 `2`；`textbook_section` 行数大于 `40`（两册全部小节）。
 - 管理端：物理科目编辑弹窗出现 **目录**；进入后可 PATCH 教材字段并下钻章、节。
 
 ---

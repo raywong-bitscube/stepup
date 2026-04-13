@@ -11,6 +11,7 @@
 | [20260405#01_DEPLOY_AND_UPGRADE.md](./20260405%2301_DEPLOY_AND_UPGRADE.md) | 多图试卷与 `extra_file_urls`、数学/英语与 Qwen 种子、迁移文件归并、`releases` 文档按发文日 `YYYYMMDD#NN` 命名 |
 | [20260405#02_DEPLOY_AND_UPGRADE.md](./20260405%2302_DEPLOY_AND_UPGRADE.md) | CORS 默认 `*`、LAN 双 Origin、Go+Nginx 示例与 OPTIONS 预检、学生端 API 基址与失败重挂修复、管理端错误提示与部署文档 |
 | [20260408#01_DEPLOY_AND_UPGRADE.md](./20260408%2301_DEPLOY_AND_UPGRADE.md) | 教材目录表与迁移 `#02`（章/节 `status`、去序号唯一）、粤教版种子、管理端目录 API 与 `frontend-admin` 独立视图 |
+| [20260413#01_DEPLOY_AND_UPGRADE.md](./20260413%2301_DEPLOY_AND_UPGRADE.md) | PostgreSQL 表模块前缀、`sys_session` 合并会话、移除 MySQL 基线、`ai_call_log` 列重命名、升级与 MySQL 向量能力说明 |
 
 新增发版时：在**发文当日**新建 **`YYYYMMDD#(N+1)_DEPLOY_AND_UPGRADE.md`**，并在本表登记（不必与 migration 文件日期对齐）。
 

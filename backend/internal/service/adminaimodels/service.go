@@ -43,7 +43,7 @@ func (s *Service) List(ctx context.Context) ([]PublicModel, error) {
 	defer cancel()
 	const q = `
 SELECT id, name, url, model, status, created_at
-FROM ai_model
+FROM ai_provider_model
 WHERE is_deleted = 0
 ORDER BY id DESC
 LIMIT 500`
@@ -101,7 +101,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 
 	if status == 1 {
 		if _, err := tx.ExecContext(ctx, dbutil.Rebind(`
-UPDATE ai_model
+UPDATE ai_provider_model
 SET status = 0, updated_at = ?, updated_by = 0
 WHERE is_deleted = 0
 `), now); err != nil {
@@ -110,7 +110,7 @@ WHERE is_deleted = 0
 	}
 	var nid uint64
 	err = tx.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO ai_model
+INSERT INTO ai_provider_model
   (name, url, model, app_secret, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, 0)
 RETURNING id
@@ -198,7 +198,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 
 	if activating {
 		if _, err := tx.ExecContext(ctx, dbutil.Rebind(`
-UPDATE ai_model
+UPDATE ai_provider_model
 SET status = 0, updated_at = ?, updated_by = 0
 WHERE is_deleted = 0 AND id != ?
 `), now, id); err != nil {
@@ -206,7 +206,7 @@ WHERE is_deleted = 0 AND id != ?
 		}
 	}
 
-	q := `UPDATE ai_model SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE ai_provider_model SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := tx.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err

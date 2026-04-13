@@ -43,7 +43,7 @@ func (s *Service) List(ctx context.Context) ([]Prompt, error) {
 	defer cancel()
 	q := `
 SELECT id, "key", description, content, status, created_at
-FROM prompt_template
+FROM ai_prompt_template
 WHERE is_deleted = 0
 ORDER BY "key" ASC
 LIMIT 500`
@@ -124,7 +124,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	now := time.Now()
 	args = append(args, now, id)
 
-	q := `UPDATE prompt_template SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE ai_prompt_template SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err

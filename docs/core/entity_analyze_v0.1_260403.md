@@ -77,17 +77,17 @@
 │ created_at  │
 └─────────────┘
 
-        教材目录（可选，用于考点/前端目录树）
-┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│  Textbook   │ 1:N   │   Chapter   │ 1:N   │   Section   │
-├─────────────┤       ├─────────────┤       ├─────────────┤
-│ id          │       │ id          │       │ id          │
-│ name        │       │ textbook_id │       │ chapter_id  │
-│ version     │       │ number      │       │ number      │
-│ subject     │       │ title       │       │ title       │
-│ category    │       │ full_title  │       │ full_title  │
-│ subject_id  │       │ …audit      │       │ …audit      │
-│ …audit      │       └─────────────┘       └─────────────┘
+        教材目录（可选，用于考点/前端目录树；表 textbook_chapter / textbook_section）
+┌─────────────┐       ┌───────────────────┐       ┌───────────────────┐
+│  Textbook   │ 1:N   │ TextbookChapter   │ 1:N   │ TextbookSection   │
+├─────────────┤       ├───────────────────┤       ├───────────────────┤
+│ id          │       │ id                │       │ id                │
+│ name        │       │ textbook_id       │       │ chapter_id        │
+│ version     │       │ number            │       │ number            │
+│ subject     │       │ title             │       │ title             │
+│ category    │       │ full_title        │       │ full_title        │
+│ subject_id  │       │ …audit            │       │ …audit            │
+│ …audit      │       └───────────────────┘       └───────────────────┘
 └─────────────┘
 ```
 
@@ -316,6 +316,8 @@
 
 ### 13. Chapter（章）
 
+**表名**: `textbook_chapter`。
+
 **说明**: 某本教材下的一章；`title` 不含「第一章」前缀，`full_title` 可选存完整展示文案。
 
 | 字段 | 类型 | 说明 |
@@ -328,25 +330,27 @@
 | status | tinyint | 1=启用，0=停用（管理端用状态代替对目录行的软删操作） |
 | 审计与软删除 | | 同 textbook |
 
-**索引**: `idx_chapter_textbook_number (textbook_id, number)` 非唯一，仅查询排序。
+**索引**: `idx_textbook_chapter_textbook_number (textbook_id, number)` 非唯一，仅查询排序。
 
 ---
 
 ### 14. Section（节）
+
+**表名**: `textbook_section`。
 
 **说明**: 某一章下的一节；序号与标题规则同章。
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | uint | 主键 |
-| chapter_id | uint | 外键 → chapter |
+| chapter_id | uint | 外键 → `textbook_chapter` |
 | number | uint | 节序号（可与同章下其他节重复，由业务约束） |
 | title | string(100) | 短标题 |
 | full_title | string(150) nullable | 如「第一节 质点 参考系 时间」 |
 | status | tinyint | 1=启用，0=停用 |
 | 审计与软删除 | | 同 textbook |
 
-**索引**: `idx_section_chapter_number (chapter_id, number)` 非唯一。
+**索引**: `idx_textbook_section_chapter_number (chapter_id, number)` 非唯一。
 
 ---
 

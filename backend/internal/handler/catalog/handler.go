@@ -33,7 +33,7 @@ func Handler(db *sqlx.DB) http.HandlerFunc {
 		}
 
 		subjects, err := loadNames(ctx, db, `
-SELECT id, name FROM subject WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC`)
+SELECT id, name FROM k12_subject WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC`)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
@@ -41,7 +41,7 @@ SELECT id, name FROM subject WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC
 			return
 		}
 		stages, err := loadNames(ctx, db, `
-SELECT id, name FROM stage WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC`)
+SELECT id, name FROM k12_grade WHERE status = 1 AND is_deleted = 0 ORDER BY id ASC`)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)

@@ -63,7 +63,7 @@ func stripWalk(v interface{}) {
 func (s *Service) sectionExists(ctx context.Context, sectionID uint64) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT 1 FROM section WHERE id = ? AND is_deleted = 0 LIMIT 1`), sectionID).Scan(&n)
+SELECT 1 FROM textbook_section WHERE id = ? AND is_deleted = 0 LIMIT 1`), sectionID).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -96,7 +96,7 @@ func (s *Service) GetActive(ctx context.Context, sectionID uint64) (*ActiveDeck,
 	var raw []byte
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, section_id, title, schema_version, content, updated_at
-FROM slide_deck
+FROM textbook_slide_deck
 WHERE section_id = ? AND deck_status = 'active' AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1`), sectionID).Scan(&d.ID, &d.SectionID, &d.Title, &d.SchemaVersion, &raw, &d.UpdatedAt)

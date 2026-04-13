@@ -48,9 +48,9 @@ func (s *ListService) List(ctx context.Context, p ListParams) ([]ListEntry, erro
 	var conds []string
 	var args []any
 
-	if p.AIModelID != nil {
-		conds = append(conds, "ai_model_id = ?")
-		args = append(args, *p.AIModelID)
+	if p.ProviderModelID != nil {
+		conds = append(conds, "ai_provider_model_id = ?")
+		args = append(args, *p.ProviderModelID)
 	}
 	if p.Action != "" {
 		conds = append(conds, "action = ?")
@@ -74,9 +74,9 @@ func (s *ListService) List(ctx context.Context, p ListParams) ([]ListEntry, erro
 	}
 
 	q := `
-SELECT id, created_at, ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
+SELECT id, created_at, ai_provider_model_id, model_name_snapshot, action, adapter_kind, result_status,
        http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-       fallback_to_mock, student_id, ref_table, ref_id, request_meta, response_meta,
+       fallback_to_mock, sys_user_id, ref_table, ref_id, request_meta, response_meta,
        request_body, response_body
 FROM ai_call_log`
 	if len(conds) > 0 {
@@ -116,7 +116,7 @@ FROM ai_call_log`
 		}
 		if aid.Valid {
 			v := uint64(aid.Int64)
-			e.AIModelID = &v
+			e.ProviderModelID = &v
 		}
 		if httpSt.Valid {
 			v := int(httpSt.Int64)
@@ -128,7 +128,7 @@ FROM ai_call_log`
 		}
 		if stu.Valid {
 			v := uint64(stu.Int64)
-			e.StudentID = &v
+			e.SysUserID = &v
 		}
 		if refTbl.Valid && refTbl.String != "" {
 			t := refTbl.String

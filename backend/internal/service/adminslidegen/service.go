@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (s *Service) resolveAdapter(ctx context.Context) (studentpaper.AnalysisAdap
 		var name, url, chatModel, appSecret string
 		err := s.db.QueryRowContext(ctx, `
 SELECT id, name, url, model, app_secret
-FROM ai_model
+FROM ai_provider_model
 WHERE status = 1 AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
@@ -105,8 +106,8 @@ func (s *Service) loadSectionContext(ctx context.Context, sectionID uint64) (*Se
 	var full sql.NullString
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.number, s.title, s.full_title, ch.number, ch.title, t.name, t.version, t.subject
-FROM section s
-JOIN chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
+FROM textbook_section s
+JOIN textbook_chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
 JOIN textbook t ON t.id = ch.textbook_id AND t.is_deleted = 0
 WHERE s.id = ? AND s.is_deleted = 0`), sectionID).Scan(
 		&c.SectionID, &c.SecNum, &c.SectionTitle, &full, &c.ChapterNum, &c.ChapterTitle,
@@ -366,9 +367,71 @@ func fixInteriorASCIIQuotesInJSONStrings(s string) string {
 	return string(out)
 }
 
+// stripTrailingCommasInJSON removes commas immediately before } or ] (invalid in RFC 8259 but common in LLM output).
+// Respects JSON string literals so commas inside strings are preserved.
+func stripTrailingCommasInJSON(s string) string {
+	bs := []byte(s)
+	out := make([]byte, 0, len(bs))
+	inStr := false
+	esc := false
+	for i := 0; i < len(bs); i++ {
+		c := bs[i]
+		if inStr {
+			out = append(out, c)
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			out = append(out, c)
+			continue
+		}
+		if c == ',' {
+			j := i + 1
+			for j < len(bs) && (bs[j] == ' ' || bs[j] == '\t' || bs[j] == '\n' || bs[j] == '\r') {
+				j++
+			}
+			if j < len(bs) && (bs[j] == '}' || bs[j] == ']') {
+				continue
+			}
+		}
+		out = append(out, c)
+	}
+	return string(out)
+}
+
+// fixMissingColonAfterObjectKey turns invalid `"key", value` into `"key": value` when the model omitted ':' before
+// nested objects/arrays or booleans/null. Repeated until stable. Does not apply to `"a", "b"` in arrays (no { [ true false null after comma).
+var (
+	reKeyCommaComposite = regexp.MustCompile(`"([a-zA-Z_][a-zA-Z0-9_]*)"\s*,\s*([\{\[])`)
+	reKeyCommaScalar    = regexp.MustCompile(`"([a-zA-Z_][a-zA-Z0-9_]*)"\s*,\s*(true|false|null)\b`)
+)
+
+func fixMissingColonAfterObjectKey(s string) string {
+	for {
+		t := s
+		t = reKeyCommaComposite.ReplaceAllString(t, `"$1": $2`)
+		t = reKeyCommaScalar.ReplaceAllString(t, `"$1": $2`)
+		if t == s {
+			return s
+		}
+		s = t
+	}
+}
+
 func slideJSONParseVariants(c string) []string {
 	seen := make(map[string]struct{})
-	order := make([]string, 0, 12)
+	order := make([]string, 0, 24)
 	add := func(v string) {
 		if _, ok := seen[v]; ok {
 			return
@@ -380,9 +443,16 @@ func slideJSONParseVariants(c string) []string {
 	bs := fixLLMJSONBackslashes(c)
 	bsAfterNl := fixLLMJSONBackslashes(nl)
 	nlAfterBs := fixRawNewlinesTabsInJSONStrings(bs)
-	for _, v := range []string{c, nl, bs, bsAfterNl, nlAfterBs} {
-		add(v)
-		add(fixInteriorASCIIQuotesInJSONStrings(v))
+	for _, raw := range []string{c, nl, bs, bsAfterNl, nlAfterBs} {
+		for _, v := range []string{raw, fixInteriorASCIIQuotesInJSONStrings(raw)} {
+			colon := fixMissingColonAfterObjectKey(v)
+			trail := stripTrailingCommasInJSON(v)
+			colonThenTrail := stripTrailingCommasInJSON(colon)
+			trailThenColon := fixMissingColonAfterObjectKey(trail)
+			for _, w := range []string{v, colon, trail, colonThenTrail, trailThenColon} {
+				add(w)
+			}
+		}
 	}
 	return order
 }
@@ -519,10 +589,10 @@ func (s *Service) writeAILog(ctx context.Context, meta *activeModel, trace stude
 	}
 	lat := trace.LatencyMS
 	latPtr := &lat
-	rt := "section"
+	rt := "textbook_section"
 	rid := sectionID
 	s.aiLog.Write(ctx, ailog.InsertRow{
-		AIModelID:        aid,
+		ProviderModelID: aid,
 		ModelNameSnap:    nameSnap,
 		Action:           action,
 		AdapterKind:      trace.AdapterKind,

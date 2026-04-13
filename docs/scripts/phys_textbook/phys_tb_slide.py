@@ -360,8 +360,8 @@ def load_section_context(cur, section_id: int) -> dict[str, Any]:
     cur.execute(
         """
         SELECT s.id, s.number, s.title, s.full_title, ch.number, ch.title, t.name, t.version, t.subject
-        FROM section s
-        JOIN chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
+        FROM textbook_section s
+        JOIN textbook_chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
         JOIN textbook t ON t.id = ch.textbook_id AND t.is_deleted = 0
         WHERE s.id = %s AND s.is_deleted = 0
         """,
@@ -756,7 +756,7 @@ def insert_ai_call_log(
             (trace.get("chat_model") or "")[:128],
             0,
             None,
-            "section",
+            "textbook_section",
             section_id,
             Json(request_meta),
             Json(response_meta),
@@ -798,8 +798,8 @@ def list_sections_for_textbook(
 ) -> list[int]:
     q = """
         SELECT s.id
-        FROM section s
-        INNER JOIN chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
+        FROM textbook_section s
+        INNER JOIN textbook_chapter ch ON ch.id = s.chapter_id AND ch.is_deleted = 0
         WHERE ch.textbook_id = %s AND s.is_deleted = 0
         """
     args: list[Any] = [textbook_id]

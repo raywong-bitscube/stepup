@@ -82,10 +82,17 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var err error
-	p.AIModelID, err = parseOptionalUint64(q.Get("ai_model_id"))
+	p.ProviderModelID, err = parseOptionalUint64(q.Get("ai_provider_model_id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
 		return
+	}
+	if p.ProviderModelID == nil {
+		p.ProviderModelID, err = parseOptionalUint64(q.Get("ai_model_id"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+			return
+		}
 	}
 	p.From, err = parseTimeBound(q.Get("from"), false)
 	if err != nil {
@@ -111,6 +118,7 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	type row struct {
 		ID             uint64          `json:"id"`
 		CreatedAt      RFC3339Time     `json:"created_at"`
+		ProviderModelID *uint64        `json:"ai_provider_model_id,omitempty"`
 		ModelNameSnap  string          `json:"model_name_snapshot"`
 		Action         string          `json:"action"`
 		AdapterKind    string          `json:"adapter_kind"`
@@ -121,6 +129,9 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 		EndpointHost   string          `json:"endpoint_host"`
 		ChatModel      string          `json:"chat_model"`
 		FallbackToMock bool            `json:"fallback_to_mock"`
+		SysUserID      *uint64         `json:"sys_user_id,omitempty"`
+		RefTable       *string         `json:"ref_table,omitempty"`
+		RefID          *uint64         `json:"ref_id,omitempty"`
 		RequestMeta    json.RawMessage `json:"request_meta"`
 		ResponseMeta   json.RawMessage `json:"response_meta"`
 		RequestBody    string          `json:"request_body"`
@@ -129,9 +140,10 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 	out := make([]row, 0, len(items))
 	for _, e := range items {
 		out = append(out, row{
-			ID:             e.ID,
-			CreatedAt:      RFC3339Time(e.CreatedAt),
-			ModelNameSnap:  e.ModelNameSnap,
+			ID:              e.ID,
+			CreatedAt:       RFC3339Time(e.CreatedAt),
+			ProviderModelID: e.ProviderModelID,
+			ModelNameSnap:   e.ModelNameSnap,
 			Action:         e.Action,
 			AdapterKind:    e.AdapterKind,
 			Outcome:        e.Outcome,
@@ -141,6 +153,9 @@ func (h *AICallLogsHandler) List(w http.ResponseWriter, r *http.Request) {
 			EndpointHost:   e.EndpointHost,
 			ChatModel:      e.ChatModel,
 			FallbackToMock: e.FallbackToMock,
+			SysUserID:      e.SysUserID,
+			RefTable:       e.RefTable,
+			RefID:          e.RefID,
 			RequestMeta:    e.RequestMeta,
 			ResponseMeta:   e.ResponseMeta,
 			RequestBody:    e.RequestBody,

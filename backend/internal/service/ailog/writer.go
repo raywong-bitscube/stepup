@@ -27,8 +27,8 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 	defer cancel()
 
 	var aid sql.NullInt64
-	if row.AIModelID != nil {
-		aid = sql.NullInt64{Int64: int64(*row.AIModelID), Valid: true}
+	if row.ProviderModelID != nil {
+		aid = sql.NullInt64{Int64: int64(*row.ProviderModelID), Valid: true}
 	}
 	var httpSt sql.NullInt64
 	if row.HTTPStatus != nil {
@@ -39,8 +39,8 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 		lat = sql.NullInt64{Int64: *row.LatencyMS, Valid: true}
 	}
 	var stu sql.NullInt64
-	if row.StudentID != nil {
-		stu = sql.NullInt64{Int64: int64(*row.StudentID), Valid: true}
+	if row.SysUserID != nil {
+		stu = sql.NullInt64{Int64: int64(*row.SysUserID), Valid: true}
 	}
 	var refTbl sql.NullString
 	if row.RefTable != nil && strings.TrimSpace(*row.RefTable) != "" {
@@ -72,9 +72,9 @@ func (w *Writer) Write(ctx context.Context, row InsertRow) {
 
 	_, _ = w.db.ExecContext(ctx, dbutil.Rebind(`
 INSERT INTO ai_call_log (
-  ai_model_id, model_name_snapshot, action, adapter_kind, result_status,
+  ai_provider_model_id, model_name_snapshot, action, adapter_kind, result_status,
   http_status, latency_ms, error_phase, error_message, endpoint_host, chat_model,
-  fallback_to_mock, student_id, ref_table, ref_id, request_meta, response_meta,
+  fallback_to_mock, sys_user_id, ref_table, ref_id, request_meta, response_meta,
   request_body, response_body
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `), nullInt64(aid), row.ModelNameSnap, row.Action, row.AdapterKind, row.ResultStatus,

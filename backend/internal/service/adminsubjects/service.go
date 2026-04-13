@@ -46,9 +46,9 @@ func (s *Service) List(ctx context.Context) ([]Subject, error) {
 	const q = `
 SELECT s.id, s.name, s.description, s.status, s.created_at,
   COALESCE((
-    SELECT COUNT(*) FROM textbook t WHERE t.subject_id = s.id AND t.is_deleted = 0
+    SELECT COUNT(*) FROM textbook t WHERE t.k12_subject_id = s.id AND t.is_deleted = 0
   ), 0) AS textbook_count
-FROM subject s
+FROM k12_subject s
 WHERE s.is_deleted = 0
 ORDER BY s.id DESC
 LIMIT 500`
@@ -106,7 +106,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	now := time.Now()
 	var nid uint64
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO subject
+INSERT INTO k12_subject
   (name, description, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 1, ?, 0, ?, 0, 0)
 RETURNING id
@@ -168,7 +168,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	sets = append(sets, "updated_at = ?", "updated_by = 0")
 	args = append(args, time.Now(), id)
 
-	q := `UPDATE subject SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE k12_subject SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {

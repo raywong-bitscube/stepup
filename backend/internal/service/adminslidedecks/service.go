@@ -88,7 +88,7 @@ func ValidateSlideJSON(raw json.RawMessage) error {
 func (s *Service) sectionExists(ctx context.Context, sectionID uint64) (bool, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT 1 FROM section WHERE id = ? AND is_deleted = 0 LIMIT 1`), sectionID).Scan(&n)
+SELECT 1 FROM textbook_section WHERE id = ? AND is_deleted = 0 LIMIT 1`), sectionID).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -107,7 +107,7 @@ func (s *Service) ListSummaries(ctx context.Context, sectionID uint64) ([]Summar
 
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
 SELECT id, section_id, title, deck_status, schema_version, updated_at
-FROM slide_deck
+FROM textbook_slide_deck
 WHERE section_id = ? AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 200`), sectionID)
@@ -139,7 +139,7 @@ func (s *Service) Get(ctx context.Context, deckID uint64) (*Full, error) {
 	var genPrompt sql.NullString
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, section_id, title, deck_status, schema_version, updated_at, content, generation_prompt
-FROM slide_deck
+FROM textbook_slide_deck
 WHERE id = ? AND is_deleted = 0`), deckID).Scan(
 		&f.ID, &f.SectionID, &f.Title, &f.DeckStatus, &f.SchemaVersion, &f.UpdatedAt, &content, &genPrompt,
 	)
@@ -216,7 +216,7 @@ func (s *Service) Create(ctx context.Context, sectionID uint64, adminID uint64, 
 
 	if st == StatusActive {
 		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
-UPDATE slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
+UPDATE textbook_slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
 WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`),
 			StatusArchived, adminID, sectionID, StatusActive)
 		if err != nil {
@@ -230,7 +230,7 @@ WHERE section_id = ? AND deck_status = ? AND is_deleted = 0`),
 	}
 	var id64 uint64
 	err = tx.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO slide_deck
+INSERT INTO textbook_slide_deck
   (section_id, title, deck_status, schema_version, content, generation_prompt, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, ?::jsonb, ?, NOW(), ?, NOW(), ?, 0)
 RETURNING id`),
@@ -268,7 +268,7 @@ func (s *Service) Patch(ctx context.Context, deckID uint64, adminID uint64, in P
 	var sectionID uint64
 	var curStatus string
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT section_id, deck_status FROM slide_deck WHERE id = ? AND is_deleted = 0`), deckID).Scan(&sectionID, &curStatus)
+SELECT section_id, deck_status FROM textbook_slide_deck WHERE id = ? AND is_deleted = 0`), deckID).Scan(&sectionID, &curStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -301,7 +301,7 @@ SELECT section_id, deck_status FROM slide_deck WHERE id = ? AND is_deleted = 0`)
 
 	if newStatus == StatusActive && curStatus != StatusActive {
 		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
-UPDATE slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
+UPDATE textbook_slide_deck SET deck_status = ?, updated_at = NOW(), updated_by = ?
 WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`),
 			StatusArchived, adminID, sectionID, deckID, StatusActive)
 		if err != nil {
@@ -335,7 +335,7 @@ WHERE section_id = ? AND id <> ? AND deck_status = ? AND is_deleted = 0`),
 		return ErrInvalidInput
 	}
 	args = append(args, adminID, deckID)
-	q := "UPDATE slide_deck SET " + strings.Join(sets, ", ") + ", updated_at = NOW(), updated_by = ? WHERE id = ? AND is_deleted = 0"
+	q := "UPDATE textbook_slide_deck SET " + strings.Join(sets, ", ") + ", updated_at = NOW(), updated_by = ? WHERE id = ? AND is_deleted = 0"
 	_, err = tx.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		return err

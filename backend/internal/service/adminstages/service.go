@@ -44,7 +44,7 @@ func (s *Service) List(ctx context.Context) ([]Stage, error) {
 
 	const q = `
 SELECT id, name, description, status, created_at
-FROM stage
+FROM k12_grade
 WHERE is_deleted = 0
 ORDER BY id DESC
 LIMIT 500`
@@ -101,7 +101,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (uint64, error) {
 	now := time.Now()
 	var nid uint64
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
-INSERT INTO stage
+INSERT INTO k12_grade
   (name, description, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 1, ?, 0, ?, 0, 0)
 RETURNING id
@@ -163,7 +163,7 @@ func (s *Service) Patch(ctx context.Context, id uint64, in UpdateInput) error {
 	sets = append(sets, "updated_at = ?", "updated_by = 0")
 	args = append(args, time.Now(), id)
 
-	q := `UPDATE stage SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
+	q := `UPDATE k12_grade SET ` + strings.Join(sets, ", ") + ` WHERE id = ? AND is_deleted = 0`
 	res, err := s.db.ExecContext(ctx, dbutil.Rebind(q), args...)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {

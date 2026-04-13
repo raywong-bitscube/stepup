@@ -11,7 +11,7 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
 )
 
-// KeyPaperAnalyzeChatUser is the prompt_template.key for the OpenAI-compatible chat
+// KeyPaperAnalyzeChatUser is the ai_prompt_template.key for the OpenAI-compatible chat
 // "user" message when analyzing a student exam paper (text + optional vision image).
 const KeyPaperAnalyzeChatUser = "paper_analyze_chat_user"
 
@@ -73,7 +73,7 @@ func DefaultEssayOutlineOCRTopic() string {
 	return `请识别图片中的作文题目或材料内容，只输出应作为「题目文本」交给学生看的正文本身；不要加「题目：」等前缀，不要解释。若材料为多段，保留合理换行。`
 }
 
-// GetActiveContent returns prompt_template.content for key when status=1 and not deleted.
+// GetActiveContent returns ai_prompt_template.content for key when status=1 and not deleted.
 func GetActiveContent(ctx context.Context, db *sqlx.DB, key string) (string, error) {
 	if db == nil {
 		return "", sql.ErrNoRows
@@ -87,7 +87,7 @@ func GetActiveContent(ctx context.Context, db *sqlx.DB, key string) (string, err
 	var content string
 	err := db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT content
-FROM prompt_template
+FROM ai_prompt_template
 WHERE "key" = ? AND status = 1 AND is_deleted = 0
 LIMIT 1
 `), key).Scan(&content)

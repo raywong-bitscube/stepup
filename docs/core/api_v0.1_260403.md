@@ -261,9 +261,9 @@ Header: `Authorization: Bearer <admin_token>`
 
 #### 教材目录（管理端，只改不增删）
 
-用于维护已落库的 `textbook` / `chapter` / `section`：**仅 PATCH**，不提供创建与删除接口。学生端科目下**至少绑定一本教材**时，管理端「科目」列表行内显示 **目录**，进入盖在主内容上的全屏目录区，**左侧保留管理菜单**，且「科目」菜单项保持高亮（`frontend-admin`）。
+用于维护已落库的 `textbook` / `textbook_chapter` / `textbook_section`：**仅 PATCH**，不提供创建与删除接口。学生端科目下**至少绑定一本教材**时，管理端「科目」列表行内显示 **目录**，进入盖在主内容上的全屏目录区，**左侧保留管理菜单**，且「科目」菜单项保持高亮（`frontend-admin`）。
 
-均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；`chapter`/`section` 需已执行迁移（含 `status` 字段、章/节序号无唯一约束），见 **`db/migrations/2026-04-08#02_chapter_section_status_drop_number_unique.sql`** 或当前基线 schema。
+均需 `Authorization: Bearer <admin_token>` 与 `DB_DSN`；`textbook_chapter`/`textbook_section` 需已执行迁移（含 `status` 字段、章/节序号无唯一约束及表重命名 **`db/migrations/2026-04-12#01_rename_textbook_chapter_section.sql`**），或当前基线 schema。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -276,14 +276,14 @@ Header: `Authorization: Bearer <admin_token>`
 
 #### 章节幻灯片 Slide Deck（管理端）
 
-表 **`slide_deck`**：挂载 **`section_id`**；`deck_status` 为 `draft` | `active` | `archived`；同一节仅一条 `active`（将某套设为 `active` 时，其余同节 `active` 自动改为 `archived`）。`content` 为 JSON，须含 `schemaVersion: 1` 与 `slides` 数组（结构见 **`docs/core/slide_deck_design_v0.1_260403.md`**）。可选列 **`generation_prompt`**：最近一次 AI 生成使用的完整提示词（由 **`generate-ai`** 写入）。
+表 **`slide_deck`**：挂载 **`section_id`**（指向 **`textbook_section.id`**）；`deck_status` 为 `draft` | `active` | `archived`；同一节仅一条 `active`（将某套设为 `active` 时，其余同节 `active` 自动改为 `archived`）。`content` 为 JSON，须含 `schemaVersion: 1` 与 `slides` 数组（结构见 **`docs/core/slide_deck_design_v0.1_260403.md`**）。可选列 **`generation_prompt`**：最近一次 AI 生成使用的完整提示词（由 **`generate-ai`** 写入）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 节须存在。返回 `items[]`：`id`、`section_id`、`title`、`deck_status`、`schema_version`、`updated_at`（**不含**正文 `content`）。 |
 | `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks` | 体：`title`（必填）、`content`（必填，合法 JSON 对象）、`deck_status`（可选，默认 `draft`）、`schema_version`（可选，默认 1）、`generation_prompt`（可选）。成功：`201` + `{ "id", "status":"ok" }`。 |
 | `GET` | `/api/v1/admin/sections/{sectionId}/slide-generate/default-prompt` | 节须存在。返回 `{ "prompt": "<默认提示词>" }`，供管理端「生成幻灯片」弹窗预填（可再经本地缓存覆盖）。 |
-| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks/generate-ai` | 体：`{ "prompt": "..." }`。调用当前环境配置的 chat 模型生成合法 slide deck JSON，校验后以 **`draft`** 入库并写入 **`generation_prompt`**；同时追加 **`ai_call_log`**（`action`：`slide_deck_generate_ai`，`ref_table`：`section`，`ref_id`：节 id）。成功：`201` + `{ "id", "status":"ok" }`；模型返回非合法 JSON 时 `400` `AI_SLIDE_JSON_INVALID`。 |
+| `POST` | `/api/v1/admin/sections/{sectionId}/slide-decks/generate-ai` | 体：`{ "prompt": "..." }`。调用当前环境配置的 chat 模型生成合法 slide deck JSON，校验后以 **`draft`** 入库并写入 **`generation_prompt`**；同时追加 **`ai_call_log`**（`action`：`slide_deck_generate_ai`，`ref_table`：`textbook_section`，`ref_id`：节 id）。成功：`201` + `{ "id", "status":"ok" }`；模型返回非合法 JSON 时 `400` `AI_SLIDE_JSON_INVALID`。 |
 | `GET` | `/api/v1/admin/slide-decks/{deckId}` | 单条含完整 `content`；若存在则含 **`generation_prompt`**。 |
 | `PATCH` | `/api/v1/admin/slide-decks/{deckId}` | 可选：`title`、`content`、`deck_status`、`generation_prompt`（至少一项）。设为 `active` 时同节其他 `active` 归档。 |
 

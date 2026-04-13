@@ -692,8 +692,8 @@
       ${cell('Endpoint', e.endpoint_host || '')}
       ${cell('mock 回退', mockTxt)}
       ${cell(
-        'student_id',
-        e.student_id != null && e.student_id !== '' ? String(e.student_id) : ''
+        'sys_user_id',
+        e.sys_user_id != null && e.sys_user_id !== '' ? String(e.sys_user_id) : ''
       )}
       ${cell('ref_table', e.ref_table || '')}
       ${cell('ref_id', e.ref_id != null && e.ref_id !== '' ? String(e.ref_id) : '')}
@@ -745,7 +745,7 @@
     aiLogFilters: {
       limit: 50,
       offset: 0,
-      ai_model_id: '',
+      ai_provider_model_id: '',
       action: '',
       result_status: '',
       adapter_kind: '',
@@ -1054,7 +1054,7 @@
         const f = state.aiLogFilters;
         q.set('limit', String(f.limit || 50));
         q.set('offset', String(f.offset || 0));
-        if (f.ai_model_id) q.set('ai_model_id', f.ai_model_id);
+        if (f.ai_provider_model_id) q.set('ai_provider_model_id', f.ai_provider_model_id);
         if (f.action) q.set('action', f.action);
         if (f.result_status) q.set('result_status', f.result_status);
         if (f.adapter_kind) q.set('adapter_kind', f.adapter_kind);
@@ -2170,7 +2170,7 @@
           <div class="ai-log-filter-grid">
         <div>
           <label>筛选：模型 id</label>
-          <input type="text" id="ailogModel" placeholder="ai_model.id" value="${escapeHtml(f.ai_model_id)}" />
+          <input type="text" id="ailogModel" placeholder="ai_provider_model.id" value="${escapeHtml(f.ai_provider_model_id)}" />
         </div>
         <div>
           <label>动作</label>
@@ -2222,7 +2222,7 @@
     const readFilters = (offsetVal) => ({
       limit: Math.min(200, Math.max(1, Number(pane.querySelector('#ailogLimit').value) || 50)),
       offset: Math.max(0, offsetVal),
-      ai_model_id: pane.querySelector('#ailogModel').value.trim(),
+      ai_provider_model_id: pane.querySelector('#ailogModel').value.trim(),
       action: pane.querySelector('#ailogAction').value.trim(),
       result_status: pane.querySelector('#ailogStatus').value,
       adapter_kind: pane.querySelector('#ailogAdp').value.trim(),

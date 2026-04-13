@@ -4,7 +4,7 @@
 **版本**: `schemaVersion` **1**（JSON 结构与本文同步）  
 **状态**: 设计已定稿；**初版已实现**：`slide_deck` 表、管理端/学生端 API、`frontend-student` 的 **`app.js` 内联 `SlideDeckRenderer`** + `slides.css` + 物理科目「章节互动课件」入口（迁移 **`db/migrations/2026-04-10#01_slide_deck.sql`**，示例种子 **`db/seed/slide_deck_sample_yuedu_physics_ch2_sec1.sql`**）。管理端 JSON 编辑 UI 可后续再做。
 
-**关联文档**: [功能清单与设计](./feature_design_v0.1_260403.md)、[API](./api_v0.1_260403.md)、教材 `textbook` → `chapter` → `section`
+**关联文档**: [功能清单与设计](./feature_design_v0.1_260403.md)、[API](./api_v0.1_260403.md)、教材 `textbook` → `textbook_chapter` → `textbook_section`
 
 ---
 

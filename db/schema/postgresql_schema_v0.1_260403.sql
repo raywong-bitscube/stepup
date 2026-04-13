@@ -1,10 +1,9 @@
--- StepUp v0.1 PostgreSQL baseline (MySQL parity + pgvector for future embeddings)
+-- StepUp v0.1 PostgreSQL baseline (module-prefixed tables + pgvector for embeddings)
 -- Usage: psql "postgres://USER:PASS@HOST:5432/stepup?sslmode=disable" -f db/schema/postgresql_schema_v0.1_260403.sql
 SET client_encoding = 'UTF8';
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Emulate MySQL ON UPDATE CURRENT_TIMESTAMP for updated_at
 CREATE OR REPLACE FUNCTION stepup_touch_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -13,8 +12,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 1) stage
-CREATE TABLE IF NOT EXISTS stage (
+-- 1) k12_grade (was: stage)
+CREATE TABLE IF NOT EXISTS k12_grade (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(64) NOT NULL,
   description VARCHAR(255) NULL,
@@ -26,15 +25,15 @@ CREATE TABLE IF NOT EXISTS stage (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_stage_name UNIQUE (name)
+  CONSTRAINT uk_k12_grade_name UNIQUE (name)
 );
-CREATE INDEX IF NOT EXISTS idx_stage_status ON stage (status);
-CREATE INDEX IF NOT EXISTS idx_stage_is_deleted ON stage (is_deleted);
-DROP TRIGGER IF EXISTS trg_stage_updated_at ON stage;
-CREATE TRIGGER trg_stage_updated_at BEFORE UPDATE ON stage FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_k12_grade_status ON k12_grade (status);
+CREATE INDEX IF NOT EXISTS idx_k12_grade_is_deleted ON k12_grade (is_deleted);
+DROP TRIGGER IF EXISTS trg_k12_grade_updated_at ON k12_grade;
+CREATE TRIGGER trg_k12_grade_updated_at BEFORE UPDATE ON k12_grade FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 2) subject
-CREATE TABLE IF NOT EXISTS subject (
+-- 2) k12_subject (was: subject)
+CREATE TABLE IF NOT EXISTS k12_subject (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(64) NOT NULL,
   description VARCHAR(255) NULL,
@@ -46,21 +45,21 @@ CREATE TABLE IF NOT EXISTS subject (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_subject_name UNIQUE (name)
+  CONSTRAINT uk_k12_subject_name UNIQUE (name)
 );
-CREATE INDEX IF NOT EXISTS idx_subject_status ON subject (status);
-CREATE INDEX IF NOT EXISTS idx_subject_is_deleted ON subject (is_deleted);
-DROP TRIGGER IF EXISTS trg_subject_updated_at ON subject;
-CREATE TRIGGER trg_subject_updated_at BEFORE UPDATE ON subject FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_k12_subject_status ON k12_subject (status);
+CREATE INDEX IF NOT EXISTS idx_k12_subject_is_deleted ON k12_subject (is_deleted);
+DROP TRIGGER IF EXISTS trg_k12_subject_updated_at ON k12_subject;
+CREATE TRIGGER trg_k12_subject_updated_at BEFORE UPDATE ON k12_subject FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 3) student
-CREATE TABLE IF NOT EXISTS student (
+-- 3) sys_user (was: student; future parent/teacher rows may use same table with profile/discriminator)
+CREATE TABLE IF NOT EXISTS sys_user (
   id BIGSERIAL PRIMARY KEY,
   phone VARCHAR(32) NULL,
   email VARCHAR(255) NULL,
   password VARCHAR(255) NOT NULL,
   name VARCHAR(128) NOT NULL,
-  stage_id BIGINT NOT NULL,
+  k12_grade_id BIGINT NOT NULL,
   status SMALLINT NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT NOT NULL,
@@ -69,18 +68,18 @@ CREATE TABLE IF NOT EXISTS student (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_student_phone UNIQUE (phone),
-  CONSTRAINT uk_student_email UNIQUE (email),
-  CONSTRAINT fk_student_stage FOREIGN KEY (stage_id) REFERENCES stage (id)
+  CONSTRAINT uk_sys_user_phone UNIQUE (phone),
+  CONSTRAINT uk_sys_user_email UNIQUE (email),
+  CONSTRAINT fk_sys_user_k12_grade FOREIGN KEY (k12_grade_id) REFERENCES k12_grade (id)
 );
-CREATE INDEX IF NOT EXISTS idx_student_stage_id ON student (stage_id);
-CREATE INDEX IF NOT EXISTS idx_student_status ON student (status);
-CREATE INDEX IF NOT EXISTS idx_student_is_deleted ON student (is_deleted);
-DROP TRIGGER IF EXISTS trg_student_updated_at ON student;
-CREATE TRIGGER trg_student_updated_at BEFORE UPDATE ON student FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_sys_user_k12_grade_id ON sys_user (k12_grade_id);
+CREATE INDEX IF NOT EXISTS idx_sys_user_status ON sys_user (status);
+CREATE INDEX IF NOT EXISTS idx_sys_user_is_deleted ON sys_user (is_deleted);
+DROP TRIGGER IF EXISTS trg_sys_user_updated_at ON sys_user;
+CREATE TRIGGER trg_sys_user_updated_at BEFORE UPDATE ON sys_user FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 4) admin
-CREATE TABLE IF NOT EXISTS admin (
+-- 4) sys_admin_user (was: admin)
+CREATE TABLE IF NOT EXISTS sys_admin_user (
   id BIGSERIAL PRIMARY KEY,
   username VARCHAR(64) NOT NULL,
   password VARCHAR(255) NOT NULL,
@@ -93,15 +92,15 @@ CREATE TABLE IF NOT EXISTS admin (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_admin_username UNIQUE (username)
+  CONSTRAINT uk_sys_admin_user_username UNIQUE (username)
 );
-CREATE INDEX IF NOT EXISTS idx_admin_status ON admin (status);
-CREATE INDEX IF NOT EXISTS idx_admin_is_deleted ON admin (is_deleted);
-DROP TRIGGER IF EXISTS trg_admin_updated_at ON admin;
-CREATE TRIGGER trg_admin_updated_at BEFORE UPDATE ON admin FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_sys_admin_user_status ON sys_admin_user (status);
+CREATE INDEX IF NOT EXISTS idx_sys_admin_user_is_deleted ON sys_admin_user (is_deleted);
+DROP TRIGGER IF EXISTS trg_sys_admin_user_updated_at ON sys_admin_user;
+CREATE TRIGGER trg_sys_admin_user_updated_at BEFORE UPDATE ON sys_admin_user FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 5) ai_model
-CREATE TABLE IF NOT EXISTS ai_model (
+-- 5) ai_provider_model (was: ai_model)
+CREATE TABLE IF NOT EXISTS ai_provider_model (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(128) NOT NULL,
   url VARCHAR(512) NOT NULL,
@@ -116,13 +115,13 @@ CREATE TABLE IF NOT EXISTS ai_model (
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_ai_model_status ON ai_model (status);
-CREATE INDEX IF NOT EXISTS idx_ai_model_is_deleted ON ai_model (is_deleted);
-DROP TRIGGER IF EXISTS trg_ai_model_updated_at ON ai_model;
-CREATE TRIGGER trg_ai_model_updated_at BEFORE UPDATE ON ai_model FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_ai_provider_model_status ON ai_provider_model (status);
+CREATE INDEX IF NOT EXISTS idx_ai_provider_model_is_deleted ON ai_provider_model (is_deleted);
+DROP TRIGGER IF EXISTS trg_ai_provider_model_updated_at ON ai_provider_model;
+CREATE TRIGGER trg_ai_provider_model_updated_at BEFORE UPDATE ON ai_provider_model FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 6) prompt_template
-CREATE TABLE IF NOT EXISTS prompt_template (
+-- 6) ai_prompt_template (was: prompt_template)
+CREATE TABLE IF NOT EXISTS ai_prompt_template (
   id BIGSERIAL PRIMARY KEY,
   "key" VARCHAR(128) NOT NULL,
   description VARCHAR(255) NULL,
@@ -135,18 +134,18 @@ CREATE TABLE IF NOT EXISTS prompt_template (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_prompt_key UNIQUE ("key")
+  CONSTRAINT uk_ai_prompt_template_key UNIQUE ("key")
 );
-CREATE INDEX IF NOT EXISTS idx_prompt_status ON prompt_template (status);
-CREATE INDEX IF NOT EXISTS idx_prompt_is_deleted ON prompt_template (is_deleted);
-DROP TRIGGER IF EXISTS trg_prompt_template_updated_at ON prompt_template;
-CREATE TRIGGER trg_prompt_template_updated_at BEFORE UPDATE ON prompt_template FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_template_status ON ai_prompt_template (status);
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_template_is_deleted ON ai_prompt_template (is_deleted);
+DROP TRIGGER IF EXISTS trg_ai_prompt_template_updated_at ON ai_prompt_template;
+CREATE TRIGGER trg_ai_prompt_template_updated_at BEFORE UPDATE ON ai_prompt_template FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 7) exam_paper
-CREATE TABLE IF NOT EXISTS exam_paper (
+-- 7) student_exam_paper (was: exam_paper)
+CREATE TABLE IF NOT EXISTS student_exam_paper (
   id BIGSERIAL PRIMARY KEY,
-  student_id BIGINT NOT NULL,
-  subject_id BIGINT NOT NULL,
+  sys_user_id BIGINT NOT NULL,
+  k12_subject_id BIGINT NOT NULL,
   file_url VARCHAR(1024) NOT NULL,
   extra_file_urls JSONB NULL,
   file_type VARCHAR(16) NOT NULL,
@@ -159,17 +158,17 @@ CREATE TABLE IF NOT EXISTS exam_paper (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT fk_exam_paper_student FOREIGN KEY (student_id) REFERENCES student (id),
-  CONSTRAINT fk_exam_paper_subject FOREIGN KEY (subject_id) REFERENCES subject (id)
+  CONSTRAINT fk_student_exam_paper_sys_user FOREIGN KEY (sys_user_id) REFERENCES sys_user (id),
+  CONSTRAINT fk_student_exam_paper_k12_subject FOREIGN KEY (k12_subject_id) REFERENCES k12_subject (id)
 );
-CREATE INDEX IF NOT EXISTS idx_exam_paper_student_id ON exam_paper (student_id);
-CREATE INDEX IF NOT EXISTS idx_exam_paper_subject_id ON exam_paper (subject_id);
-CREATE INDEX IF NOT EXISTS idx_exam_paper_is_deleted ON exam_paper (is_deleted);
-DROP TRIGGER IF EXISTS trg_exam_paper_updated_at ON exam_paper;
-CREATE TRIGGER trg_exam_paper_updated_at BEFORE UPDATE ON exam_paper FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_student_exam_paper_sys_user_id ON student_exam_paper (sys_user_id);
+CREATE INDEX IF NOT EXISTS idx_student_exam_paper_k12_subject_id ON student_exam_paper (k12_subject_id);
+CREATE INDEX IF NOT EXISTS idx_student_exam_paper_is_deleted ON student_exam_paper (is_deleted);
+DROP TRIGGER IF EXISTS trg_student_exam_paper_updated_at ON student_exam_paper;
+CREATE TRIGGER trg_student_exam_paper_updated_at BEFORE UPDATE ON student_exam_paper FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 8) paper_analysis
-CREATE TABLE IF NOT EXISTS paper_analysis (
+-- 8) student_paper_analysis (was: paper_analysis)
+CREATE TABLE IF NOT EXISTS student_paper_analysis (
   id BIGSERIAL PRIMARY KEY,
   paper_id BIGINT NOT NULL,
   ai_model_snapshot JSONB NOT NULL,
@@ -183,16 +182,16 @@ CREATE TABLE IF NOT EXISTS paper_analysis (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_paper_analysis_paper_id UNIQUE (paper_id),
-  CONSTRAINT fk_paper_analysis_paper FOREIGN KEY (paper_id) REFERENCES exam_paper (id)
+  CONSTRAINT uk_student_paper_analysis_paper_id UNIQUE (paper_id),
+  CONSTRAINT fk_student_paper_analysis_paper FOREIGN KEY (paper_id) REFERENCES student_exam_paper (id)
 );
-CREATE INDEX IF NOT EXISTS idx_paper_analysis_status ON paper_analysis (status);
-CREATE INDEX IF NOT EXISTS idx_paper_analysis_is_deleted ON paper_analysis (is_deleted);
-DROP TRIGGER IF EXISTS trg_paper_analysis_updated_at ON paper_analysis;
-CREATE TRIGGER trg_paper_analysis_updated_at BEFORE UPDATE ON paper_analysis FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_student_paper_analysis_status ON student_paper_analysis (status);
+CREATE INDEX IF NOT EXISTS idx_student_paper_analysis_is_deleted ON student_paper_analysis (is_deleted);
+DROP TRIGGER IF EXISTS trg_student_paper_analysis_updated_at ON student_paper_analysis;
+CREATE TRIGGER trg_student_paper_analysis_updated_at BEFORE UPDATE ON student_paper_analysis FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 9) improvement_plan
-CREATE TABLE IF NOT EXISTS improvement_plan (
+-- 9) student_improvement_plan (was: improvement_plan)
+CREATE TABLE IF NOT EXISTS student_improvement_plan (
   id BIGSERIAL PRIMARY KEY,
   paper_id BIGINT NOT NULL,
   plan_content TEXT NOT NULL,
@@ -204,17 +203,18 @@ CREATE TABLE IF NOT EXISTS improvement_plan (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_improvement_plan_paper_id UNIQUE (paper_id),
-  CONSTRAINT fk_improvement_plan_paper FOREIGN KEY (paper_id) REFERENCES exam_paper (id)
+  CONSTRAINT uk_student_improvement_plan_paper_id UNIQUE (paper_id),
+  CONSTRAINT fk_student_improvement_plan_paper FOREIGN KEY (paper_id) REFERENCES student_exam_paper (id)
 );
-CREATE INDEX IF NOT EXISTS idx_improvement_plan_is_deleted ON improvement_plan (is_deleted);
-DROP TRIGGER IF EXISTS trg_improvement_plan_updated_at ON improvement_plan;
-CREATE TRIGGER trg_improvement_plan_updated_at BEFORE UPDATE ON improvement_plan FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_student_improvement_plan_is_deleted ON student_improvement_plan (is_deleted);
+DROP TRIGGER IF EXISTS trg_student_improvement_plan_updated_at ON student_improvement_plan;
+CREATE TRIGGER trg_student_improvement_plan_updated_at BEFORE UPDATE ON student_improvement_plan FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 10) admin_session
-CREATE TABLE IF NOT EXISTS admin_session (
+-- 10) sys_session (merged admin_session + student_session; user_type distinguishes principals)
+CREATE TABLE IF NOT EXISTS sys_session (
   id BIGSERIAL PRIMARY KEY,
-  admin_id BIGINT NOT NULL,
+  user_type VARCHAR(32) NOT NULL,
+  user_id BIGINT NOT NULL,
   session_token VARCHAR(255) NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   last_seen_at TIMESTAMPTZ NULL,
@@ -228,45 +228,17 @@ CREATE TABLE IF NOT EXISTS admin_session (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT uk_admin_session_token UNIQUE (session_token),
-  CONSTRAINT fk_admin_session_admin FOREIGN KEY (admin_id) REFERENCES admin (id)
+  CONSTRAINT uk_sys_session_token UNIQUE (session_token)
 );
-CREATE INDEX IF NOT EXISTS idx_admin_session_admin_id ON admin_session (admin_id);
-CREATE INDEX IF NOT EXISTS idx_admin_session_expires_at ON admin_session (expires_at);
-CREATE INDEX IF NOT EXISTS idx_admin_session_status ON admin_session (status);
-CREATE INDEX IF NOT EXISTS idx_admin_session_is_deleted ON admin_session (is_deleted);
-DROP TRIGGER IF EXISTS trg_admin_session_updated_at ON admin_session;
-CREATE TRIGGER trg_admin_session_updated_at BEFORE UPDATE ON admin_session FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_sys_session_user ON sys_session (user_type, user_id);
+CREATE INDEX IF NOT EXISTS idx_sys_session_expires_at ON sys_session (expires_at);
+CREATE INDEX IF NOT EXISTS idx_sys_session_status ON sys_session (status);
+CREATE INDEX IF NOT EXISTS idx_sys_session_is_deleted ON sys_session (is_deleted);
+DROP TRIGGER IF EXISTS trg_sys_session_updated_at ON sys_session;
+CREATE TRIGGER trg_sys_session_updated_at BEFORE UPDATE ON sys_session FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 11) student_session
-CREATE TABLE IF NOT EXISTS student_session (
-  id BIGSERIAL PRIMARY KEY,
-  student_id BIGINT NOT NULL,
-  session_token VARCHAR(255) NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,
-  last_seen_at TIMESTAMPTZ NULL,
-  ip_address VARCHAR(64) NULL,
-  user_agent VARCHAR(512) NULL,
-  status SMALLINT NOT NULL DEFAULT 1,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created_by BIGINT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_by BIGINT NOT NULL,
-  is_deleted SMALLINT NOT NULL DEFAULT 0,
-  deleted_at TIMESTAMPTZ NULL,
-  deleted_by BIGINT NULL,
-  CONSTRAINT uk_student_session_token UNIQUE (session_token),
-  CONSTRAINT fk_student_session_student FOREIGN KEY (student_id) REFERENCES student (id)
-);
-CREATE INDEX IF NOT EXISTS idx_student_session_student_id ON student_session (student_id);
-CREATE INDEX IF NOT EXISTS idx_student_session_expires_at ON student_session (expires_at);
-CREATE INDEX IF NOT EXISTS idx_student_session_status ON student_session (status);
-CREATE INDEX IF NOT EXISTS idx_student_session_is_deleted ON student_session (is_deleted);
-DROP TRIGGER IF EXISTS trg_student_session_updated_at ON student_session;
-CREATE TRIGGER trg_student_session_updated_at BEFORE UPDATE ON student_session FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
-
--- 12) verification_code
-CREATE TABLE IF NOT EXISTS verification_code (
+-- 11) sys_verification_code (was: verification_code)
+CREATE TABLE IF NOT EXISTS sys_verification_code (
   id BIGSERIAL PRIMARY KEY,
   identifier VARCHAR(255) NOT NULL,
   code VARCHAR(16) NOT NULL,
@@ -281,18 +253,18 @@ CREATE TABLE IF NOT EXISTS verification_code (
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_verification_identifier ON verification_code (identifier);
-CREATE INDEX IF NOT EXISTS idx_verification_expires_at ON verification_code (expires_at);
-CREATE INDEX IF NOT EXISTS idx_verification_is_used ON verification_code (is_used);
-CREATE INDEX IF NOT EXISTS idx_verification_is_deleted ON verification_code (is_deleted);
-DROP TRIGGER IF EXISTS trg_verification_code_updated_at ON verification_code;
-CREATE TRIGGER trg_verification_code_updated_at BEFORE UPDATE ON verification_code FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_sys_verification_identifier ON sys_verification_code (identifier);
+CREATE INDEX IF NOT EXISTS idx_sys_verification_expires_at ON sys_verification_code (expires_at);
+CREATE INDEX IF NOT EXISTS idx_sys_verification_is_used ON sys_verification_code (is_used);
+CREATE INDEX IF NOT EXISTS idx_sys_verification_is_deleted ON sys_verification_code (is_deleted);
+DROP TRIGGER IF EXISTS trg_sys_verification_code_updated_at ON sys_verification_code;
+CREATE TRIGGER trg_sys_verification_code_updated_at BEFORE UPDATE ON sys_verification_code FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 13) essay_outline_practice
-CREATE TABLE IF NOT EXISTS essay_outline_practice (
+-- 12) student_essay_outline_practice (was: essay_outline_practice)
+CREATE TABLE IF NOT EXISTS student_essay_outline_practice (
   id BIGSERIAL PRIMARY KEY,
-  student_id BIGINT NOT NULL,
-  subject_id BIGINT NULL,
+  sys_user_id BIGINT NOT NULL,
+  k12_subject_id BIGINT NULL,
   topic_text TEXT NOT NULL,
   topic_label VARCHAR(128) NOT NULL,
   topic_source VARCHAR(32) NOT NULL,
@@ -308,20 +280,20 @@ CREATE TABLE IF NOT EXISTS essay_outline_practice (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT fk_essay_outline_student FOREIGN KEY (student_id) REFERENCES student (id),
-  CONSTRAINT fk_essay_outline_subject FOREIGN KEY (subject_id) REFERENCES subject (id)
+  CONSTRAINT fk_student_essay_outline_sys_user FOREIGN KEY (sys_user_id) REFERENCES sys_user (id),
+  CONSTRAINT fk_student_essay_outline_k12_subject FOREIGN KEY (k12_subject_id) REFERENCES k12_subject (id)
 );
-CREATE INDEX IF NOT EXISTS idx_essay_outline_student ON essay_outline_practice (student_id);
-CREATE INDEX IF NOT EXISTS idx_essay_outline_created ON essay_outline_practice (created_at);
-CREATE INDEX IF NOT EXISTS idx_essay_outline_is_deleted ON essay_outline_practice (is_deleted);
-DROP TRIGGER IF EXISTS trg_essay_outline_practice_updated_at ON essay_outline_practice;
-CREATE TRIGGER trg_essay_outline_practice_updated_at BEFORE UPDATE ON essay_outline_practice FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_student_essay_outline_sys_user ON student_essay_outline_practice (sys_user_id);
+CREATE INDEX IF NOT EXISTS idx_student_essay_outline_created ON student_essay_outline_practice (created_at);
+CREATE INDEX IF NOT EXISTS idx_student_essay_outline_is_deleted ON student_essay_outline_practice (is_deleted);
+DROP TRIGGER IF EXISTS trg_student_essay_outline_practice_updated_at ON student_essay_outline_practice;
+CREATE TRIGGER trg_student_essay_outline_practice_updated_at BEFORE UPDATE ON student_essay_outline_practice FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
--- 14) ai_call_log
+-- 13) ai_call_log
 CREATE TABLE IF NOT EXISTS ai_call_log (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ai_model_id BIGINT NULL,
+  ai_provider_model_id BIGINT NULL,
   model_name_snapshot VARCHAR(128) NOT NULL DEFAULT '',
   action VARCHAR(64) NOT NULL DEFAULT 'paper_analyze',
   adapter_kind VARCHAR(64) NOT NULL DEFAULT '',
@@ -333,24 +305,24 @@ CREATE TABLE IF NOT EXISTS ai_call_log (
   endpoint_host VARCHAR(255) NOT NULL DEFAULT '',
   chat_model VARCHAR(128) NOT NULL DEFAULT '',
   fallback_to_mock SMALLINT NOT NULL DEFAULT 0,
-  student_id BIGINT NULL,
+  sys_user_id BIGINT NULL,
   ref_table VARCHAR(64) NULL,
   ref_id BIGINT NULL,
   request_meta JSONB NULL,
   response_meta JSONB NULL,
   request_body TEXT NULL,
   response_body TEXT NULL,
-  CONSTRAINT fk_ai_call_log_model FOREIGN KEY (ai_model_id) REFERENCES ai_model (id) ON DELETE SET NULL
+  CONSTRAINT fk_ai_call_log_ai_provider_model FOREIGN KEY (ai_provider_model_id) REFERENCES ai_provider_model (id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_created ON ai_call_log (created_at);
-CREATE INDEX IF NOT EXISTS idx_ai_call_log_model ON ai_call_log (ai_model_id);
+CREATE INDEX IF NOT EXISTS idx_ai_call_log_model ON ai_call_log (ai_provider_model_id);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_action ON ai_call_log (action);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_status ON ai_call_log (result_status);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_adapter ON ai_call_log (adapter_kind);
-CREATE INDEX IF NOT EXISTS idx_ai_call_log_student ON ai_call_log (student_id);
+CREATE INDEX IF NOT EXISTS idx_ai_call_log_sys_user ON ai_call_log (sys_user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_call_log_ref ON ai_call_log (ref_table, ref_id);
 
--- 15) audit_log
+-- 14) audit_log
 CREATE TABLE IF NOT EXISTS audit_log (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NULL,
@@ -367,14 +339,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log (user_id);
 CREATE INDEX IF NOT EXISTS idx_audit_log_entity_type ON audit_log (entity_type);
 CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log (created_at);
 
--- 16) textbook / chapter / section / slide_deck
+-- 15) textbook / chapter / section / textbook_slide_deck
 CREATE TABLE IF NOT EXISTS textbook (
   id BIGSERIAL PRIMARY KEY,
   name VARCHAR(50) NOT NULL,
   version VARCHAR(50) NOT NULL,
   subject VARCHAR(20) NOT NULL,
   category VARCHAR(20) NOT NULL,
-  subject_id BIGINT NULL,
+  k12_subject_id BIGINT NULL,
   status SMALLINT NOT NULL DEFAULT 1,
   remarks VARCHAR(255) NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -385,16 +357,16 @@ CREATE TABLE IF NOT EXISTS textbook (
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
   CONSTRAINT uk_textbook_name_version UNIQUE (name, version),
-  CONSTRAINT fk_textbook_subject FOREIGN KEY (subject_id) REFERENCES subject (id) ON DELETE SET NULL
+  CONSTRAINT fk_textbook_k12_subject FOREIGN KEY (k12_subject_id) REFERENCES k12_subject (id) ON DELETE SET NULL
 );
-CREATE INDEX IF NOT EXISTS idx_textbook_subject_id ON textbook (subject_id);
+CREATE INDEX IF NOT EXISTS idx_textbook_k12_subject_id ON textbook (k12_subject_id);
 CREATE INDEX IF NOT EXISTS idx_textbook_category ON textbook (category);
 CREATE INDEX IF NOT EXISTS idx_textbook_status ON textbook (status);
 CREATE INDEX IF NOT EXISTS idx_textbook_is_deleted ON textbook (is_deleted);
 DROP TRIGGER IF EXISTS trg_textbook_updated_at ON textbook;
 CREATE TRIGGER trg_textbook_updated_at BEFORE UPDATE ON textbook FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
-CREATE TABLE IF NOT EXISTS chapter (
+CREATE TABLE IF NOT EXISTS textbook_chapter (
   id BIGSERIAL PRIMARY KEY,
   textbook_id BIGINT NOT NULL,
   number INT NOT NULL,
@@ -408,15 +380,15 @@ CREATE TABLE IF NOT EXISTS chapter (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT fk_chapter_textbook FOREIGN KEY (textbook_id) REFERENCES textbook (id)
+  CONSTRAINT fk_textbook_chapter_textbook FOREIGN KEY (textbook_id) REFERENCES textbook (id)
 );
-CREATE INDEX IF NOT EXISTS idx_chapter_textbook ON chapter (textbook_id);
-CREATE INDEX IF NOT EXISTS idx_chapter_textbook_number ON chapter (textbook_id, number);
-CREATE INDEX IF NOT EXISTS idx_chapter_is_deleted ON chapter (is_deleted);
-DROP TRIGGER IF EXISTS trg_chapter_updated_at ON chapter;
-CREATE TRIGGER trg_chapter_updated_at BEFORE UPDATE ON chapter FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_textbook_chapter_textbook ON textbook_chapter (textbook_id);
+CREATE INDEX IF NOT EXISTS idx_textbook_chapter_textbook_number ON textbook_chapter (textbook_id, number);
+CREATE INDEX IF NOT EXISTS idx_textbook_chapter_is_deleted ON textbook_chapter (is_deleted);
+DROP TRIGGER IF EXISTS trg_textbook_chapter_updated_at ON textbook_chapter;
+CREATE TRIGGER trg_textbook_chapter_updated_at BEFORE UPDATE ON textbook_chapter FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
-CREATE TABLE IF NOT EXISTS section (
+CREATE TABLE IF NOT EXISTS textbook_section (
   id BIGSERIAL PRIMARY KEY,
   chapter_id BIGINT NOT NULL,
   number INT NOT NULL,
@@ -430,15 +402,15 @@ CREATE TABLE IF NOT EXISTS section (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT fk_section_chapter FOREIGN KEY (chapter_id) REFERENCES chapter (id)
+  CONSTRAINT fk_textbook_section_chapter FOREIGN KEY (chapter_id) REFERENCES textbook_chapter (id)
 );
-CREATE INDEX IF NOT EXISTS idx_section_chapter ON section (chapter_id);
-CREATE INDEX IF NOT EXISTS idx_section_chapter_number ON section (chapter_id, number);
-CREATE INDEX IF NOT EXISTS idx_section_is_deleted ON section (is_deleted);
-DROP TRIGGER IF EXISTS trg_section_updated_at ON section;
-CREATE TRIGGER trg_section_updated_at BEFORE UPDATE ON section FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_textbook_section_chapter ON textbook_section (chapter_id);
+CREATE INDEX IF NOT EXISTS idx_textbook_section_chapter_number ON textbook_section (chapter_id, number);
+CREATE INDEX IF NOT EXISTS idx_textbook_section_is_deleted ON textbook_section (is_deleted);
+DROP TRIGGER IF EXISTS trg_textbook_section_updated_at ON textbook_section;
+CREATE TRIGGER trg_textbook_section_updated_at BEFORE UPDATE ON textbook_section FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
 
-CREATE TABLE IF NOT EXISTS slide_deck (
+CREATE TABLE IF NOT EXISTS textbook_slide_deck (
   id BIGSERIAL PRIMARY KEY,
   section_id BIGINT NOT NULL,
   title VARCHAR(200) NOT NULL DEFAULT '',
@@ -453,9 +425,9 @@ CREATE TABLE IF NOT EXISTS slide_deck (
   is_deleted SMALLINT NOT NULL DEFAULT 0,
   deleted_at TIMESTAMPTZ NULL,
   deleted_by BIGINT NULL,
-  CONSTRAINT fk_slide_deck_section FOREIGN KEY (section_id) REFERENCES section (id)
+  CONSTRAINT fk_textbook_slide_deck_section FOREIGN KEY (section_id) REFERENCES textbook_section (id)
 );
-CREATE INDEX IF NOT EXISTS idx_slide_deck_section ON slide_deck (section_id);
-CREATE INDEX IF NOT EXISTS idx_slide_deck_lookup ON slide_deck (section_id, deck_status, is_deleted);
-DROP TRIGGER IF EXISTS trg_slide_deck_updated_at ON slide_deck;
-CREATE TRIGGER trg_slide_deck_updated_at BEFORE UPDATE ON slide_deck FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();
+CREATE INDEX IF NOT EXISTS idx_textbook_slide_deck_section ON textbook_slide_deck (section_id);
+CREATE INDEX IF NOT EXISTS idx_textbook_slide_deck_lookup ON textbook_slide_deck (section_id, deck_status, is_deleted);
+DROP TRIGGER IF EXISTS trg_textbook_slide_deck_updated_at ON textbook_slide_deck;
+CREATE TRIGGER trg_textbook_slide_deck_updated_at BEFORE UPDATE ON textbook_slide_deck FOR EACH ROW EXECUTE PROCEDURE stepup_touch_updated_at();

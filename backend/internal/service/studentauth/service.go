@@ -276,7 +276,7 @@ func (s *Service) sendCodeDB(identifier string) (string, error) {
 	code := generateCode()
 	now := time.Now()
 	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
-INSERT INTO verification_code
+INSERT INTO sys_verification_code
   (identifier, code, type, expires_at, is_used, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, 'login', ?, 0, ?, 0, ?, 0, 0)
 `), identifier, code, now.Add(s.codeTTL), now, now)
@@ -298,7 +298,7 @@ func (s *Service) verifyCodeDB(identifier, code string) error {
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, code, expires_at, is_used
-FROM verification_code
+FROM sys_verification_code
 WHERE identifier = ? AND type = 'login' AND is_deleted = 0
 ORDER BY id DESC
 LIMIT 1
@@ -320,7 +320,7 @@ LIMIT 1
 	}
 
 	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE verification_code
+UPDATE sys_verification_code
 SET is_used = 1, updated_at = ?, updated_by = 0
 WHERE id = ?
 `), time.Now(), id)
@@ -337,7 +337,7 @@ func (s *Service) setPasswordDB(identifier, password string) error {
 
 	var id uint64
 	err = s.db.QueryRowContext(ctx, dbutil.Rebind(`
-SELECT id FROM student
+SELECT id FROM sys_user
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
 `), identifier, identifier).Scan(&id)
@@ -355,15 +355,15 @@ LIMIT 1
 			phone = sql.NullString{String: identifier, Valid: true}
 		}
 		_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
-INSERT INTO student
-  (phone, email, password, name, stage_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
+INSERT INTO sys_user
+  (phone, email, password, name, k12_grade_id, status, created_at, created_by, updated_at, updated_by, is_deleted)
 VALUES (?, ?, ?, ?, 1, 1, ?, 0, ?, 0, 0)
 `), phone, email, hashed, identifier, now, now)
 		return err
 	}
 
 	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE student
+UPDATE sys_user
 SET password = ?, updated_at = ?, updated_by = 0
 WHERE id = ?
 `), hashed, now, id)
@@ -383,7 +383,7 @@ func (s *Service) loginDB(identifier, password string) (Session, error) {
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT id, phone, email, password, status
-FROM student
+FROM sys_user
 WHERE (phone = ? OR email = ?) AND is_deleted = 0
 LIMIT 1
 `), identifier, identifier).Scan(&studentID, &phone, &email, &dbPass, &status)
@@ -405,12 +405,12 @@ LIMIT 1
 	expiresAt := now.Add(s.sessionTTL)
 
 	_, err = s.db.ExecContext(ctx, dbutil.Rebind(`
-INSERT INTO student_session
-  (student_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
+INSERT INTO sys_session
+  (user_type, user_id, session_token, expires_at, last_seen_at, ip_address, user_agent, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES ('student', ?, ?, ?, ?, '', '', 1, ?, ?, ?, ?, 0)
 `), studentID, token, expiresAt, now, now, studentID, now, studentID)
 	if err != nil {
-		return Session{}, fmt.Errorf("create student_session: %w", err)
+		return Session{}, fmt.Errorf("create sys_session: %w", err)
 	}
 
 	return Session{
@@ -434,8 +434,8 @@ func (s *Service) currentStudentDB(token string) (Session, error) {
 	)
 	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
 SELECT s.id, s.phone, s.email, sess.expires_at
-FROM student_session sess
-JOIN student s ON s.id = sess.student_id
+FROM sys_session sess
+JOIN sys_user s ON s.id = sess.user_id AND sess.user_type = 'student'
 WHERE sess.session_token = ?
   AND sess.status = 1
   AND sess.is_deleted = 0
@@ -456,9 +456,9 @@ LIMIT 1
 
 	now := time.Now()
 	_, _ = s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE student_session
+UPDATE sys_session
 SET last_seen_at = ?, updated_at = ?, updated_by = ?
-WHERE session_token = ? AND is_deleted = 0
+WHERE session_token = ? AND is_deleted = 0 AND user_type = 'student'
 `), now, now, studentID, token)
 
 	var idf string
@@ -481,9 +481,9 @@ func (s *Service) logoutStudentDB(token string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, err := s.db.ExecContext(ctx, dbutil.Rebind(`
-UPDATE student_session
-SET status = 0, updated_at = NOW(), updated_by = student_id
-WHERE session_token = ? AND is_deleted = 0
+UPDATE sys_session
+SET status = 0, updated_at = NOW(), updated_by = user_id
+WHERE session_token = ? AND is_deleted = 0 AND user_type = 'student'
 `), token)
 	return err
 }
