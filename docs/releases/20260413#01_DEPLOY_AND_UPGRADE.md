@@ -19,11 +19,12 @@
 
 1. 备份（如有需要）：`pg_dump … > backup.sql`
 2. 删库重建或 `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`（慎用）
-3. 导入基线：  
+3. 导入基线（若用超级用户建库且应用用户为 `stepup_user`，见下文 **42501** 节）：  
    `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema/postgresql_schema_v0.1_260403.sql`
-4. 种子：  
+4. 若第 3 步不是以应用用户执行的，执行 **`db/schema/postgresql_grants_app_role.sql`**（见 **42501** 节）。
+5. 种子：  
    `psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed/dev_seed.sql`
-5. 按需：`db/seed/textbook_yuedu_physics_required_2019.sql`、`db/seed/slide_deck_sample_yuedu_physics_ch2_sec1.sql`
+6. 按需：`db/seed/textbook_yuedu_physics_required_2019.sql`、`db/seed/slide_deck_sample_yuedu_physics_ch2_sec1.sql`
 
 ### 方案 B：保留现有数据（从旧表名升级）
 
@@ -44,6 +45,16 @@
 
 - 仍使用 **`pgvector/pgvector`** 镜像；**无需 MySQL 服务**。
 - 重建后端镜像并重启栈；确认 **`DB_DSN`** 指向 PostgreSQL。
+
+### 应用账号与表权限（42501）
+
+若建表脚本由 **`postgres`（或其它超级用户）**执行，而 **`DB_DSN` 使用 `stepup_user`**（或单独的业务账号），则该账号对新建表**默认没有** `INSERT/UPDATE/DELETE` 等权限，登录写 `sys_session` 时会报错：
+
+`permission denied for table sys_session`（**SQLSTATE 42501**）。
+
+**做法**：在基线与迁移跑完后，用超级用户执行一次仓库内 **`db/schema/postgresql_grants_app_role.sql`**（脚本内默认 `stepup_user`，与 `docker-compose` 的 `POSTGRES_USER` 一致；角色名不同请先改脚本）。详见 **`db/README.md`**。
+
+**不建议**把 `GRANT` 写进与业务表同一份基线 DDL：生产里 DDL 执行者与 app 用户是否分离因环境而异；单独脚本 + 文档更清晰。
 
 ## MySQL 与向量能力（结论）
 

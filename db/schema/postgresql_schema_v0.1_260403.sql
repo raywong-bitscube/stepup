@@ -1,5 +1,7 @@
 -- StepUp v0.1 PostgreSQL baseline (module-prefixed tables + pgvector for embeddings)
 -- Usage: psql "postgres://USER:PASS@HOST:5432/stepup?sslmode=disable" -f db/schema/postgresql_schema_v0.1_260403.sql
+-- If the app connects as a different role than the one that ran this file, grant privileges:
+--   see db/schema/postgresql_grants_app_role.sql
 SET client_encoding = 'UTF8';
 
 CREATE EXTENSION IF NOT EXISTS vector;
