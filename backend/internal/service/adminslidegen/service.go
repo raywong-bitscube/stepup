@@ -502,7 +502,7 @@ func fixLLMJSONBackslashes(s string) string {
 func normalizeSlideJSON(raw string) (json.RawMessage, error) {
 	s := trimUTF8BOM(strings.TrimSpace(raw))
 	seen := map[string]struct{}{}
-	cands := make([]string, 0, 10)
+	cands := make([]string, 0, 12)
 	add := func(v string) {
 		v = strings.TrimSpace(v)
 		if v == "" {
@@ -514,19 +514,29 @@ func normalizeSlideJSON(raw string) (json.RawMessage, error) {
 		seen[v] = struct{}{}
 		cands = append(cands, v)
 	}
-	add(s)
-	add(stripCodeFence(s))
-	add(stripFenceFromAnywhere(s))
-	if j, ok := extractFirstJSONObject(s); ok {
-		add(j)
-	}
-	sf := stripFenceFromAnywhere(s)
-	if sf != s {
-		add(stripCodeFence(sf))
-		if j, ok := extractFirstJSONObject(sf); ok {
+	// Order matters: models often prepend prose ("Here is…", "Maybe…") so the first rune is a letter like
+	// 'm', which makes json.Unmarshal fail with "invalid character 'm'…". Try fenced JSON and the first
+	// top-level {...} span before the full string.
+	cf := stripCodeFence(s)
+	ff := stripFenceFromAnywhere(s)
+	add(cf)
+	add(ff)
+	if ff != s {
+		add(stripCodeFence(ff))
+		if j, ok := extractFirstJSONObject(ff); ok {
 			add(j)
 		}
 	}
+	if j, ok := extractFirstJSONObject(s); ok {
+		add(j)
+	}
+	if j, ok := extractFirstJSONObject(cf); ok {
+		add(j)
+	}
+	if j, ok := extractFirstJSONObject(ff); ok {
+		add(j)
+	}
+	add(s)
 	var lastErr error
 	for _, c := range cands {
 		for _, variant := range slideJSONParseVariants(c) {

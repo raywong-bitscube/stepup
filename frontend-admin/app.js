@@ -742,6 +742,7 @@
     audits: [],
     auditFilters: { limit: 50, offset: 0 },
     aiLogs: [],
+    examPapers: [],
     aiLogFilters: {
       limit: 50,
       offset: 0,
@@ -767,6 +768,7 @@
       method: opts.method || 'GET',
       headers,
     };
+    if (opts.body != null) init.body = opts.body;
     if (opts.jsonBody) init.body = JSON.stringify(opts.jsonBody);
     const res = await fetch(url, init);
     const text = await res.text();
@@ -899,6 +901,7 @@
     const nav = [
       ['dashboard', '仪表盘'],
       ['students', '学生'],
+      ['exam_source', '试卷库'],
       ['subjects', '科目'],
       ['stages', '阶段'],
       ['models', 'AI 模型'],
@@ -1009,6 +1012,13 @@
         state.students = st.items || [];
         pane.innerHTML = renderStudents();
         bindStudents(pane);
+        return;
+      }
+      if (state.view === 'exam_source') {
+        const d = await api('/api/v1/admin/exam-source/papers');
+        state.examPapers = d.items || [];
+        pane.innerHTML = renderExamSourcePapers();
+        bindExamSourcePapers(pane);
         return;
       }
       if (state.view === 'subjects') {
@@ -2268,6 +2278,165 @@
       ev.preventDefault();
       toggleAiRow(mainTr);
     });
+  }
+
+  function renderExamSourcePapers() {
+    const rows = (state.examPapers || [])
+      .map((p) => {
+        const total = p.total_score == null ? '—' : p.total_score;
+        const yr = p.exam_year == null ? '—' : p.exam_year;
+        return `<tr>
+          <td>${p.id}</td>
+          <td>${escapeHtml(p.title || '')}</td>
+          <td>${yr}</td>
+          <td>${escapeHtml(p.term || '—')}</td>
+          <td>${p.k12_subject_id || '—'}</td>
+          <td>${p.page_count || 0}</td>
+          <td>${p.question_count || 0}</td>
+          <td>${escapeHtml(String(total))}</td>
+          ${tdAdminListStatus10(p.status)}
+          <td class="td-actions"><span class="td-actions-inner">
+            <button type="button" class="btn small" data-es-view="${p.id}">详情</button>
+          </span></td>
+        </tr>`;
+      })
+      .join('');
+    return `
+      <div class="toolbar">
+        <h2 style="margin:0">试卷库（exam_source）</h2>
+        <div class="row" style="margin:0">
+          <button type="button" class="btn secondary" id="btnExamUpload">多图上传建卷</button>
+        </div>
+      </div>
+      <p class="muted">支持浏览整卷信息，并通过一次上传多张整卷图片创建试卷及页面子记录。</p>
+      <table class="data">
+        <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>页数</th><th>题数</th><th>总分</th><th>状态</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="10">暂无数据</td></tr>'}</tbody>
+      </table>
+      <div id="modalRoot"></div>`;
+  }
+
+  function bindExamSourcePapers(pane) {
+    const mr = pane.querySelector('#modalRoot');
+    pane.querySelector('#btnExamUpload')?.addEventListener('click', () => openExamSourceUploadModal(mr));
+    pane.querySelectorAll('button[data-es-view]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = Number(b.getAttribute('data-es-view'));
+        openExamSourceDetailModal(mr, id);
+      });
+    });
+  }
+
+  function openExamSourceUploadModal(mr) {
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    mr.innerHTML = `
+      <div class="modal-backdrop" id="esUpBd"><div class="modal" style="max-width:760px;width:95vw">
+        <h3>多图上传建卷</h3>
+        <p class="muted">一次上传多张试卷图片，自动创建试卷主记录 + 文件记录 + 页面记录。可选填写题号列表（逗号分隔）自动建题。</p>
+        <div class="form-grid">
+          <div><label>标题 *</label><input id="esuTitle" /></div>
+          <div><label>学科ID *</label><input id="esuSubj" type="number" min="1" /></div>
+          <div><label>年级ID</label><input id="esuGrade" type="number" min="1" /></div>
+          <div><label>年份</label><input id="esuYear" type="number" min="2000" max="2100" /></div>
+          <div><label>学期</label><input id="esuTerm" placeholder="如：二模" /></div>
+          <div><label>总分</label><input id="esuScore" /></div>
+          <div><label>时长(分钟)</label><input id="esuDuration" type="number" min="1" /></div>
+          <div style="grid-column:1/-1"><label>题号列表（可选）</label><input id="esuQNos" placeholder="1,2,3,4,5..." /></div>
+          <div style="grid-column:1/-1"><label>图片文件（可多选） *</label><input id="esuFiles" type="file" multiple accept="image/*" /></div>
+        </div>
+        <div class="row"><button type="button" class="btn" id="esuOk">上传并创建</button><button type="button" class="btn secondary" id="esuCancel">取消</button></div>
+      </div></div>`;
+    mr.querySelector('#esuCancel').addEventListener('click', close);
+    mr.querySelector('#esUpBd').addEventListener('click', (e) => {
+      if (e.target.id === 'esUpBd') close();
+    });
+    mr.querySelector('#esuOk').addEventListener('click', async () => {
+      const filesInput = mr.querySelector('#esuFiles');
+      const files = filesInput && filesInput.files ? Array.from(filesInput.files) : [];
+      const title = mr.querySelector('#esuTitle').value.trim();
+      const subj = Number(mr.querySelector('#esuSubj').value || 0);
+      if (!title || !subj || !files.length) {
+        alert('请填写标题、学科ID并选择至少一张图片');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('k12_subject_id', String(subj));
+      const putOpt = (k, v) => {
+        const t = String(v || '').trim();
+        if (t) fd.append(k, t);
+      };
+      putOpt('k12_grade_id', mr.querySelector('#esuGrade').value);
+      putOpt('exam_year', mr.querySelector('#esuYear').value);
+      putOpt('term', mr.querySelector('#esuTerm').value);
+      putOpt('total_score', mr.querySelector('#esuScore').value);
+      putOpt('duration_minutes', mr.querySelector('#esuDuration').value);
+      putOpt('question_nos', mr.querySelector('#esuQNos').value);
+      files.forEach((f) => fd.append('images', f));
+      try {
+        await api('/api/v1/admin/exam-source/papers/upload', { method: 'POST', body: fd });
+        close();
+        mount(document.getElementById('app'));
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('上传失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+      }
+    });
+  }
+
+  function openExamSourceDetailModal(mr, paperId) {
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    const load = async () => {
+      mr.innerHTML = `<div class="modal-backdrop" id="esDtlBd"><div class="modal wide"><h3>试卷详情 #${paperId}</h3><p class="muted">加载中…</p><div class="row"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div></div>`;
+      mr.querySelector('#esDtlClose').addEventListener('click', close);
+      mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
+        if (e.target.id === 'esDtlBd') close();
+      });
+      try {
+        const d = await api('/api/v1/admin/exam-source/papers/' + paperId);
+        const p = d.paper || {};
+        const pages = d.pages || [];
+        const qs = d.questions || [];
+        const pageRows = pages
+          .map(
+            (x) =>
+              `<tr><td>${x.page_no}</td><td>${x.file_id}</td><td>${
+                x.public_url ? `<a href="${escapeHtml(x.public_url)}" target="_blank" rel="noreferrer">查看</a>` : '—'
+              }</td></tr>`
+          )
+          .join('');
+        const qRows = qs
+          .map(
+            (q) =>
+              `<tr><td>${q.id}</td><td>${escapeHtml(q.question_no || '')}</td><td>${q.question_order || 0}</td><td>${escapeHtml(
+                q.question_type || ''
+              )}</td><td>${q.page_from || '—'}-${q.page_to || '—'}</td></tr>`
+          )
+          .join('');
+        mr.innerHTML = `
+          <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+            <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
+            <h4>页面图片</h4>
+            <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
+            <h4 style="margin-top:14px">题目</h4>
+            <table class="data"><thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th></tr></thead><tbody>${qRows || '<tr><td colspan="5">暂无题目</td></tr>'}</tbody></table>
+          </div></div>`;
+        mr.querySelector('#esDtlClose').addEventListener('click', close);
+        mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
+          if (e.target.id === 'esDtlBd') close();
+        });
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('加载详情失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        close();
+      }
+    };
+    load();
   }
 
   function renderAudit() {

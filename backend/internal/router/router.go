@@ -14,10 +14,11 @@ import (
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaimodels"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminaudit"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminauth"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminexamsource"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminpapers"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminprompts"
-	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidegen"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidedecks"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/adminslidegen"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstages"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminstudents"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/adminsubjects"
@@ -61,6 +62,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sqlx.DB) {
 	adminAICallLogsHandler := admin.NewAICallLogsHandler(ailog.NewListService(db))
 	adminSlideDecksHandler := admin.NewSlideDecksHandler(adminslidedecks.New(db), auditWriter)
 	adminSlideDeckGenHandler := admin.NewSlideDeckGenHandler(adminslidegen.New(cfg, db))
+	adminExamSourceHandler := admin.NewExamSourceHandler(adminexamsource.New(db, cfg.UploadDir))
 	studentAuthService := studentauth.New(cfg, db)
 	studentAuthHandler := student.NewAuthHandler(studentAuthService, auditWriter)
 	studentPaperHandler := student.NewPaperHandler(studentpaper.New(cfg, db), auditWriter)
@@ -136,4 +138,8 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sqlx.DB) {
 
 	mux.HandleFunc("GET /api/v1/admin/audit-logs", middleware.RequireAdminAuth(adminAuthService, adminAuditLogsHandler.List))
 	mux.HandleFunc("GET /api/v1/admin/ai-call-logs", middleware.RequireAdminAuth(adminAuthService, adminAICallLogsHandler.List))
+
+	mux.HandleFunc("GET /api/v1/admin/exam-source/papers", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.ListPapers))
+	mux.HandleFunc("POST /api/v1/admin/exam-source/papers/upload", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.CreatePaperWithUpload))
+	mux.HandleFunc("GET /api/v1/admin/exam-source/papers/{paperId}", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.GetPaper))
 }
