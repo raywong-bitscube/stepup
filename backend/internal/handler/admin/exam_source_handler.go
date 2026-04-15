@@ -611,6 +611,69 @@ func readUploadImage(hdr *multipart.FileHeader) (adminexamsource.UploadImage, er
 	}, nil
 }
 
+func collectUploadImages(form *multipart.Form) ([]adminexamsource.UploadImage, error) {
+	if form == nil {
+		return nil, errors.New("invalid multipart")
+	}
+	fhs := form.File["images"]
+	if len(fhs) == 0 {
+		fhs = form.File["files"]
+	}
+	if len(fhs) == 0 {
+		return nil, errors.New("images required")
+	}
+	images := make([]adminexamsource.UploadImage, 0, len(fhs))
+	for _, fh := range fhs {
+		img, err := readUploadImage(fh)
+		if err != nil {
+			return nil, err
+		}
+		images = append(images, img)
+	}
+	return images, nil
+}
+
+func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_MULTIPART"})
+		return
+	}
+	images, err := collectUploadImages(r.MultipartForm)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "IMAGES_REQUIRED"})
+		return
+	}
+	titleHint := strings.TrimSpace(r.FormValue("title"))
+	res, err := h.svc.AnalyzeUpload(r.Context(), titleHint, images)
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"suggested": map[string]any{
+				"title":             res.Title,
+				"source_region":     res.SourceRegion,
+				"source_school":     res.SourceSchool,
+				"exam_year":         res.ExamYear,
+				"term":              res.Term,
+				"grade_label":       res.GradeLabel,
+				"k12_grade_id":      res.K12GradeID,
+				"k12_subject_id":    res.K12SubjectID,
+				"suggested_subject": res.SuggestedSubject,
+				"paper_type":        res.PaperType,
+				"total_score":       res.TotalScore,
+				"duration_minutes":  res.DurationMinutes,
+			},
+			"question_nos": res.QuestionNos,
+			"questions":    res.Questions,
+		})
+	}
+}
+
 func (h *ExamSourceHandler) CreatePaperWithUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_MULTIPART"})
@@ -655,23 +718,10 @@ func (h *ExamSourceHandler) CreatePaperWithUpload(w http.ResponseWriter, r *http
 	if ts := get("total_score"); ts != "" {
 		totalScore = &ts
 	}
-	fhs := form.File["images"]
-	if len(fhs) == 0 {
-		// fallback: support "files" field
-		fhs = form.File["files"]
-	}
-	if len(fhs) == 0 {
+	images, err := collectUploadImages(form)
+	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "IMAGES_REQUIRED"})
 		return
-	}
-	images := make([]adminexamsource.UploadImage, 0, len(fhs))
-	for _, fh := range fhs {
-		img, re := readUploadImage(fh)
-		if re != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_FILE"})
-			return
-		}
-		images = append(images, img)
 	}
 	req := adminexamsource.CreatePaperWithUploadInput{
 		CreatePaperInput: adminexamsource.CreatePaperInput{

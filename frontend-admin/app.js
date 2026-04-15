@@ -2309,7 +2309,7 @@
           <button type="button" class="btn secondary" id="btnExamUpload">多图上传建卷</button>
         </div>
       </div>
-      <p class="muted">支持浏览整卷信息，并通过一次上传多张整卷图片创建试卷及页面子记录。</p>
+      <p class="muted">支持浏览整卷信息，并通过“两阶段上传（先分析、再补全）”创建试卷及页面子记录。</p>
       <table class="data">
         <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>页数</th><th>题数</th><th>总分</th><th>状态</th><th></th></tr></thead>
         <tbody>${rows || '<tr><td colspan="10">暂无数据</td></tr>'}</tbody>
@@ -2338,59 +2338,139 @@
     const close = () => {
       mr.innerHTML = '';
     };
-    mr.innerHTML = `
+    let selectedFiles = [];
+    let analyzed = null;
+
+    const bindBackdropClose = () => {
+      mr.querySelector('#esUpBd')?.addEventListener('click', (e) => {
+        if (e.target.id === 'esUpBd') close();
+      });
+      mr.querySelector('#esuCancel')?.addEventListener('click', close);
+    };
+
+    const renderStepAnalyze = () => {
+      mr.innerHTML = `
       <div class="modal-backdrop" id="esUpBd"><div class="modal" style="max-width:760px;width:95vw">
-        <h3>多图上传建卷</h3>
-        <p class="muted">一次上传多张试卷图片，自动创建试卷主记录 + 文件记录 + 页面记录。可选填写题号列表（逗号分隔）自动建题。</p>
+        <h3>多图上传建卷（第 1 步：上传并分析）</h3>
+        <p class="muted">先上传整卷图片，系统自动分析题号与试卷信息；下一步可人工补全和修改后再正式建卷。</p>
         <div class="form-grid">
-          <div><label>标题 *</label><input id="esuTitle" /></div>
-          <div><label>学科ID *</label><input id="esuSubj" type="number" min="1" /></div>
-          <div><label>年级ID</label><input id="esuGrade" type="number" min="1" /></div>
-          <div><label>年份</label><input id="esuYear" type="number" min="2000" max="2100" /></div>
-          <div><label>学期</label><input id="esuTerm" placeholder="如：二模" /></div>
-          <div><label>总分</label><input id="esuScore" /></div>
-          <div><label>时长(分钟)</label><input id="esuDuration" type="number" min="1" /></div>
-          <div style="grid-column:1/-1"><label>题号列表（可选）</label><input id="esuQNos" placeholder="1,2,3,4,5..." /></div>
+          <div style="grid-column:1/-1"><label>标题提示（可选）</label><input id="esuHintTitle" placeholder="可留空，系统会自动识别标题" /></div>
           <div style="grid-column:1/-1"><label>图片文件（可多选） *</label><input id="esuFiles" type="file" multiple accept="image/*" /></div>
         </div>
-        <div class="row"><button type="button" class="btn" id="esuOk">上传并创建</button><button type="button" class="btn secondary" id="esuCancel">取消</button></div>
+        <div class="row"><button type="button" class="btn" id="esuAnalyze">上传并分析</button><button type="button" class="btn secondary" id="esuCancel">取消</button></div>
       </div></div>`;
-    mr.querySelector('#esuCancel').addEventListener('click', close);
-    mr.querySelector('#esUpBd').addEventListener('click', (e) => {
-      if (e.target.id === 'esUpBd') close();
-    });
-    mr.querySelector('#esuOk').addEventListener('click', async () => {
-      const filesInput = mr.querySelector('#esuFiles');
-      const files = filesInput && filesInput.files ? Array.from(filesInput.files) : [];
-      const title = mr.querySelector('#esuTitle').value.trim();
-      const subj = Number(mr.querySelector('#esuSubj').value || 0);
-      if (!title || !subj || !files.length) {
-        alert('请填写标题、学科ID并选择至少一张图片');
-        return;
-      }
-      const fd = new FormData();
-      fd.append('title', title);
-      fd.append('k12_subject_id', String(subj));
-      const putOpt = (k, v) => {
-        const t = String(v || '').trim();
-        if (t) fd.append(k, t);
-      };
-      putOpt('k12_grade_id', mr.querySelector('#esuGrade').value);
-      putOpt('exam_year', mr.querySelector('#esuYear').value);
-      putOpt('term', mr.querySelector('#esuTerm').value);
-      putOpt('total_score', mr.querySelector('#esuScore').value);
-      putOpt('duration_minutes', mr.querySelector('#esuDuration').value);
-      putOpt('question_nos', mr.querySelector('#esuQNos').value);
-      files.forEach((f) => fd.append('images', f));
-      try {
-        await api('/api/v1/admin/exam-source/papers/upload', { method: 'POST', body: fd });
-        close();
-        mount(document.getElementById('app'));
-      } catch (e) {
-        if (authRedirectHandled(e)) return;
-        alert('上传失败: ' + (e.data && e.data.code ? e.data.code : e.message));
-      }
-    });
+      bindBackdropClose();
+      mr.querySelector('#esuAnalyze')?.addEventListener('click', async () => {
+        const filesInput = mr.querySelector('#esuFiles');
+        const files = filesInput && filesInput.files ? Array.from(filesInput.files) : [];
+        if (!files.length) {
+          alert('请至少选择一张图片');
+          return;
+        }
+        selectedFiles = files;
+        const fd = new FormData();
+        const hintTitle = (mr.querySelector('#esuHintTitle').value || '').trim();
+        if (hintTitle) fd.append('title', hintTitle);
+        selectedFiles.forEach((f) => fd.append('images', f));
+        mr.querySelector('#esUpBd')?.setAttribute('data-busy', '1');
+        try {
+          analyzed = await api('/api/v1/admin/exam-source/papers/upload-analyze', { method: 'POST', body: fd });
+          renderStepSubmit();
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          alert('分析失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        } finally {
+          mr.querySelector('#esUpBd')?.setAttribute('data-busy', '0');
+        }
+      });
+    };
+
+    const renderStepSubmit = () => {
+      const s = (analyzed && analyzed.suggested) || {};
+      const subjList = Array.isArray(state.catalog && state.catalog.subjects) ? state.catalog.subjects : [];
+      const subjOpt = ['<option value="">请选择学科</option>']
+        .concat(
+          subjList.map((x) => {
+            const id = Number(x.id || 0);
+            const nm = String(x.name || x.title || ('学科#' + id));
+            const selected = Number(s.k12_subject_id || 0) === id ? 'selected' : '';
+            return `<option value="${id}" ${selected}>${escapeHtml(nm)} (#${id})</option>`;
+          })
+        )
+        .join('');
+      const qnos = Array.isArray(analyzed && analyzed.question_nos) ? analyzed.question_nos.join(',') : '';
+      const suggestedSubject = s.suggested_subject ? `（识别建议：${escapeHtml(String(s.suggested_subject))}）` : '';
+      mr.innerHTML = `
+      <div class="modal-backdrop" id="esUpBd"><div class="modal" style="max-width:820px;width:96vw">
+        <h3>多图上传建卷（第 2 步：确认并补全）</h3>
+        <p class="muted">识别结果已回填，你可以修改任意字段后再提交建卷。</p>
+        <div class="form-grid">
+          <div><label>标题 *</label><input id="esuTitle" value="${escapeHtml(String(s.title || ''))}" /></div>
+          <div><label>学科 *</label><select id="esuSubj">${subjOpt}</select></div>
+          <div><label>年级ID（可选）</label><input id="esuGrade" type="number" min="1" value="${s.k12_grade_id || ''}" /></div>
+          <div><label>年份</label><input id="esuYear" type="number" min="2000" max="2100" value="${s.exam_year || ''}" /></div>
+          <div><label>学期</label><input id="esuTerm" placeholder="如：二模" value="${escapeHtml(String(s.term || ''))}" /></div>
+          <div><label>总分</label><input id="esuScore" value="${escapeHtml(String(s.total_score || ''))}" /></div>
+          <div><label>时长(分钟)</label><input id="esuDuration" type="number" min="1" value="${s.duration_minutes || ''}" /></div>
+          <div><label>地区</label><input id="esuRegion" value="${escapeHtml(String(s.source_region || ''))}" /></div>
+          <div><label>学校</label><input id="esuSchool" value="${escapeHtml(String(s.source_school || ''))}" /></div>
+          <div><label>年级标签</label><input id="esuGradeLabel" value="${escapeHtml(String(s.grade_label || ''))}" /></div>
+          <div><label>试卷类型</label><input id="esuPaperType" value="${escapeHtml(String(s.paper_type || 'mock_exam'))}" /></div>
+          <div style="grid-column:1/-1"><label>题号列表（可改）</label><input id="esuQNos" placeholder="1,2,3,4,5..." value="${escapeHtml(qnos)}" /></div>
+          <div style="grid-column:1/-1"><p class="muted" style="margin:0">已上传图片数：${selectedFiles.length} ${suggestedSubject}</p></div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn secondary" id="esuBack">返回上一步</button>
+          <button type="button" class="btn" id="esuSubmit">确认建卷</button>
+          <button type="button" class="btn secondary" id="esuCancel">取消</button>
+        </div>
+      </div></div>`;
+      bindBackdropClose();
+      mr.querySelector('#esuBack')?.addEventListener('click', renderStepAnalyze);
+      mr.querySelector('#esuSubmit')?.addEventListener('click', async () => {
+        if (!selectedFiles.length) {
+          alert('缺少上传图片，请返回上一步重新上传');
+          return;
+        }
+        const title = (mr.querySelector('#esuTitle').value || '').trim();
+        const subj = Number(mr.querySelector('#esuSubj').value || 0);
+        if (!title || !subj) {
+          alert('请至少填写标题并选择学科');
+          return;
+        }
+        const fd = new FormData();
+        fd.append('title', title);
+        fd.append('k12_subject_id', String(subj));
+        const putOpt = (k, v) => {
+          const t = String(v || '').trim();
+          if (t) fd.append(k, t);
+        };
+        putOpt('k12_grade_id', mr.querySelector('#esuGrade').value);
+        putOpt('exam_year', mr.querySelector('#esuYear').value);
+        putOpt('term', mr.querySelector('#esuTerm').value);
+        putOpt('total_score', mr.querySelector('#esuScore').value);
+        putOpt('duration_minutes', mr.querySelector('#esuDuration').value);
+        putOpt('source_region', mr.querySelector('#esuRegion').value);
+        putOpt('source_school', mr.querySelector('#esuSchool').value);
+        putOpt('grade_label', mr.querySelector('#esuGradeLabel').value);
+        putOpt('paper_type', mr.querySelector('#esuPaperType').value);
+        putOpt('question_nos', mr.querySelector('#esuQNos').value);
+        selectedFiles.forEach((f) => fd.append('images', f));
+        mr.querySelector('#esUpBd')?.setAttribute('data-busy', '1');
+        try {
+          await api('/api/v1/admin/exam-source/papers/upload', { method: 'POST', body: fd });
+          close();
+          mount(document.getElementById('app'));
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          alert('建卷失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        } finally {
+          mr.querySelector('#esUpBd')?.setAttribute('data-busy', '0');
+        }
+      });
+    };
+
+    renderStepAnalyze();
   }
 
   function openExamSourceDetailModal(mr, paperId) {

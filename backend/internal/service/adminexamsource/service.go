@@ -219,6 +219,47 @@ type PatchStemBBoxResult struct {
 	BBoxNorm      map[string]float64
 }
 
+type UploadAnalyzeQuestion struct {
+	QuestionNo    string
+	QuestionOrder int
+	QuestionType  string
+	PageNo        int
+	BBoxNorm      map[string]float64
+	StemText      string
+	AnswerText    string
+	Explanation   string
+}
+
+type UploadAnalyzeResult struct {
+	Title           string
+	SourceRegion    string
+	SourceSchool    string
+	ExamYear        *int
+	Term            string
+	GradeLabel      string
+	K12GradeID      *uint64
+	K12SubjectID    *uint64
+	SuggestedSubject string
+	PaperType       string
+	TotalScore      *string
+	DurationMinutes *int
+	QuestionNos     []string
+	Questions       []UploadAnalyzeQuestion
+}
+
+type recognizedPaperMeta struct {
+	Title           string
+	SubjectName     string
+	GradeLabel      string
+	ExamYear        int
+	Term            string
+	SourceRegion    string
+	SourceSchool    string
+	PaperType       string
+	TotalScore      string
+	DurationMinutes int
+}
+
 func (s *Service) ListPapers(ctx context.Context) ([]Paper, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
@@ -981,6 +1022,206 @@ func (s *Service) PatchQuestion(ctx context.Context, questionID uint64, adminID 
 	return nil
 }
 
+func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []UploadImage) (*UploadAnalyzeResult, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	if len(images) == 0 {
+		return nil, ErrInvalidInput
+	}
+	titleHint = strings.TrimSpace(titleHint)
+	meta, metaErr := s.recognizePaperMeta(ctx, titleHint, images)
+	if metaErr != nil {
+		meta = nil
+	}
+	recognized, recErr := s.recognizeQuestions(ctx, titleHint, images)
+	if recErr != nil {
+		recognized = nil
+	}
+	out := &UploadAnalyzeResult{
+		PaperType: "mock_exam",
+	}
+	if titleHint != "" {
+		out.Title = titleHint
+	}
+	if meta != nil {
+		if t := strings.TrimSpace(meta.Title); t != "" {
+			out.Title = t
+		}
+		out.SourceRegion = strings.TrimSpace(meta.SourceRegion)
+		out.SourceSchool = strings.TrimSpace(meta.SourceSchool)
+		out.Term = strings.TrimSpace(meta.Term)
+		out.GradeLabel = strings.TrimSpace(meta.GradeLabel)
+		if meta.ExamYear >= 2000 && meta.ExamYear <= 2100 {
+			v := meta.ExamYear
+			out.ExamYear = &v
+		}
+		if t := strings.TrimSpace(meta.PaperType); t != "" {
+			out.PaperType = t
+		}
+		if ts := strings.TrimSpace(meta.TotalScore); ts != "" {
+			out.TotalScore = &ts
+		}
+		if meta.DurationMinutes > 0 {
+			v := meta.DurationMinutes
+			out.DurationMinutes = &v
+		}
+		out.SuggestedSubject = strings.TrimSpace(meta.SubjectName)
+	}
+	if strings.TrimSpace(out.Title) == "" {
+		out.Title = guessTitleFromImage(images)
+	}
+	if strings.TrimSpace(out.Title) == "" {
+		out.Title = "未命名试卷"
+	}
+	if strings.TrimSpace(out.SuggestedSubject) != "" {
+		if sid, err := s.matchSubjectIDByName(ctx, out.SuggestedSubject); err == nil {
+			out.K12SubjectID = sid
+		}
+	}
+	if strings.TrimSpace(out.GradeLabel) != "" {
+		if gid, err := s.matchGradeIDByName(ctx, out.GradeLabel); err == nil {
+			out.K12GradeID = gid
+		}
+	}
+	out.QuestionNos = make([]string, 0, len(recognized))
+	out.Questions = make([]UploadAnalyzeQuestion, 0, len(recognized))
+	for _, rq := range recognized {
+		no := strings.TrimSpace(rq.QuestionNo)
+		if no == "" {
+			continue
+		}
+		out.QuestionNos = append(out.QuestionNos, no)
+		item := UploadAnalyzeQuestion{
+			QuestionNo:    no,
+			QuestionOrder: rq.QuestionOrder,
+			QuestionType:  rq.QuestionType,
+			PageNo:        rq.PageNo,
+			StemText:      rq.StemText,
+			AnswerText:    rq.AnswerText,
+			Explanation:   rq.Explanation,
+		}
+		if rq.BBox != nil {
+			item.BBoxNorm = map[string]float64{
+				"x": rq.BBox.X,
+				"y": rq.BBox.Y,
+				"w": rq.BBox.W,
+				"h": rq.BBox.H,
+			}
+		}
+		out.Questions = append(out.Questions, item)
+	}
+	out.QuestionNos = normalizeQuestionNos(out.QuestionNos)
+	return out, nil
+}
+
+func guessTitleFromImage(images []UploadImage) string {
+	if len(images) == 0 {
+		return ""
+	}
+	name := strings.TrimSpace(images[0].Filename)
+	if name == "" {
+		return ""
+	}
+	base := strings.TrimSpace(strings.TrimSuffix(name, filepath.Ext(name)))
+	return base
+}
+
+func normalizeMatchText(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ReplaceAll(s, " ", "")
+	s = strings.ReplaceAll(s, "　", "")
+	return s
+}
+
+func (s *Service) matchSubjectIDByName(ctx context.Context, name string) (*uint64, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	nameNorm := normalizeMatchText(name)
+	if nameNorm == "" {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name
+FROM k12_subject
+WHERE status = 1 AND is_deleted = 0
+ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var fuzzy *uint64
+	for rows.Next() {
+		var (
+			id uint64
+			nm string
+		)
+		if err := rows.Scan(&id, &nm); err != nil {
+			return nil, err
+		}
+		norm := normalizeMatchText(nm)
+		if norm == "" {
+			continue
+		}
+		if norm == nameNorm {
+			v := id
+			return &v, nil
+		}
+		if fuzzy == nil && (strings.Contains(norm, nameNorm) || strings.Contains(nameNorm, norm)) {
+			v := id
+			fuzzy = &v
+		}
+	}
+	return fuzzy, rows.Err()
+}
+
+func (s *Service) matchGradeIDByName(ctx context.Context, name string) (*uint64, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	nameNorm := normalizeMatchText(name)
+	if nameNorm == "" {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, name
+FROM k12_grade
+WHERE status = 1 AND is_deleted = 0
+ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var fuzzy *uint64
+	for rows.Next() {
+		var (
+			id uint64
+			nm string
+		)
+		if err := rows.Scan(&id, &nm); err != nil {
+			return nil, err
+		}
+		norm := normalizeMatchText(nm)
+		if norm == "" {
+			continue
+		}
+		if norm == nameNorm {
+			v := id
+			return &v, nil
+		}
+		if fuzzy == nil && (strings.Contains(norm, nameNorm) || strings.Contains(nameNorm, norm)) {
+			v := id
+			fuzzy = &v
+		}
+	}
+	return fuzzy, rows.Err()
+}
+
 func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in CreatePaperWithUploadInput, images []UploadImage) (uint64, error) {
 	if s == nil || s.db == nil {
 		return 0, ErrNoDatabase
@@ -1367,14 +1608,7 @@ func (s *Service) cropQuestionImage(page storedPage, paperID, questionID uint64,
 	return cropRel, cropAbs, nil
 }
 
-func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) ([]recognizedQuestion, error) {
-	if len(images) == 0 {
-		return nil, nil
-	}
-	adapter := s.resolveRecognitionAdapter(ctx)
-	if adapter == nil {
-		return nil, nil
-	}
+func buildVisionImages(images []UploadImage) []studentpaper.VisionImage {
 	vision := make([]studentpaper.VisionImage, 0, len(images))
 	for _, im := range images {
 		if len(im.Bytes) == 0 {
@@ -1385,6 +1619,65 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 			Data: im.Bytes,
 		})
 	}
+	return vision
+}
+
+func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, images []UploadImage) (*recognizedPaperMeta, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	adapter := s.resolveRecognitionAdapter(ctx)
+	if adapter == nil {
+		return nil, nil
+	}
+	vision := buildVisionImages(images)
+	if len(vision) == 0 {
+		return nil, nil
+	}
+	prompt := fmt.Sprintf(`你是试卷元数据提取助手。请从上传的试卷整卷图片中提取元数据，只输出一个JSON对象：
+{
+  "title":"试卷标题（尽量完整）",
+  "subject_name":"学科中文名，如数学/语文/英语/物理/化学/生物/历史/地理/政治",
+  "grade_label":"年级，如高一/高二/高三/初三",
+  "exam_year":2026,
+  "term":"学期或场次，如一模/二模/期中/期末",
+  "source_region":"地区（可空）",
+  "source_school":"学校（可空）",
+  "paper_type":"试卷类型（可空，默认 mock_exam）",
+  "total_score":"总分（可空）",
+  "duration_minutes":120
+}
+要求：
+1) 只输出JSON，不要解释。
+2) 无法确定可留空字符串或0。
+3) 若已给出标题提示，可参考它：%s`, titleHint)
+	res := adapter.Analyze(studentpaper.AnalyzeInput{
+		ChatUserPrompt:          prompt,
+		VisionImages:            vision,
+		OptionalMaxOutputTokens: examSourceRecognizeMaxTokens,
+		FileName:                titleHint,
+		Subject:                 "exam_source",
+		Stage:                   "admin",
+	})
+	raw := strings.TrimSpace(res.Out.RawContent)
+	if raw == "" {
+		raw = strings.TrimSpace(res.Out.Summary)
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	return parseRecognizedPaperMeta(raw)
+}
+
+func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) ([]recognizedQuestion, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	adapter := s.resolveRecognitionAdapter(ctx)
+	if adapter == nil {
+		return nil, nil
+	}
+	vision := buildVisionImages(images)
 	if len(vision) == 0 {
 		return nil, nil
 	}
@@ -1534,6 +1827,38 @@ func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
 			rq.BBox = bbox
 		}
 		out = append(out, rq)
+	}
+	return out, nil
+}
+
+func parseRecognizedPaperMeta(raw string) (*recognizedPaperMeta, error) {
+	c := strings.TrimSpace(raw)
+	if strings.HasPrefix(c, "```") {
+		c = strings.TrimPrefix(c, "```")
+		c = strings.TrimPrefix(strings.TrimSpace(c), "json")
+		c = strings.TrimSpace(c)
+		if i := strings.LastIndex(c, "```"); i >= 0 {
+			c = strings.TrimSpace(c[:i])
+		}
+	}
+	if j, ok := extractFirstJSONObject(c); ok {
+		c = j
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(c), &m); err != nil {
+		return nil, err
+	}
+	out := &recognizedPaperMeta{
+		Title:           strings.TrimSpace(toString(m["title"])),
+		SubjectName:     strings.TrimSpace(toString(m["subject_name"])),
+		GradeLabel:      strings.TrimSpace(toString(m["grade_label"])),
+		ExamYear:        toInt(m["exam_year"]),
+		Term:            strings.TrimSpace(toString(m["term"])),
+		SourceRegion:    strings.TrimSpace(toString(m["source_region"])),
+		SourceSchool:    strings.TrimSpace(toString(m["source_school"])),
+		PaperType:       strings.TrimSpace(toString(m["paper_type"])),
+		TotalScore:      strings.TrimSpace(toString(m["total_score"])),
+		DurationMinutes: toInt(m["duration_minutes"]),
 	}
 	return out, nil
 }
