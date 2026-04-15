@@ -2297,6 +2297,7 @@
           ${tdAdminListStatus10(p.status)}
           <td class="td-actions"><span class="td-actions-inner">
             <button type="button" class="btn small" data-es-view="${p.id}">详情</button>
+            <button type="button" class="btn small secondary" data-es-bbox="${p.id}">校正 bbox</button>
           </span></td>
         </tr>`;
       })
@@ -2323,6 +2324,12 @@
       b.addEventListener('click', () => {
         const id = Number(b.getAttribute('data-es-view'));
         openExamSourceDetailModal(mr, id);
+      });
+    });
+    pane.querySelectorAll('button[data-es-bbox]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const id = Number(b.getAttribute('data-es-bbox'));
+        openExamSourceBboxModal(mr, id);
       });
     });
   }
@@ -2419,7 +2426,7 @@
           .join('');
         mr.innerHTML = `
           <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>页面图片</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
@@ -2427,6 +2434,10 @@
             <table class="data"><thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th></tr></thead><tbody>${qRows || '<tr><td colspan="5">暂无题目</td></tr>'}</tbody></table>
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);
+        mr.querySelector('#esDtlBbox')?.addEventListener('click', () => {
+          close();
+          openExamSourceBboxModal(mr, paperId);
+        });
         mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
           if (e.target.id === 'esDtlBd') close();
         });
@@ -2437,6 +2448,212 @@
       }
     };
     load();
+  }
+
+  function openExamSourceBboxModal(mr, paperId) {
+    const close = () => {
+      mr.innerHTML = '';
+    };
+    const shell = (inner, busy) => `
+      <div class="modal-backdrop" id="esBboxBd" data-busy="${busy ? '1' : '0'}"><div class="modal xwide" style="width:98vw;max-height:92vh">
+        <div class="toolbar">
+          <h3 style="margin:0">识别预览 / 题干 bbox 校正 — 试卷 #${paperId}</h3>
+          <div class="row" style="margin:0"><button type="button" class="btn secondary" id="esBboxClose">关闭</button></div>
+        </div>
+        ${inner}
+      </div></div>`;
+    mr.innerHTML = shell('<p class="muted">加载中…</p>', true);
+    mr.querySelector('#esBboxClose')?.addEventListener('click', close);
+    mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
+      if (e.target.id === 'esBboxBd') close();
+    });
+
+    (async () => {
+      let data;
+      try {
+        data = await api('/api/v1/admin/exam-source/papers/' + paperId + '/recognition-preview');
+      } catch (e) {
+        if (authRedirectHandled(e)) return;
+        alert('加载预览失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        close();
+        return;
+      }
+      const pages = data.pages || [];
+      const questions = data.questions || [];
+      if (!pages.length) {
+        mr.innerHTML = shell(
+          '<p class="muted">该试卷暂无页面图片，请先上传建卷。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">关闭</button></div>',
+          false
+        );
+        mr.querySelector('#esBboxClose2')?.addEventListener('click', close);
+        mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
+          if (e.target.id === 'esBboxBd') close();
+        });
+        return;
+      }
+      if (!questions.length) {
+        mr.innerHTML = shell(
+          '<p class="muted">暂无题目记录。可先上传并填写题号列表生成题目，再校正 bbox。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">关闭</button></div>',
+          false
+        );
+        mr.querySelector('#esBboxClose2')?.addEventListener('click', close);
+        mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
+          if (e.target.id === 'esBboxBd') close();
+        });
+        return;
+      }
+
+      const pageOptions = pages
+        .map((p) => `<option value="${p.page_no}">第 ${p.page_no} 页</option>`)
+        .join('');
+      const qOptions = questions
+        .map((q) => `<option value="${q.id}">#${escapeHtml(q.question_no || '')} (id ${q.id})</option>`)
+        .join('');
+
+      mr.innerHTML = shell(
+        `
+        <p class="muted">在整页图上查看/修改题干区域（归一化坐标 0～1）。保存后会重新裁剪题干图并更新记录。</p>
+        <div class="es-bbox-grid">
+          <div class="es-bbox-stage-wrap">
+            <div class="es-bbox-stage" id="esBboxStage">
+              <img id="esBboxImg" alt="page" />
+              <div id="esBboxOverlay" class="es-bbox-overlay"></div>
+            </div>
+          </div>
+          <div>
+            <div><label>题目</label><select id="esBboxQ">${qOptions}</select></div>
+            <div style="margin-top:10px"><label>页面</label><select id="esBboxPage">${pageOptions}</select></div>
+            <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div><label>x</label><input id="esBboxX" type="number" step="0.001" min="0" max="1" /></div>
+              <div><label>y</label><input id="esBboxY" type="number" step="0.001" min="0" max="1" /></div>
+              <div><label>宽 w</label><input id="esBboxW" type="number" step="0.001" min="0" max="1" /></div>
+              <div><label>高 h</label><input id="esBboxH" type="number" step="0.001" min="0" max="1" /></div>
+            </div>
+            <p class="muted" style="margin-top:10px;font-size:12px">裁剪预览（服务端保存后刷新）：<a id="esBboxCropLink" href="#" target="_blank" rel="noreferrer">—</a></p>
+            <div class="row" style="margin-top:12px">
+              <button type="button" class="btn" id="esBboxSave">保存本题</button>
+            </div>
+          </div>
+        </div>`,
+        false
+      );
+
+      mr.querySelector('#esBboxClose')?.addEventListener('click', close);
+      mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
+        if (e.target.id === 'esBboxBd') close();
+      });
+
+      const selQ = mr.querySelector('#esBboxQ');
+      const selPage = mr.querySelector('#esBboxPage');
+      const img = mr.querySelector('#esBboxImg');
+      const overlay = mr.querySelector('#esBboxOverlay');
+      const inpX = mr.querySelector('#esBboxX');
+      const inpY = mr.querySelector('#esBboxY');
+      const inpW = mr.querySelector('#esBboxW');
+      const inpH = mr.querySelector('#esBboxH');
+      const cropLink = mr.querySelector('#esBboxCropLink');
+
+      function getQ() {
+        const id = Number(selQ.value);
+        return questions.find((q) => q.id === id);
+      }
+
+      function pagePublicUrl(pageNo) {
+        const p = pages.find((x) => x.page_no === pageNo);
+        return p && p.public_url ? p.public_url : '';
+      }
+
+      function syncOverlay() {
+        const x = Math.min(1, Math.max(0, parseFloat(inpX.value) || 0));
+        const y = Math.min(1, Math.max(0, parseFloat(inpY.value) || 0));
+        const w = Math.min(1, Math.max(0, parseFloat(inpW.value) || 0));
+        const h = Math.min(1, Math.max(0, parseFloat(inpH.value) || 0));
+        overlay.style.left = x * 100 + '%';
+        overlay.style.top = y * 100 + '%';
+        overlay.style.width = w * 100 + '%';
+        overlay.style.height = h * 100 + '%';
+      }
+
+      function applyQuestion(q) {
+        let pageNo = 1;
+        if (q.stem_page_no != null && q.stem_page_no > 0) pageNo = q.stem_page_no;
+        else if (q.page_from != null && q.page_from > 0) pageNo = q.page_from;
+        selPage.value = String(pageNo);
+        const bb = q.stem_bbox_norm && typeof q.stem_bbox_norm === 'object' ? q.stem_bbox_norm : null;
+        if (bb && typeof bb.x === 'number') {
+          inpX.value = String(bb.x);
+          inpY.value = String(bb.y);
+          inpW.value = String(bb.w);
+          inpH.value = String(bb.h);
+        } else {
+          inpX.value = '0.05';
+          inpY.value = '0.05';
+          inpW.value = '0.9';
+          inpH.value = '0.25';
+        }
+        if (q.stem_crop_public_url) {
+          cropLink.href = q.stem_crop_public_url;
+          cropLink.textContent = '打开';
+        } else {
+          cropLink.removeAttribute('href');
+          cropLink.textContent = '（尚无裁剪图）';
+        }
+        const url = pagePublicUrl(pageNo);
+        if (url) img.src = url;
+        syncOverlay();
+      }
+
+      selQ.addEventListener('change', () => {
+        const q = getQ();
+        if (q) applyQuestion(q);
+      });
+      selPage.addEventListener('change', () => {
+        const pn = Number(selPage.value) || 1;
+        const url = pagePublicUrl(pn);
+        if (url) img.src = url;
+        syncOverlay();
+      });
+      ['#esBboxX', '#esBboxY', '#esBboxW', '#esBboxH'].forEach((sel) => {
+        mr.querySelector(sel)?.addEventListener('input', syncOverlay);
+      });
+      img.addEventListener('load', syncOverlay);
+
+      applyQuestion(questions[0]);
+
+      mr.querySelector('#esBboxSave')?.addEventListener('click', async () => {
+        const q = getQ();
+        if (!q) return;
+        const pageNo = Number(selPage.value) || 1;
+        const x = Math.min(1, Math.max(0, parseFloat(inpX.value) || 0));
+        const y = Math.min(1, Math.max(0, parseFloat(inpY.value) || 0));
+        const w = Math.min(1, Math.max(0, parseFloat(inpW.value) || 0));
+        const h = Math.min(1, Math.max(0, parseFloat(inpH.value) || 0));
+        if (w <= 0 || h <= 0) {
+          alert('宽、高须大于 0');
+          return;
+        }
+        mr.querySelector('#esBboxBd')?.setAttribute('data-busy', '1');
+        try {
+          const res = await api('/api/v1/admin/exam-source/questions/' + q.id + '/stem-bbox', {
+            method: 'PATCH',
+            jsonBody: { page_no: pageNo, x, y, w, h },
+          });
+          q.stem_page_no = pageNo;
+          q.stem_bbox_norm = res.bbox_norm || { x, y, w, h };
+          if (res.crop_public_url) {
+            q.stem_crop_public_url = res.crop_public_url;
+            cropLink.href = res.crop_public_url;
+            cropLink.textContent = '打开（已更新）';
+          }
+          alert('已保存');
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          alert('保存失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        } finally {
+          mr.querySelector('#esBboxBd')?.setAttribute('data-busy', '0');
+        }
+      });
+    })();
   }
 
   function renderAudit() {

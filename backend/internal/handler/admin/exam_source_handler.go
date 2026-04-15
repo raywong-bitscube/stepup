@@ -203,6 +203,112 @@ func (h *ExamSourceHandler) CreatePaper(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+func (h *ExamSourceHandler) GetRecognitionPreview(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePathUint64(r.PathValue("paperId"))
+	if !ok || id == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+		return
+	}
+	pages, qs, err := h.svc.GetRecognitionPreview(r.Context(), id)
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case errors.Is(err, adminexamsource.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		items := make([]map[string]any, 0, len(qs))
+		for _, q := range qs {
+			row := map[string]any{
+				"id":              q.ID,
+				"paper_id":        q.PaperID,
+				"question_no":     q.QuestionNo,
+				"question_order":  q.QuestionOrder,
+				"section_no":      q.SectionNo,
+				"question_type":   q.QuestionType,
+				"score":           q.Score,
+				"stem_text":       q.StemText,
+				"answer_text":     q.AnswerText,
+				"explanation_text": q.Explanation,
+				"page_from":       q.PageFrom,
+				"page_to":         q.PageTo,
+				"status":          q.Status,
+				"updated_at":      RFC3339Time(q.UpdatedAt),
+			}
+			if q.StemQuestionFileID != nil {
+				row["stem_question_file_id"] = *q.StemQuestionFileID
+			} else {
+				row["stem_question_file_id"] = nil
+			}
+			if q.StemFileID != nil {
+				row["stem_file_id"] = *q.StemFileID
+			} else {
+				row["stem_file_id"] = nil
+			}
+			row["stem_crop_public_url"] = q.StemCropURL
+			if q.StemPageNo != nil {
+				row["stem_page_no"] = *q.StemPageNo
+			} else {
+				row["stem_page_no"] = nil
+			}
+			row["stem_bbox_norm"] = q.StemBBoxNorm
+			items = append(items, row)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"pages":     toExamSourcePageRows(pages),
+			"questions": items,
+		})
+	}
+}
+
+type patchStemBBoxBody struct {
+	PageNo   int     `json:"page_no"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	W        float64 `json:"w"`
+	H        float64 `json:"h"`
+}
+
+func (h *ExamSourceHandler) PatchQuestionStemBBox(w http.ResponseWriter, r *http.Request) {
+	qid, ok := parsePathUint64(r.PathValue("questionId"))
+	if !ok || qid == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+		return
+	}
+	var req patchStemBBoxBody
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_JSON"})
+		return
+	}
+	res, err := h.svc.PatchQuestionStemBBox(r.Context(), adminIDFromReq(r), qid, adminexamsource.PatchStemBBoxInput{
+		PageNo: req.PageNo,
+		X:      req.X,
+		Y:      req.Y,
+		W:      req.W,
+		H:      req.H,
+	})
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case errors.Is(err, adminexamsource.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":              "ok",
+			"crop_public_url":     res.CropPublicURL,
+			"page_no":             res.PageNo,
+			"bbox_norm":           res.BBoxNorm,
+		})
+	}
+}
+
 func (h *ExamSourceHandler) GetPaper(w http.ResponseWriter, r *http.Request) {
 	id, ok := parsePathUint64(r.PathValue("paperId"))
 	if !ok || id == 0 {
@@ -477,7 +583,7 @@ func parseOptionalInt(raw string) (*int, error) {
 	return &v, nil
 }
 
-func parseOptionalUint64(raw string) (*uint64, error) {
+func parseOptionalUint64Form(raw string) (*uint64, error) {
 	t := strings.TrimSpace(raw)
 	if t == "" {
 		return nil, nil
@@ -521,7 +627,7 @@ func (h *ExamSourceHandler) CreatePaperWithUpload(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
 		return
 	}
-	gradeID, err := parseOptionalUint64(get("k12_grade_id"))
+	gradeID, err := parseOptionalUint64Form(get("k12_grade_id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
 		return

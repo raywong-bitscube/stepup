@@ -5,8 +5,15 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	_ "image/gif"
+	_ "image/jpeg"
+	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +23,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
 
 var (
@@ -24,6 +32,8 @@ var (
 	ErrNotFound     = errors.New("not found")
 	ErrConflict     = errors.New("conflict")
 )
+
+const examSourceRecognizeMaxTokens = 32768
 
 type Service struct {
 	db        *sqlx.DB
@@ -156,6 +166,57 @@ type UploadImage struct {
 type CreatePaperWithUploadInput struct {
 	CreatePaperInput
 	QuestionNos []string
+}
+
+type recognizedBBox struct {
+	X float64
+	Y float64
+	W float64
+	H float64
+}
+
+type recognizedQuestion struct {
+	QuestionNo    string
+	QuestionType  string
+	PageNo        int
+	QuestionOrder int
+	BBox          *recognizedBBox
+	StemText      string
+	AnswerText    string
+	Explanation   string
+}
+
+type storedPage struct {
+	PageNo int
+	FileID uint64
+	Rel    string
+	Abs    string
+}
+
+// RecognitionPreviewQuestion bundles a question row with its primary stem crop (if any).
+type RecognitionPreviewQuestion struct {
+	Question
+	StemQuestionFileID *uint64
+	StemFileID         *uint64
+	StemCropURL        *string
+	StemPageNo         *int
+	StemBBoxNorm       map[string]float64
+}
+
+// PatchStemBBoxInput is normalized bbox (0–1) on a given page.
+type PatchStemBBoxInput struct {
+	PageNo int
+	X      float64
+	Y      float64
+	W      float64
+	H      float64
+}
+
+// PatchStemBBoxResult is returned after re-crop and DB update.
+type PatchStemBBoxResult struct {
+	CropPublicURL string
+	PageNo        int
+	BBoxNorm      map[string]float64
 }
 
 func (s *Service) ListPapers(ctx context.Context) ([]Paper, error) {
@@ -507,6 +568,293 @@ ORDER BY question_order ASC, id ASC`), paperID)
 	return out, rows.Err()
 }
 
+func (s *Service) GetRecognitionPreview(ctx context.Context, paperID uint64) ([]Page, []RecognitionPreviewQuestion, error) {
+	if s == nil || s.db == nil {
+		return nil, nil, ErrNoDatabase
+	}
+	if paperID == 0 {
+		return nil, nil, ErrInvalidInput
+	}
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+	if _, err := s.GetPaper(ctx, paperID); err != nil {
+		return nil, nil, err
+	}
+	pages, err := s.ListPages(ctx, paperID)
+	if err != nil {
+		return nil, nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
+SELECT q.id, q.paper_id, q.question_no, q.question_order, q.section_no, q.question_type, q.score::text,
+       q.stem_text, q.answer_text, q.explanation_text, q.page_from, q.page_to, q.status, q.updated_at,
+       qf.id, qf.file_id, f.public_url, qf.page_no, qf.bbox_norm
+FROM exam_source_question q
+LEFT JOIN LATERAL (
+  SELECT qf2.id, qf2.file_id, qf2.page_no, qf2.bbox_norm
+  FROM exam_source_question_file qf2
+  WHERE qf2.question_id = q.id AND qf2.role = 'stem' AND qf2.is_deleted = 0
+  ORDER BY qf2.sort_no ASC, qf2.id ASC
+  LIMIT 1
+) qf ON true
+LEFT JOIN exam_source_file f ON f.id = qf.file_id AND f.is_deleted = 0
+WHERE q.paper_id = ? AND q.is_deleted = 0
+ORDER BY q.question_order ASC, q.id ASC`), paperID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	out := make([]RecognitionPreviewQuestion, 0, 32)
+	for rows.Next() {
+		var (
+			it          RecognitionPreviewQuestion
+			sectionNo   sql.NullString
+			scoreText   sql.NullString
+			stemText    sql.NullString
+			answerText  sql.NullString
+			explainText sql.NullString
+			pageFrom    sql.NullInt64
+			pageTo      sql.NullInt64
+			stemQFID    sql.NullInt64
+			stemFID     sql.NullInt64
+			stemURL     sql.NullString
+			stemPage    sql.NullInt64
+			bboxRaw     []byte
+		)
+		if err := rows.Scan(
+			&it.ID, &it.PaperID, &it.QuestionNo, &it.QuestionOrder, &sectionNo, &it.QuestionType, &scoreText,
+			&stemText, &answerText, &explainText, &pageFrom, &pageTo, &it.Status, &it.UpdatedAt,
+			&stemQFID, &stemFID, &stemURL, &stemPage, &bboxRaw,
+		); err != nil {
+			return nil, nil, err
+		}
+		it.SectionNo = nullableStringPtr(sectionNo)
+		it.Score = nullableStringPtr(scoreText)
+		it.StemText = nullableStringPtr(stemText)
+		it.AnswerText = nullableStringPtr(answerText)
+		it.Explanation = nullableStringPtr(explainText)
+		if pageFrom.Valid {
+			v := int(pageFrom.Int64)
+			it.PageFrom = &v
+		}
+		if pageTo.Valid {
+			v := int(pageTo.Int64)
+			it.PageTo = &v
+		}
+		if stemQFID.Valid {
+			v := uint64(stemQFID.Int64)
+			it.StemQuestionFileID = &v
+		}
+		if stemFID.Valid {
+			v := uint64(stemFID.Int64)
+			it.StemFileID = &v
+		}
+		if stemURL.Valid {
+			u := stemURL.String
+			it.StemCropURL = &u
+		}
+		if stemPage.Valid {
+			v := int(stemPage.Int64)
+			it.StemPageNo = &v
+		}
+		if len(bboxRaw) > 0 {
+			var m map[string]float64
+			if err := json.Unmarshal(bboxRaw, &m); err == nil && len(m) > 0 {
+				it.StemBBoxNorm = m
+			}
+		}
+		out = append(out, it)
+	}
+	return pages, out, rows.Err()
+}
+
+func finite01(v float64) bool {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return false
+	}
+	return v >= 0 && v <= 1
+}
+
+func validStemBBoxInput(in PatchStemBBoxInput) bool {
+	if in.PageNo <= 0 {
+		return false
+	}
+	return finite01(in.X) && finite01(in.Y) && finite01(in.W) && finite01(in.H) && in.W > 0 && in.H > 0
+}
+
+func (s *Service) loadStoredPage(ctx context.Context, paperID uint64, pageNo int) (storedPage, error) {
+	var rel string
+	var fileID uint64
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT f.object_key, p.file_id
+FROM exam_source_paper_page p
+JOIN exam_source_file f ON f.id = p.file_id AND f.is_deleted = 0
+WHERE p.paper_id = ? AND p.page_no = ? AND p.is_deleted = 0`), paperID, pageNo).Scan(&rel, &fileID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return storedPage{}, ErrNotFound
+		}
+		return storedPage{}, err
+	}
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if rel == "" {
+		return storedPage{}, ErrInvalidInput
+	}
+	abs := filepath.Join(s.uploadDir, filepath.FromSlash(rel))
+	return storedPage{
+		PageNo: pageNo,
+		FileID: fileID,
+		Rel:    rel,
+		Abs:    abs,
+	}, nil
+}
+
+func (s *Service) PatchQuestionStemBBox(ctx context.Context, adminID uint64, questionID uint64, in PatchStemBBoxInput) (*PatchStemBBoxResult, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	if adminID == 0 || questionID == 0 || !validStemBBoxInput(in) {
+		return nil, ErrInvalidInput
+	}
+	box := recognizedBBox{X: in.X, Y: in.Y, W: in.W, H: in.H}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+
+	var paperID uint64
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT paper_id FROM exam_source_question WHERE id = ? AND is_deleted = 0`), questionID).Scan(&paperID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+
+	page, err := s.loadStoredPage(ctx, paperID, in.PageNo)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	var cropRel, cropAbs string
+	cropCommitted := false
+	defer func() {
+		if !cropCommitted && cropAbs != "" {
+			_ = os.Remove(cropAbs)
+		}
+	}()
+
+	cropRel, cropAbs, err = s.cropQuestionImage(page, paperID, questionID, box, now)
+	if err != nil {
+		return nil, err
+	}
+	pub := "/uploads/" + cropRel
+	sz := fileSizeOrZero(cropAbs)
+	bboxNorm := map[string]float64{"x": box.X, "y": box.Y, "w": box.W, "h": box.H}
+	bboxJSON, err := json.Marshal(bboxNorm)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var oldQfID, oldFileID uint64
+	var oldObjectKey sql.NullString
+	qErr := tx.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT qf.id, qf.file_id, f.object_key
+FROM exam_source_question_file qf
+JOIN exam_source_file f ON f.id = qf.file_id AND f.is_deleted = 0
+WHERE qf.question_id = ? AND qf.role = 'stem' AND qf.is_deleted = 0
+ORDER BY qf.sort_no ASC, qf.id ASC
+LIMIT 1`), questionID).Scan(&oldQfID, &oldFileID, &oldObjectKey)
+
+	if qErr != nil && !errors.Is(qErr, sql.ErrNoRows) {
+		err = qErr
+		return nil, err
+	}
+
+	if errors.Is(qErr, sql.ErrNoRows) {
+		var cropFileID uint64
+		err = tx.QueryRowContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_file
+  (storage_provider, bucket_name, object_key, public_url, original_filename, content_type, file_ext, size_bytes,
+   status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES ('local', NULL, ?, ?, ?, 'image/png', 'png', ?, 1, ?, ?, ?, ?, 0)
+RETURNING id`),
+			cropRel, pub, filepath.Base(cropRel), sz,
+			now, adminID, now, adminID,
+		).Scan(&cropFileID)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_question_file
+  (question_id, file_id, role, sort_no, page_no, bbox_norm, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, 'stem', 1, ?, ?::jsonb, 1, ?, ?, ?, ?, 0)`),
+			questionID, cropFileID, in.PageNo, string(bboxJSON), now, adminID, now, adminID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+UPDATE exam_source_file
+SET object_key = ?, public_url = ?, original_filename = ?, content_type = 'image/png', file_ext = 'png', size_bytes = ?,
+    updated_at = ?, updated_by = ?
+WHERE id = ? AND is_deleted = 0`),
+			cropRel, pub, filepath.Base(cropRel), sz,
+			now, adminID, oldFileID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+UPDATE exam_source_question_file
+SET page_no = ?, bbox_norm = ?::jsonb, updated_at = ?, updated_by = ?
+WHERE id = ? AND is_deleted = 0`),
+			in.PageNo, string(bboxJSON), now, adminID, oldQfID,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+UPDATE exam_source_question
+SET page_from = ?, page_to = ?, updated_at = ?, updated_by = ?
+WHERE id = ? AND is_deleted = 0`),
+		in.PageNo, in.PageNo, now, adminID, questionID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	cropCommitted = true
+
+	if oldObjectKey.Valid && strings.TrimSpace(oldObjectKey.String) != "" {
+		oldAbs := filepath.Join(s.uploadDir, filepath.FromSlash(filepath.ToSlash(strings.TrimSpace(oldObjectKey.String))))
+		if oldAbs != cropAbs {
+			_ = os.Remove(oldAbs)
+		}
+	}
+
+	return &PatchStemBBoxResult{
+		CropPublicURL: pub,
+		PageNo:        in.PageNo,
+		BBoxNorm:      bboxNorm,
+	}, nil
+}
+
 func (s *Service) CreateQuestion(ctx context.Context, paperID uint64, adminID uint64, in CreateQuestionInput) (uint64, error) {
 	if s == nil || s.db == nil {
 		return 0, ErrNoDatabase
@@ -640,6 +988,11 @@ func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in 
 	if adminID == 0 || in.K12SubjectID == 0 || strings.TrimSpace(in.Title) == "" || len(images) == 0 {
 		return 0, ErrInvalidInput
 	}
+	recognized, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images)
+	if recErr != nil {
+		// Keep upload available even when upstream recognition fails.
+		recognized = nil
+	}
 	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
 		return 0, err
 	}
@@ -690,6 +1043,7 @@ RETURNING id`),
 
 	monthPath := now.Format("200601")
 	baseRel := filepath.ToSlash(filepath.Join("exam-source", monthPath))
+	pageMap := make(map[int]storedPage, len(images))
 	for i, img := range images {
 		if len(img.Bytes) == 0 {
 			err = ErrInvalidInput
@@ -732,31 +1086,125 @@ VALUES (?, ?, ?, 1, ?, ?, ?, ?, 0)`),
 		if err != nil {
 			return 0, err
 		}
+		pageMap[i+1] = storedPage{
+			PageNo: i + 1,
+			FileID: fileID,
+			Rel:    rel,
+			Abs:    abs,
+		}
 	}
 
-	qNos := normalizeQuestionNos(in.QuestionNos)
-	if len(qNos) > 0 {
-		for i, qn := range qNos {
-			_, err = tx.ExecContext(ctx, dbutil.Rebind(`
-INSERT INTO exam_source_question
-  (paper_id, question_no, question_order, question_type, status, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, 'unknown', 1, ?, ?, ?, ?, 0)`),
-				paperID, qn, i+1, now, adminID, now, adminID,
-			)
-			if err != nil {
-				if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
-					return 0, ErrConflict
-				}
-				return 0, err
+	orderedNos := make([]string, 0, len(recognized)+len(in.QuestionNos))
+	recByNo := make(map[string]recognizedQuestion, len(recognized))
+	for _, rq := range recognized {
+		no := strings.TrimSpace(rq.QuestionNo)
+		if no == "" {
+			continue
+		}
+		if _, ok := recByNo[no]; ok {
+			continue
+		}
+		recByNo[no] = rq
+		orderedNos = append(orderedNos, no)
+	}
+	for _, qn := range normalizeQuestionNos(in.QuestionNos) {
+		if _, ok := recByNo[qn]; ok {
+			continue
+		}
+		orderedNos = append(orderedNos, qn)
+	}
+
+	qCount := 0
+	for i, qn := range orderedNos {
+		rq, hasRec := recByNo[qn]
+		qType := "unknown"
+		stem := ""
+		ans := ""
+		exp := ""
+		var pFrom, pTo any
+		qOrder := i + 1
+		if hasRec {
+			if strings.TrimSpace(rq.QuestionType) != "" {
+				qType = strings.TrimSpace(rq.QuestionType)
+			}
+			stem = strings.TrimSpace(rq.StemText)
+			ans = strings.TrimSpace(rq.AnswerText)
+			exp = strings.TrimSpace(rq.Explanation)
+			if rq.PageNo > 0 {
+				pFrom = rq.PageNo
+				pTo = rq.PageNo
+			}
+			if rq.QuestionOrder > 0 {
+				qOrder = rq.QuestionOrder
 			}
 		}
-		_, err = tx.ExecContext(ctx, dbutil.Rebind(`
-UPDATE exam_source_paper
-SET question_count = ?, updated_at = ?, updated_by = ?
-WHERE id = ? AND is_deleted = 0`), len(qNos), now, adminID, paperID)
+		var questionID uint64
+		err = tx.QueryRowContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_question
+  (paper_id, question_no, question_order, section_no, question_type, score, stem_text, answer_text, explanation_text,
+   page_from, page_to, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0)
+ON CONFLICT (paper_id, question_no) DO UPDATE SET
+  question_order = EXCLUDED.question_order,
+  question_type = EXCLUDED.question_type,
+  stem_text = COALESCE(EXCLUDED.stem_text, exam_source_question.stem_text),
+  answer_text = COALESCE(EXCLUDED.answer_text, exam_source_question.answer_text),
+  explanation_text = COALESCE(EXCLUDED.explanation_text, exam_source_question.explanation_text),
+  page_from = COALESCE(EXCLUDED.page_from, exam_source_question.page_from),
+  page_to = COALESCE(EXCLUDED.page_to, exam_source_question.page_to),
+  updated_at = EXCLUDED.updated_at,
+  updated_by = EXCLUDED.updated_by
+RETURNING id`),
+			paperID, qn, qOrder, qType, emptyToNil(stem), emptyToNil(ans), emptyToNil(exp), pFrom, pTo,
+			now, adminID, now, adminID,
+		).Scan(&questionID)
 		if err != nil {
 			return 0, err
 		}
+		qCount++
+
+		if hasRec && rq.BBox != nil && rq.PageNo > 0 {
+			if page, ok := pageMap[rq.PageNo]; ok {
+				cropRel, cropAbs, cropErr := s.cropQuestionImage(page, paperID, questionID, *rq.BBox, now)
+				if cropErr == nil && cropRel != "" {
+					var cropFileID uint64
+					pub := "/uploads/" + cropRel
+					err = tx.QueryRowContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_file
+  (storage_provider, bucket_name, object_key, public_url, original_filename, content_type, file_ext, size_bytes,
+   status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES ('local', NULL, ?, ?, ?, 'image/png', 'png', ?, 1, ?, ?, ?, ?, 0)
+RETURNING id`),
+						cropRel, pub, filepath.Base(cropRel), fileSizeOrZero(cropAbs), now, adminID, now, adminID,
+					).Scan(&cropFileID)
+					if err != nil {
+						return 0, err
+					}
+					bboxRaw, _ := json.Marshal(map[string]float64{
+						"x": rq.BBox.X, "y": rq.BBox.Y, "w": rq.BBox.W, "h": rq.BBox.H,
+					})
+					_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_question_file
+  (question_id, file_id, role, sort_no, page_no, bbox_norm, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, 'stem', 1, ?, ?::jsonb, 1, ?, ?, ?, ?, 0)
+ON CONFLICT (question_id, file_id, role) DO NOTHING`),
+						questionID, cropFileID, rq.PageNo, string(bboxRaw), now, adminID, now, adminID,
+					)
+					if err != nil {
+						return 0, err
+					}
+					written = append(written, cropAbs)
+				}
+			}
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, dbutil.Rebind(`
+UPDATE exam_source_paper
+SET question_count = ?, updated_at = ?, updated_by = ?
+WHERE id = ? AND is_deleted = 0`), qCount, now, adminID, paperID)
+	if err != nil {
+		return 0, err
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -845,4 +1293,329 @@ func normalizeQuestionNos(in []string) []string {
 		out = append(out, v)
 	}
 	return out
+}
+
+func fileSizeOrZero(path string) int64 {
+	st, err := os.Stat(path)
+	if err != nil || st == nil {
+		return 0
+	}
+	return st.Size()
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+func (s *Service) cropQuestionImage(page storedPage, paperID, questionID uint64, box recognizedBBox, now time.Time) (string, string, error) {
+	f, err := os.Open(page.Abs)
+	if err != nil {
+		return "", "", err
+	}
+	defer f.Close()
+	src, _, err := image.Decode(f)
+	if err != nil {
+		return "", "", err
+	}
+	b := src.Bounds()
+	w := b.Dx()
+	h := b.Dy()
+	if w <= 1 || h <= 1 {
+		return "", "", ErrInvalidInput
+	}
+	x := int(clamp01(box.X) * float64(w))
+	y := int(clamp01(box.Y) * float64(h))
+	bw := int(clamp01(box.W) * float64(w))
+	bh := int(clamp01(box.H) * float64(h))
+	if bw <= 0 || bh <= 0 {
+		return "", "", ErrInvalidInput
+	}
+	if x+bw > w {
+		bw = w - x
+	}
+	if y+bh > h {
+		bh = h - y
+	}
+	if bw <= 1 || bh <= 1 {
+		return "", "", ErrInvalidInput
+	}
+	rect := image.Rect(0, 0, bw, bh)
+	dst := image.NewRGBA(rect)
+	draw.Draw(dst, rect, src, image.Point{X: b.Min.X + x, Y: b.Min.Y + y}, draw.Src)
+
+	monthPath := now.Format("200601")
+	cropRel := filepath.ToSlash(filepath.Join("exam-source", monthPath, "question-crops",
+		fmt.Sprintf("%d_q%d_%s.png", paperID, questionID, randHex(6))))
+	cropAbs := filepath.Join(s.uploadDir, cropRel)
+	if err := os.MkdirAll(filepath.Dir(cropAbs), 0755); err != nil {
+		return "", "", err
+	}
+	out, err := os.Create(cropAbs)
+	if err != nil {
+		return "", "", err
+	}
+	defer out.Close()
+	if err := png.Encode(out, dst); err != nil {
+		return "", "", err
+	}
+	return cropRel, cropAbs, nil
+}
+
+func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) ([]recognizedQuestion, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	adapter := s.resolveRecognitionAdapter(ctx)
+	if adapter == nil {
+		return nil, nil
+	}
+	vision := make([]studentpaper.VisionImage, 0, len(images))
+	for _, im := range images {
+		if len(im.Bytes) == 0 {
+			continue
+		}
+		vision = append(vision, studentpaper.VisionImage{
+			MIME: mimeByExt(im.Filename),
+			Data: im.Bytes,
+		})
+	}
+	if len(vision) == 0 {
+		return nil, nil
+	}
+	prompt := fmt.Sprintf(`你是试卷结构化助手。请从上传的整卷图片中识别题目，并只输出一个JSON对象：
+{
+  "questions":[
+    {
+      "question_no":"1",
+      "question_order":1,
+      "question_type":"single_choice",
+      "page_no":1,
+      "bbox_norm":{"x":0.1,"y":0.1,"w":0.8,"h":0.2},
+      "stem_text":"题干摘要",
+      "answer_text":"答案（若可识别）",
+      "explanation_text":"解析（若可识别）"
+    }
+  ]
+}
+要求：
+1) 只输出JSON，不要解释。
+2) bbox_norm 为相对坐标，x/y/w/h 范围 0~1。
+3) page_no 从1开始。
+4) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 必须尽量给出。试卷标题参考：%s。`, title)
+
+	res := adapter.Analyze(studentpaper.AnalyzeInput{
+		ChatUserPrompt:          prompt,
+		VisionImages:            vision,
+		OptionalMaxOutputTokens: examSourceRecognizeMaxTokens,
+		FileName:                title,
+		Subject:                 "exam_source",
+		Stage:                   "admin",
+	})
+	raw := strings.TrimSpace(res.Out.RawContent)
+	if raw == "" {
+		raw = strings.TrimSpace(res.Out.Summary)
+	}
+	if raw == "" {
+		return nil, nil
+	}
+	return parseRecognizedQuestions(raw)
+}
+
+func (s *Service) resolveRecognitionAdapter(ctx context.Context) studentpaper.AnalysisAdapter {
+	if s == nil || s.db == nil {
+		return nil
+	}
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var (
+		modelID uint64
+		url     string
+		model   string
+		secret  string
+	)
+	err := s.db.QueryRowContext(ctx2, `
+SELECT id, url, model, app_secret
+FROM ai_provider_model
+WHERE status = 1 AND is_deleted = 0
+ORDER BY id DESC
+LIMIT 1
+`).Scan(&modelID, &url, &model, &secret)
+	if err != nil || modelID == 0 || strings.TrimSpace(url) == "" {
+		return nil
+	}
+	return studentpaper.NewHTTPAnalysisAdapter(strings.TrimSpace(url), 180*time.Second, strings.TrimSpace(secret), strings.TrimSpace(model))
+}
+
+func extractFirstJSONObject(raw string) (string, bool) {
+	s := strings.TrimSpace(strings.TrimPrefix(raw, "\uFEFF"))
+	start := strings.Index(s, "{")
+	if start < 0 {
+		return "", false
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inString {
+			if c == '\\' {
+				escape = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(s[start : i+1]), true
+			}
+		}
+	}
+	return "", false
+}
+
+func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
+	c := strings.TrimSpace(raw)
+	if strings.HasPrefix(c, "```") {
+		c = strings.TrimPrefix(c, "```")
+		c = strings.TrimPrefix(strings.TrimSpace(c), "json")
+		c = strings.TrimSpace(c)
+		if i := strings.LastIndex(c, "```"); i >= 0 {
+			c = strings.TrimSpace(c[:i])
+		}
+	}
+	if j, ok := extractFirstJSONObject(c); ok {
+		c = j
+	}
+	var root map[string]any
+	if err := json.Unmarshal([]byte(c), &root); err != nil {
+		return nil, err
+	}
+	arr, _ := root["questions"].([]any)
+	out := make([]recognizedQuestion, 0, len(arr))
+	for _, it := range arr {
+		m, _ := it.(map[string]any)
+		if m == nil {
+			continue
+		}
+		qn := strings.TrimSpace(toString(m["question_no"]))
+		if qn == "" {
+			continue
+		}
+		rq := recognizedQuestion{
+			QuestionNo:    qn,
+			QuestionOrder: toInt(m["question_order"]),
+			QuestionType:  strings.TrimSpace(toString(m["question_type"])),
+			PageNo:        toInt(m["page_no"]),
+			StemText:      strings.TrimSpace(toString(m["stem_text"])),
+			AnswerText:    strings.TrimSpace(toString(m["answer_text"])),
+			Explanation:   strings.TrimSpace(toString(m["explanation_text"])),
+		}
+		if rq.QuestionType == "" {
+			rq.QuestionType = "unknown"
+		}
+		if bbox := parseBBox(m["bbox_norm"]); bbox != nil {
+			rq.BBox = bbox
+		}
+		out = append(out, rq)
+	}
+	return out, nil
+}
+
+func parseBBox(v any) *recognizedBBox {
+	if v == nil {
+		return nil
+	}
+	if arr, ok := v.([]any); ok && len(arr) >= 4 {
+		return &recognizedBBox{
+			X: toFloat(arr[0]),
+			Y: toFloat(arr[1]),
+			W: toFloat(arr[2]),
+			H: toFloat(arr[3]),
+		}
+	}
+	m, _ := v.(map[string]any)
+	if m == nil {
+		return nil
+	}
+	return &recognizedBBox{
+		X: toFloat(m["x"]),
+		Y: toFloat(m["y"]),
+		W: toFloat(m["w"]),
+		H: toFloat(m["h"]),
+	}
+}
+
+func toString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case float64:
+		return strconv.FormatFloat(x, 'f', -1, 64)
+	case int:
+		return strconv.Itoa(x)
+	default:
+		return ""
+	}
+}
+
+func toInt(v any) int {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case int:
+		return x
+	case string:
+		n, _ := strconv.Atoi(strings.TrimSpace(x))
+		return n
+	default:
+		return 0
+	}
+}
+
+func toFloat(v any) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case int:
+		return float64(x)
+	case string:
+		n, _ := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+func mimeByExt(name string) string {
+	switch strings.ToLower(strings.TrimSpace(filepath.Ext(strings.TrimSpace(name)))) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	case ".bmp":
+		return "image/bmp"
+	default:
+		return "image/jpeg"
+	}
 }
