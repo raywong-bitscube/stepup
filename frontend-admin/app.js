@@ -534,6 +534,17 @@
     return 'http://localhost:8080';
   }
 
+  function assetURL(raw) {
+    const t = String(raw || '').trim();
+    if (!t) return '';
+    if (/^https?:\/\//i.test(t) || t.startsWith('data:') || t.startsWith('blob:')) return t;
+    if (t.startsWith('/')) {
+      const base = apiBase().replace(/\/$/, '');
+      return base + t;
+    }
+    return t;
+  }
+
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, '&amp;')
@@ -2372,7 +2383,14 @@
         const hintTitle = (mr.querySelector('#esuHintTitle').value || '').trim();
         if (hintTitle) fd.append('title', hintTitle);
         selectedFiles.forEach((f) => fd.append('images', f));
-        mr.querySelector('#esUpBd')?.setAttribute('data-busy', '1');
+        setAdminModalLongTask(mr, true, {
+          backdropSel: '#esUpBd',
+          submitSel: '#esuAnalyze',
+          cancelSel: '#esuCancel',
+          idleLabel: '上传并分析',
+          busyLabel: '分析中…',
+          lockSelectors: ['#esuHintTitle', '#esuFiles'],
+        });
         try {
           analyzed = await api('/api/v1/admin/exam-source/papers/upload-analyze', { method: 'POST', body: fd });
           renderStepSubmit();
@@ -2380,7 +2398,14 @@
           if (authRedirectHandled(e)) return;
           alert('分析失败: ' + (e.data && e.data.code ? e.data.code : e.message));
         } finally {
-          mr.querySelector('#esUpBd')?.setAttribute('data-busy', '0');
+          setAdminModalLongTask(mr, false, {
+            backdropSel: '#esUpBd',
+            submitSel: '#esuAnalyze',
+            cancelSel: '#esuCancel',
+            idleLabel: '上传并分析',
+            busyLabel: '分析中…',
+            lockSelectors: ['#esuHintTitle', '#esuFiles'],
+          });
         }
       });
     };
@@ -2456,7 +2481,29 @@
         putOpt('paper_type', mr.querySelector('#esuPaperType').value);
         putOpt('question_nos', mr.querySelector('#esuQNos').value);
         selectedFiles.forEach((f) => fd.append('images', f));
-        mr.querySelector('#esUpBd')?.setAttribute('data-busy', '1');
+        setAdminModalLongTask(mr, true, {
+          backdropSel: '#esUpBd',
+          submitSel: '#esuSubmit',
+          cancelSel: '#esuCancel',
+          idleLabel: '确认建卷',
+          busyLabel: '建卷中…',
+          lockSelectors: [
+            '#esuTitle',
+            '#esuSubj',
+            '#esuGrade',
+            '#esuYear',
+            '#esuTerm',
+            '#esuScore',
+            '#esuDuration',
+            '#esuRegion',
+            '#esuSchool',
+            '#esuGradeLabel',
+            '#esuPaperType',
+            '#esuQNos',
+          ],
+        });
+        const backBtn = mr.querySelector('#esuBack');
+        if (backBtn) backBtn.disabled = true;
         try {
           await api('/api/v1/admin/exam-source/papers/upload', { method: 'POST', body: fd });
           close();
@@ -2465,7 +2512,28 @@
           if (authRedirectHandled(e)) return;
           alert('建卷失败: ' + (e.data && e.data.code ? e.data.code : e.message));
         } finally {
-          mr.querySelector('#esUpBd')?.setAttribute('data-busy', '0');
+          setAdminModalLongTask(mr, false, {
+            backdropSel: '#esUpBd',
+            submitSel: '#esuSubmit',
+            cancelSel: '#esuCancel',
+            idleLabel: '确认建卷',
+            busyLabel: '建卷中…',
+            lockSelectors: [
+              '#esuTitle',
+              '#esuSubj',
+              '#esuGrade',
+              '#esuYear',
+              '#esuTerm',
+              '#esuScore',
+              '#esuDuration',
+              '#esuRegion',
+              '#esuSchool',
+              '#esuGradeLabel',
+              '#esuPaperType',
+              '#esuQNos',
+            ],
+          });
+          if (backBtn) backBtn.disabled = false;
         }
       });
     };
@@ -2485,24 +2553,67 @@
       });
       try {
         const d = await api('/api/v1/admin/exam-source/papers/' + paperId);
+        let preview = null;
+        try {
+          preview = await api('/api/v1/admin/exam-source/papers/' + paperId + '/recognition-preview');
+        } catch {
+          preview = null;
+        }
         const p = d.paper || {};
         const pages = d.pages || [];
         const qs = d.questions || [];
+        const pvPages = (preview && preview.pages) || [];
+        const pvQs = (preview && preview.questions) || [];
+        const pageURLByNo = new Map();
+        pages.forEach((x) => {
+          if (x && x.page_no) pageURLByNo.set(Number(x.page_no), x.public_url || '');
+        });
+        pvPages.forEach((x) => {
+          if (x && x.page_no && !pageURLByNo.get(Number(x.page_no))) {
+            pageURLByNo.set(Number(x.page_no), x.public_url || '');
+          }
+        });
+        const previewQByID = new Map();
+        pvQs.forEach((x) => {
+          if (x && x.id) previewQByID.set(Number(x.id), x);
+        });
         const pageRows = pages
           .map(
             (x) =>
               `<tr><td>${x.page_no}</td><td>${x.file_id}</td><td>${
-                x.public_url ? `<a href="${escapeHtml(x.public_url)}" target="_blank" rel="noreferrer">查看</a>` : '—'
+                x.public_url ? `<a href="${escapeHtml(assetURL(x.public_url))}" target="_blank" rel="noreferrer">查看</a>` : '—'
               }</td></tr>`
           )
           .join('');
         const qRows = qs
-          .map(
-            (q) =>
-              `<tr><td>${q.id}</td><td>${escapeHtml(q.question_no || '')}</td><td>${q.question_order || 0}</td><td>${escapeHtml(
-                q.question_type || ''
-              )}</td><td>${q.page_from || '—'}-${q.page_to || '—'}</td></tr>`
-          )
+          .map((q) => {
+            const pq = previewQByID.get(Number(q.id)) || {};
+            const stemCropURL = assetURL(pq.stem_crop_public_url || '');
+            const stemPageNo = Number(pq.stem_page_no || q.page_from || 0);
+            const pageURL = stemPageNo > 0 ? assetURL(pageURLByNo.get(stemPageNo) || '') : '';
+            const stemImgCell = stemCropURL
+              ? `<a href="${escapeHtml(stemCropURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
+                  stemCropURL
+                )}" alt="stem-crop" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
+              : '—';
+            const pageImgCell = pageURL
+              ? `<a href="${escapeHtml(pageURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
+                  pageURL
+                )}" alt="page-image" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
+              : '—';
+            return `<tr>
+                <td>${q.id}</td>
+                <td>${escapeHtml(q.question_no || '')}</td>
+                <td>${q.question_order || 0}</td>
+                <td>${escapeHtml(q.question_type || '')}</td>
+                <td>${q.page_from || '—'}-${q.page_to || '—'}</td>
+                <td>${stemImgCell}</td>
+                <td>${pageImgCell}</td>
+                <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.stem_text || '—')}</td>
+                <td style="max-width:200px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.answer_text || '—')}</td>
+                <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.explanation_text || '—')}</td>
+              </tr>`;
+          })
           .join('');
         mr.innerHTML = `
           <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
@@ -2511,7 +2622,8 @@
             <h4>页面图片</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
             <h4 style="margin-top:14px">题目</h4>
-            <table class="data"><thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th></tr></thead><tbody>${qRows || '<tr><td colspan="5">暂无题目</td></tr>'}</tbody></table>
+            <p class="muted" style="margin-top:4px">题图优先展示识别/校正后的裁剪图，若无则可查看对应原页图。</p>
+            <table class="data"><thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th><th>题图(裁剪)</th><th>原页图</th><th>题干</th><th>答案</th><th>解析</th></tr></thead><tbody>${qRows || '<tr><td colspan="10">暂无题目</td></tr>'}</tbody></table>
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);
         mr.querySelector('#esDtlBbox')?.addEventListener('click', () => {
@@ -2640,7 +2752,7 @@
 
       function pagePublicUrl(pageNo) {
         const p = pages.find((x) => x.page_no === pageNo);
-        return p && p.public_url ? p.public_url : '';
+        return p && p.public_url ? assetURL(p.public_url) : '';
       }
 
       function syncOverlay() {
@@ -2672,7 +2784,7 @@
           inpH.value = '0.25';
         }
         if (q.stem_crop_public_url) {
-          cropLink.href = q.stem_crop_public_url;
+          cropLink.href = assetURL(q.stem_crop_public_url);
           cropLink.textContent = '打开';
         } else {
           cropLink.removeAttribute('href');
@@ -2722,7 +2834,7 @@
           q.stem_bbox_norm = res.bbox_norm || { x, y, w, h };
           if (res.crop_public_url) {
             q.stem_crop_public_url = res.crop_public_url;
-            cropLink.href = res.crop_public_url;
+            cropLink.href = assetURL(res.crop_public_url);
             cropLink.textContent = '打开（已更新）';
           }
           alert('已保存');
