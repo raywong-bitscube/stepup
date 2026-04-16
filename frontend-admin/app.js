@@ -2658,7 +2658,7 @@
         }
         mr.innerHTML = `
           <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlPurge">彻底删除</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>试卷原图</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
@@ -2666,6 +2666,22 @@
             <p class="muted" style="margin-top:4px">按卷面大题分组展示说明与题目，题目内容与图片按详情形式完整展示。</p>
             ${questionBlocks}
           </div></div>`;
+        mr.querySelector('#esDtlPurge')?.addEventListener('click', async () => {
+          if (!confirm('将彻底删除该试卷及其关联数据（不可恢复），确认继续？')) return;
+          if (!confirm(`再次确认：彻底删除试卷 #${paperId} ?`)) return;
+          const btn = mr.querySelector('#esDtlPurge');
+          if (btn) btn.disabled = true;
+          try {
+            await api('/api/v1/admin/exam-source/papers/' + paperId + '/purge', { method: 'DELETE' });
+            close();
+            mount(document.getElementById('app'));
+          } catch (e) {
+            if (authRedirectHandled(e)) return;
+            alert('删除失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+          } finally {
+            if (btn) btn.disabled = false;
+          }
+        });
         mr.querySelector('#esDtlClose').addEventListener('click', close);
         mr.querySelectorAll('.es-q-bbox-btn').forEach((btn) => {
           btn.addEventListener('click', () => {

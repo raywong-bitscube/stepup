@@ -465,6 +465,27 @@ func (h *ExamSourceHandler) PatchPaper(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *ExamSourceHandler) PurgePaper(w http.ResponseWriter, r *http.Request) {
+	id, ok := parsePathUint64(r.PathValue("paperId"))
+	if !ok || id == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+		return
+	}
+	err := h.svc.PurgePaper(r.Context(), id, adminIDFromReq(r))
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case errors.Is(err, adminexamsource.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
+	}
+}
+
 func (h *ExamSourceHandler) ListQuestions(w http.ResponseWriter, r *http.Request) {
 	pid, ok := parsePathUint64(r.PathValue("paperId"))
 	if !ok || pid == 0 {

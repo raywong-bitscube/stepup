@@ -143,6 +143,7 @@ func registerAPIRoutes(mux *http.ServeMux, cfg config.Config, db *sqlx.DB) {
 	mux.HandleFunc("POST /api/v1/admin/exam-source/papers/upload-analyze", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.AnalyzeUpload))
 	mux.HandleFunc("POST /api/v1/admin/exam-source/papers/upload", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.CreatePaperWithUpload))
 	mux.HandleFunc("GET /api/v1/admin/exam-source/papers/{paperId}", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.GetPaper))
+	mux.HandleFunc("DELETE /api/v1/admin/exam-source/papers/{paperId}/purge", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.PurgePaper))
 	mux.HandleFunc("GET /api/v1/admin/exam-source/papers/{paperId}/recognition-preview", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.GetRecognitionPreview))
 	mux.HandleFunc("PATCH /api/v1/admin/exam-source/questions/{questionId}/stem-bbox", middleware.RequireAdminAuth(adminAuthService, adminExamSourceHandler.PatchQuestionStemBBox))
 }

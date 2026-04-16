@@ -561,6 +561,145 @@ func (s *Service) PatchPaper(ctx context.Context, id uint64, adminID uint64, in 
 	return nil
 }
 
+// PurgePaper physically deletes one paper and its related records/files.
+// It only targets data linked to this paper ID.
+func (s *Service) PurgePaper(ctx context.Context, id uint64, adminID uint64) error {
+	if s == nil || s.db == nil {
+		return ErrNoDatabase
+	}
+	if id == 0 || adminID == 0 {
+		return ErrInvalidInput
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var one int
+	if err := tx.QueryRowContext(ctx, dbutil.Rebind(`SELECT 1 FROM exam_source_paper WHERE id = ? LIMIT 1`), id).Scan(&one); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+
+	type fileCandidate struct {
+		ID       uint64
+		Provider string
+		Object   string
+	}
+	candidates := make([]fileCandidate, 0, 32)
+	rows, err := tx.QueryContext(ctx, dbutil.Rebind(`
+SELECT DISTINCT f.id, f.storage_provider, f.object_key
+FROM exam_source_file f
+JOIN (
+  SELECT p.file_id
+  FROM exam_source_paper_page p
+  WHERE p.paper_id = ?
+  UNION
+  SELECT qf.file_id
+  FROM exam_source_question_file qf
+  JOIN exam_source_question q ON q.id = qf.question_id
+  WHERE q.paper_id = ?
+) x ON x.file_id = f.id
+WHERE f.is_deleted = 0`), id, id)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var it fileCandidate
+		if err := rows.Scan(&it.ID, &it.Provider, &it.Object); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		candidates = append(candidates, it)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	_ = rows.Close()
+
+	res, err := tx.ExecContext(ctx, dbutil.Rebind(`DELETE FROM exam_source_paper WHERE id = ?`), id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+
+	fileIDs := make([]uint64, 0, len(candidates))
+	for _, c := range candidates {
+		fileIDs = append(fileIDs, c.ID)
+	}
+	if len(fileIDs) > 0 {
+		ph := make([]string, 0, len(fileIDs))
+		args := make([]any, 0, len(fileIDs))
+		for _, fid := range fileIDs {
+			ph = append(ph, "?")
+			args = append(args, fid)
+		}
+		q := `
+DELETE FROM exam_source_file f
+WHERE f.id IN (` + strings.Join(ph, ",") + `)
+  AND NOT EXISTS (SELECT 1 FROM exam_source_paper_page p WHERE p.file_id = f.id)
+  AND NOT EXISTS (SELECT 1 FROM exam_source_question_file qf WHERE qf.file_id = f.id)`
+		if _, err := tx.ExecContext(ctx, dbutil.Rebind(q), args...); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	if len(candidates) == 0 || strings.TrimSpace(s.uploadDir) == "" {
+		return nil
+	}
+	// Best-effort local file cleanup: only remove files whose DB rows are gone.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel2()
+	ph := make([]string, 0, len(fileIDs))
+	args := make([]any, 0, len(fileIDs))
+	for _, fid := range fileIDs {
+		ph = append(ph, "?")
+		args = append(args, fid)
+	}
+	existQ := `SELECT id FROM exam_source_file WHERE id IN (` + strings.Join(ph, ",") + `)`
+	existRows, err := s.db.QueryContext(ctx2, dbutil.Rebind(existQ), args...)
+	if err != nil {
+		return nil
+	}
+	alive := make(map[uint64]struct{}, len(fileIDs))
+	for existRows.Next() {
+		var fid uint64
+		if err := existRows.Scan(&fid); err != nil {
+			_ = existRows.Close()
+			return nil
+		}
+		alive[fid] = struct{}{}
+	}
+	_ = existRows.Close()
+	for _, c := range candidates {
+		if _, ok := alive[c.ID]; ok {
+			continue
+		}
+		if strings.ToLower(strings.TrimSpace(c.Provider)) != "local" {
+			continue
+		}
+		rel := filepath.ToSlash(strings.TrimSpace(c.Object))
+		if rel == "" {
+			continue
+		}
+		abs := filepath.Join(s.uploadDir, filepath.FromSlash(rel))
+		_ = os.Remove(abs)
+	}
+	return nil
+}
+
 func (s *Service) ListPages(ctx context.Context, paperID uint64) ([]Page, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
