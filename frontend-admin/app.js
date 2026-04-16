@@ -754,6 +754,7 @@
     auditFilters: { limit: 50, offset: 0 },
     aiLogs: [],
     examPapers: [],
+    examSourceDetailPaperID: 0,
     aiLogFilters: {
       limit: 50,
       offset: 0,
@@ -2320,6 +2321,16 @@
   }
 
   function renderExamSourcePapers() {
+    if (Number(state.examSourceDetailPaperID || 0) > 0) {
+      return `
+      <div class="toolbar">
+        <h2 style="margin:0">试卷详情</h2>
+        <div class="row" style="margin:0">
+          <button type="button" class="btn secondary" id="btnExamBackList">返回试卷列表</button>
+        </div>
+      </div>
+      <div id="detailRoot"></div>`;
+    }
     const rows = (state.examPapers || [])
       .map((p) => {
         const total = p.total_score == null ? '—' : p.total_score;
@@ -2353,13 +2364,29 @@
   function bindExamSourcePapers(pane) {
     const detailRoot = pane.querySelector('#detailRoot');
     pane.querySelector('#btnExamUpload')?.addEventListener('click', () => openExamSourceUploadModal(detailRoot));
+    pane.querySelector('#btnExamBackList')?.addEventListener('click', () => {
+      state.examSourceDetailPaperID = 0;
+      mount(document.getElementById('app'));
+    });
     pane.querySelectorAll('a[data-es-open]').forEach((a) => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
         const id = Number(a.getAttribute('data-es-open'));
-        openExamSourceDetailModal(detailRoot, id);
+        if (!id) return;
+        state.examSourceDetailPaperID = id;
+        mount(document.getElementById('app'));
       });
     });
+    const detailPaperID = Number(state.examSourceDetailPaperID || 0);
+    if (detailRoot && detailPaperID > 0) {
+      openExamSourceDetailModal(detailRoot, detailPaperID, {
+        closeLabel: '返回试卷列表',
+        onClose: () => {
+          state.examSourceDetailPaperID = 0;
+          mount(document.getElementById('app'));
+        },
+      });
+    }
   }
 
   function openExamSourceUploadModal(mr) {
@@ -2559,10 +2586,15 @@
     renderStepAnalyze();
   }
 
-  function openExamSourceDetailModal(host, paperId) {
-    const close = () => {
-      host.innerHTML = '';
-    };
+  function openExamSourceDetailModal(host, paperId, opts) {
+    const options = opts || {};
+    const closeLabel = String(options.closeLabel || '收起');
+    const close =
+      typeof options.onClose === 'function'
+        ? options.onClose
+        : () => {
+            host.innerHTML = '';
+          };
     const openImageLightbox = (imgURL) => {
       const u = String(imgURL || '').trim();
       if (!u) return;
@@ -2672,7 +2704,7 @@
 
         host.innerHTML = `
           <div class="card es-inline-detail">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlPurge">彻底删除</button><button type="button" class="btn secondary" id="esDtlClose">收起</button></div></div>
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlPurge">彻底删除</button><button type="button" class="btn secondary" id="esDtlClose">${escapeHtml(closeLabel)}</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>试卷原图</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
@@ -2713,7 +2745,9 @@
         });
       } catch (e) {
         if (authRedirectHandled(e)) return;
-        host.innerHTML = `<div class="card es-inline-detail"><h3 style="margin:0">试卷详情 #${paperId}</h3><p class="muted">加载失败</p><div class="row"><button type="button" class="btn secondary" id="esDtlClose">收起</button></div></div>`;
+        host.innerHTML = `<div class="card es-inline-detail"><h3 style="margin:0">试卷详情 #${paperId}</h3><p class="muted">加载失败</p><div class="row"><button type="button" class="btn secondary" id="esDtlClose">${escapeHtml(
+          closeLabel
+        )}</button></div></div>`;
         host.querySelector('#esDtlClose')?.addEventListener('click', close);
         alert('加载详情失败: ' + (e.data && e.data.code ? e.data.code : e.message));
       }
