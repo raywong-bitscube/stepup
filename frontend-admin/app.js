@@ -2326,18 +2326,12 @@
         const yr = p.exam_year == null ? '—' : p.exam_year;
         return `<tr>
           <td>${p.id}</td>
-          <td>${escapeHtml(p.title || '')}</td>
+          <td><a href="#" data-es-open="${p.id}">${escapeHtml(p.title || '')}</a></td>
           <td>${yr}</td>
           <td>${escapeHtml(p.term || '—')}</td>
           <td>${p.k12_subject_id || '—'}</td>
-          <td>${p.page_count || 0}</td>
-          <td>${p.question_count || 0}</td>
           <td>${escapeHtml(String(total))}</td>
           ${tdAdminListStatus10(p.status)}
-          <td class="td-actions"><span class="td-actions-inner">
-            <button type="button" class="btn small" data-es-view="${p.id}">详情</button>
-            <button type="button" class="btn small secondary" data-es-bbox="${p.id}">校正 bbox</button>
-          </span></td>
         </tr>`;
       })
       .join('');
@@ -2350,8 +2344,8 @@
       </div>
       <p class="muted">支持浏览整卷信息，并通过“两阶段上传（先分析、再补全）”创建试卷及页面子记录。</p>
       <table class="data">
-        <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>页数</th><th>题数</th><th>总分</th><th>状态</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="10">暂无数据</td></tr>'}</tbody>
+        <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>总分</th><th>状态</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7">暂无数据</td></tr>'}</tbody>
       </table>
       <div id="modalRoot"></div>`;
   }
@@ -2359,16 +2353,11 @@
   function bindExamSourcePapers(pane) {
     const mr = pane.querySelector('#modalRoot');
     pane.querySelector('#btnExamUpload')?.addEventListener('click', () => openExamSourceUploadModal(mr));
-    pane.querySelectorAll('button[data-es-view]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = Number(b.getAttribute('data-es-view'));
+    pane.querySelectorAll('a[data-es-open]').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const id = Number(a.getAttribute('data-es-open'));
         openExamSourceDetailModal(mr, id);
-      });
-    });
-    pane.querySelectorAll('button[data-es-bbox]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = Number(b.getAttribute('data-es-bbox'));
-        openExamSourceBboxModal(mr, id);
       });
     });
   }
