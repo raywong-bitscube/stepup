@@ -16,6 +16,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -82,6 +83,7 @@ type Page struct {
 type Question struct {
 	ID            uint64
 	PaperID       uint64
+	GroupID       *uint64
 	QuestionNo    string
 	QuestionOrder int
 	SectionNo     *string
@@ -94,6 +96,19 @@ type Question struct {
 	PageTo        *int
 	Status        int
 	UpdatedAt     time.Time
+}
+
+// QuestionGroup is a paper section (大题) with system-classified type and the full rubric line from the scan.
+type QuestionGroup struct {
+	ID              uint64
+	PaperID         uint64
+	GroupOrder      int
+	SystemKind      string
+	TitleLabel      *string
+	DescriptionText *string
+	PageNo          *int
+	Status          int
+	UpdatedAt       time.Time
 }
 
 type CreatePaperInput struct {
@@ -175,7 +190,16 @@ type recognizedBBox struct {
 	H float64
 }
 
+type recognizedGroup struct {
+	GroupOrder      int
+	SystemKind      string
+	TitleLabel      string
+	DescriptionText string
+	PageNo          int
+}
+
 type recognizedQuestion struct {
+	GroupOrder    int
 	QuestionNo    string
 	QuestionType  string
 	PageNo        int
@@ -184,6 +208,11 @@ type recognizedQuestion struct {
 	StemText      string
 	AnswerText    string
 	Explanation   string
+}
+
+type recognitionOutput struct {
+	Groups    []recognizedGroup
+	Questions []recognizedQuestion
 }
 
 type storedPage struct {
@@ -220,6 +249,7 @@ type PatchStemBBoxResult struct {
 }
 
 type UploadAnalyzeQuestion struct {
+	GroupOrder    int
 	QuestionNo    string
 	QuestionOrder int
 	QuestionType  string
@@ -228,6 +258,14 @@ type UploadAnalyzeQuestion struct {
 	StemText      string
 	AnswerText    string
 	Explanation   string
+}
+
+type UploadAnalyzeGroup struct {
+	GroupOrder      int
+	SystemKind      string
+	TitleLabel      string
+	DescriptionText string
+	PageNo          int
 }
 
 type UploadAnalyzeResult struct {
@@ -243,6 +281,7 @@ type UploadAnalyzeResult struct {
 	PaperType       string
 	TotalScore      *string
 	DurationMinutes *int
+	Groups          []UploadAnalyzeGroup
 	QuestionNos     []string
 	Questions       []UploadAnalyzeQuestion
 }
@@ -564,7 +603,7 @@ func (s *Service) ListQuestions(ctx context.Context, paperID uint64) ([]Question
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
-SELECT id, paper_id, question_no, question_order, section_no, question_type, score::text,
+SELECT id, paper_id, group_id, question_no, question_order, section_no, question_type, score::text,
        stem_text, answer_text, explanation_text, page_from, page_to, status, updated_at
 FROM exam_source_question
 WHERE paper_id = ? AND is_deleted = 0
@@ -577,6 +616,7 @@ ORDER BY question_order ASC, id ASC`), paperID)
 	for rows.Next() {
 		var (
 			it          Question
+			groupID     sql.NullInt64
 			sectionNo   sql.NullString
 			scoreText   sql.NullString
 			stemText    sql.NullString
@@ -586,7 +626,7 @@ ORDER BY question_order ASC, id ASC`), paperID)
 			pageTo      sql.NullInt64
 		)
 		if err := rows.Scan(
-			&it.ID, &it.PaperID, &it.QuestionNo, &it.QuestionOrder, &sectionNo, &it.QuestionType, &scoreText,
+			&it.ID, &it.PaperID, &groupID, &it.QuestionNo, &it.QuestionOrder, &sectionNo, &it.QuestionType, &scoreText,
 			&stemText, &answerText, &explainText, &pageFrom, &pageTo, &it.Status, &it.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -596,6 +636,10 @@ ORDER BY question_order ASC, id ASC`), paperID)
 		it.StemText = nullableStringPtr(stemText)
 		it.AnswerText = nullableStringPtr(answerText)
 		it.Explanation = nullableStringPtr(explainText)
+		if groupID.Valid && groupID.Int64 > 0 {
+			v := uint64(groupID.Int64)
+			it.GroupID = &v
+		}
 		if pageFrom.Valid {
 			v := int(pageFrom.Int64)
 			it.PageFrom = &v
@@ -603,6 +647,48 @@ ORDER BY question_order ASC, id ASC`), paperID)
 		if pageTo.Valid {
 			v := int(pageTo.Int64)
 			it.PageTo = &v
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+func (s *Service) ListQuestionGroups(ctx context.Context, paperID uint64) ([]QuestionGroup, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	if paperID == 0 {
+		return nil, ErrInvalidInput
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
+SELECT id, paper_id, group_order, system_kind, title_label, description_text, page_no, status, updated_at
+FROM exam_source_question_group
+WHERE paper_id = ? AND is_deleted = 0
+ORDER BY group_order ASC, id ASC`), paperID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]QuestionGroup, 0, 16)
+	for rows.Next() {
+		var (
+			it          QuestionGroup
+			titleLabel  sql.NullString
+			description sql.NullString
+			pageNo      sql.NullInt64
+		)
+		if err := rows.Scan(
+			&it.ID, &it.PaperID, &it.GroupOrder, &it.SystemKind, &titleLabel, &description, &pageNo, &it.Status, &it.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		it.TitleLabel = nullableStringPtr(titleLabel)
+		it.DescriptionText = nullableStringPtr(description)
+		if pageNo.Valid {
+			v := int(pageNo.Int64)
+			it.PageNo = &v
 		}
 		out = append(out, it)
 	}
@@ -626,7 +712,7 @@ func (s *Service) GetRecognitionPreview(ctx context.Context, paperID uint64) ([]
 		return nil, nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, dbutil.Rebind(`
-SELECT q.id, q.paper_id, q.question_no, q.question_order, q.section_no, q.question_type, q.score::text,
+SELECT q.id, q.paper_id, q.group_id, q.question_no, q.question_order, q.section_no, q.question_type, q.score::text,
        q.stem_text, q.answer_text, q.explanation_text, q.page_from, q.page_to, q.status, q.updated_at,
        qf.id, qf.file_id, f.public_url, qf.page_no, qf.bbox_norm
 FROM exam_source_question q
@@ -648,6 +734,7 @@ ORDER BY q.question_order ASC, q.id ASC`), paperID)
 	for rows.Next() {
 		var (
 			it          RecognitionPreviewQuestion
+			groupID     sql.NullInt64
 			sectionNo   sql.NullString
 			scoreText   sql.NullString
 			stemText    sql.NullString
@@ -662,7 +749,7 @@ ORDER BY q.question_order ASC, q.id ASC`), paperID)
 			bboxRaw     []byte
 		)
 		if err := rows.Scan(
-			&it.ID, &it.PaperID, &it.QuestionNo, &it.QuestionOrder, &sectionNo, &it.QuestionType, &scoreText,
+			&it.ID, &it.PaperID, &groupID, &it.QuestionNo, &it.QuestionOrder, &sectionNo, &it.QuestionType, &scoreText,
 			&stemText, &answerText, &explainText, &pageFrom, &pageTo, &it.Status, &it.UpdatedAt,
 			&stemQFID, &stemFID, &stemURL, &stemPage, &bboxRaw,
 		); err != nil {
@@ -673,6 +760,10 @@ ORDER BY q.question_order ASC, q.id ASC`), paperID)
 		it.StemText = nullableStringPtr(stemText)
 		it.AnswerText = nullableStringPtr(answerText)
 		it.Explanation = nullableStringPtr(explainText)
+		if groupID.Valid && groupID.Int64 > 0 {
+			v := uint64(groupID.Int64)
+			it.GroupID = &v
+		}
 		if pageFrom.Valid {
 			v := int(pageFrom.Int64)
 			it.PageFrom = &v
@@ -1034,9 +1125,15 @@ func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []
 	if metaErr != nil {
 		meta = nil
 	}
-	recognized, recErr := s.recognizeQuestions(ctx, titleHint, images)
+	recOut, recErr := s.recognizeQuestions(ctx, titleHint, images)
+	var recognized []recognizedQuestion
+	var recGroups []recognizedGroup
 	if recErr != nil {
 		recognized = nil
+		recGroups = nil
+	} else if recOut != nil {
+		recognized = recOut.Questions
+		recGroups = recOut.Groups
 	}
 	out := &UploadAnalyzeResult{
 		PaperType: "mock_exam",
@@ -1084,6 +1181,16 @@ func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []
 			out.K12GradeID = gid
 		}
 	}
+	out.Groups = make([]UploadAnalyzeGroup, 0, len(recGroups))
+	for _, g := range recGroups {
+		out.Groups = append(out.Groups, UploadAnalyzeGroup{
+			GroupOrder:      g.GroupOrder,
+			SystemKind:      g.SystemKind,
+			TitleLabel:      g.TitleLabel,
+			DescriptionText: g.DescriptionText,
+			PageNo:          g.PageNo,
+		})
+	}
 	out.QuestionNos = make([]string, 0, len(recognized))
 	out.Questions = make([]UploadAnalyzeQuestion, 0, len(recognized))
 	for _, rq := range recognized {
@@ -1093,6 +1200,7 @@ func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []
 		}
 		out.QuestionNos = append(out.QuestionNos, no)
 		item := UploadAnalyzeQuestion{
+			GroupOrder:    rq.GroupOrder,
 			QuestionNo:    no,
 			QuestionOrder: rq.QuestionOrder,
 			QuestionType:  rq.QuestionType,
@@ -1229,10 +1337,16 @@ func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in 
 	if adminID == 0 || in.K12SubjectID == 0 || strings.TrimSpace(in.Title) == "" || len(images) == 0 {
 		return 0, ErrInvalidInput
 	}
-	recognized, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images)
+	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images)
+	var recognized []recognizedQuestion
+	var recGroups []recognizedGroup
 	if recErr != nil {
 		// Keep upload available even when upstream recognition fails.
 		recognized = nil
+		recGroups = nil
+	} else if recOut != nil {
+		recognized = recOut.Questions
+		recGroups = recOut.Groups
 	}
 	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
 		return 0, err
@@ -1335,6 +1449,48 @@ VALUES (?, ?, ?, 1, ?, ?, ?, ?, 0)`),
 		}
 	}
 
+	groupOrderToID := make(map[int]uint64)
+	if len(recGroups) > 0 {
+		sort.SliceStable(recGroups, func(i, j int) bool {
+			if recGroups[i].GroupOrder != recGroups[j].GroupOrder {
+				return recGroups[i].GroupOrder < recGroups[j].GroupOrder
+			}
+			return i < j
+		})
+		seenOrd := make(map[int]struct{})
+		for _, g := range recGroups {
+			ord := g.GroupOrder
+			if ord < 0 {
+				ord = 0
+			}
+			if _, dup := seenOrd[ord]; dup {
+				continue
+			}
+			seenOrd[ord] = struct{}{}
+			sk := strings.TrimSpace(g.SystemKind)
+			if sk == "" {
+				sk = "unknown"
+			}
+			var pageNo any
+			if g.PageNo > 0 {
+				pageNo = g.PageNo
+			}
+			var gid uint64
+			err = tx.QueryRowContext(ctx, dbutil.Rebind(`
+INSERT INTO exam_source_question_group
+  (paper_id, group_order, system_kind, title_label, description_text, page_no, status, created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0)
+RETURNING id`),
+				paperID, ord, sk, emptyToNil(g.TitleLabel), emptyToNil(g.DescriptionText), pageNo,
+				now, adminID, now, adminID,
+			).Scan(&gid)
+			if err != nil {
+				return 0, err
+			}
+			groupOrderToID[ord] = gid
+		}
+	}
+
 	orderedNos := make([]string, 0, len(recognized)+len(in.QuestionNos))
 	recByNo := make(map[string]recognizedQuestion, len(recognized))
 	for _, rq := range recognized {
@@ -1379,14 +1535,21 @@ VALUES (?, ?, ?, 1, ?, ?, ?, ?, 0)`),
 				qOrder = rq.QuestionOrder
 			}
 		}
+		var gID any
+		if hasRec && rq.GroupOrder > 0 {
+			if id, ok := groupOrderToID[rq.GroupOrder]; ok && id > 0 {
+				gID = id
+			}
+		}
 		var questionID uint64
 		err = tx.QueryRowContext(ctx, dbutil.Rebind(`
 INSERT INTO exam_source_question
-  (paper_id, question_no, question_order, section_no, question_type, score, stem_text, answer_text, explanation_text,
+  (paper_id, group_id, question_no, question_order, section_no, question_type, score, stem_text, answer_text, explanation_text,
    page_from, page_to, status, created_at, created_by, updated_at, updated_by, is_deleted)
-VALUES (?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0)
+VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, 0)
 ON CONFLICT (paper_id, question_no) DO UPDATE SET
   question_order = EXCLUDED.question_order,
+  group_id = COALESCE(EXCLUDED.group_id, exam_source_question.group_id),
   question_type = EXCLUDED.question_type,
   stem_text = COALESCE(EXCLUDED.stem_text, exam_source_question.stem_text),
   answer_text = COALESCE(EXCLUDED.answer_text, exam_source_question.answer_text),
@@ -1396,7 +1559,7 @@ ON CONFLICT (paper_id, question_no) DO UPDATE SET
   updated_at = EXCLUDED.updated_at,
   updated_by = EXCLUDED.updated_by
 RETURNING id`),
-			paperID, qn, qOrder, qType, emptyToNil(stem), emptyToNil(ans), emptyToNil(exp), pFrom, pTo,
+			paperID, gID, qn, qOrder, qType, emptyToNil(stem), emptyToNil(ans), emptyToNil(exp), pFrom, pTo,
 			now, adminID, now, adminID,
 		).Scan(&questionID)
 		if err != nil {
@@ -1669,7 +1832,7 @@ func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, imag
 	return parseRecognizedPaperMeta(raw)
 }
 
-func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) ([]recognizedQuestion, error) {
+func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) (*recognitionOutput, error) {
 	if len(images) == 0 {
 		return nil, nil
 	}
@@ -1681,10 +1844,20 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 	if len(vision) == 0 {
 		return nil, nil
 	}
-	prompt := fmt.Sprintf(`你是试卷结构化助手。请从上传的整卷图片中识别题目，并只输出一个JSON对象：
+	prompt := fmt.Sprintf(`你是试卷结构化助手。请从上传的整卷图片中识别「大题分组」和「小题」，只输出一个JSON对象：
 {
+  "groups":[
+    {
+      "group_order":1,
+      "system_kind":"single_choice",
+      "title_label":"单项选择题",
+      "description_text":"一、本题共7小题，每小题4分……（卷面上该大题前的完整说明文字，尽量逐字）",
+      "page_no":1
+    }
+  ],
   "questions":[
     {
+      "group_order":1,
       "question_no":"1",
       "question_order":1,
       "question_type":"single_choice",
@@ -1696,11 +1869,17 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
     }
   ]
 }
+字段说明：
+- groups：卷面上每个大题区块（如「一、单项选择题」整段说明）。group_order 从 1 递增。
+- system_kind：系统题型枚举，使用英文小写：single_choice（单选）、multi_choice（多选）、fill_blank、short_answer、essay、unknown 等。
+- title_label：短标题，如「单项选择题」。
+- description_text：该大题下完整说明（含分值、作答要求等）。
+- questions.group_order：所属大题的 group_order，必须与 groups 中某一组一致；若无法分段则省略 groups 或令 group_order 为 0。
 要求：
 1) 只输出JSON，不要解释。
 2) bbox_norm 为相对坐标，x/y/w/h 范围 0~1。
 3) page_no 从1开始。
-4) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 必须尽量给出。试卷标题参考：%s。`, title)
+4) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 尽量给出。试卷标题参考：%s。`, title)
 
 	res := adapter.Analyze(studentpaper.AnalyzeInput{
 		ChatUserPrompt:          prompt,
@@ -1717,7 +1896,7 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 	if raw == "" {
 		return nil, nil
 	}
-	return parseRecognizedQuestions(raw)
+	return parseRecognitionResult(raw)
 }
 
 func (s *Service) resolveRecognitionAdapter(ctx context.Context) studentpaper.AnalysisAdapter {
@@ -1783,7 +1962,7 @@ func extractFirstJSONObject(raw string) (string, bool) {
 	return "", false
 }
 
-func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
+func parseRecognitionResult(raw string) (*recognitionOutput, error) {
 	c := strings.TrimSpace(raw)
 	if strings.HasPrefix(c, "```") {
 		c = strings.TrimPrefix(c, "```")
@@ -1800,8 +1979,32 @@ func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
 	if err := json.Unmarshal([]byte(c), &root); err != nil {
 		return nil, err
 	}
+	out := &recognitionOutput{
+		Groups:    nil,
+		Questions: nil,
+	}
+	if gArr, ok := root["groups"].([]any); ok && len(gArr) > 0 {
+		out.Groups = make([]recognizedGroup, 0, len(gArr))
+		for _, it := range gArr {
+			m, _ := it.(map[string]any)
+			if m == nil {
+				continue
+			}
+			g := recognizedGroup{
+				GroupOrder:      toInt(m["group_order"]),
+				SystemKind:      strings.TrimSpace(toString(m["system_kind"])),
+				TitleLabel:      strings.TrimSpace(toString(m["title_label"])),
+				DescriptionText: strings.TrimSpace(toString(m["description_text"])),
+				PageNo:          toInt(m["page_no"]),
+			}
+			if g.SystemKind == "" {
+				g.SystemKind = "unknown"
+			}
+			out.Groups = append(out.Groups, g)
+		}
+	}
 	arr, _ := root["questions"].([]any)
-	out := make([]recognizedQuestion, 0, len(arr))
+	out.Questions = make([]recognizedQuestion, 0, len(arr))
 	for _, it := range arr {
 		m, _ := it.(map[string]any)
 		if m == nil {
@@ -1812,6 +2015,7 @@ func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
 			continue
 		}
 		rq := recognizedQuestion{
+			GroupOrder:    toInt(m["group_order"]),
 			QuestionNo:    qn,
 			QuestionOrder: toInt(m["question_order"]),
 			QuestionType:  strings.TrimSpace(toString(m["question_type"])),
@@ -1826,7 +2030,7 @@ func parseRecognizedQuestions(raw string) ([]recognizedQuestion, error) {
 		if bbox := parseBBox(m["bbox_norm"]); bbox != nil {
 			rq.BBox = bbox
 		}
-		out = append(out, rq)
+		out.Questions = append(out.Questions, rq)
 	}
 	return out, nil
 }

@@ -45,4 +45,8 @@ location /uploads/ {
 
 注意：`alias` 方案中的目录应与 `UPLOAD_DIR` 对应，且通常需要以 `/` 结尾。
 
+## 试卷库（exam_source）大题分组
+
+整卷识别与建卷支持 **大题（`exam_source_question_group`）**：`system_kind` 为系统题型（如 `single_choice` / `multi_choice` 等），`title_label` / `description_text` 存卷面上该大题标题与完整说明；`exam_source_question.group_id` 指向所属大题。`GET /api/v1/admin/exam-source/papers/{paperId}` 返回 `question_groups` 与带 `group_id` 的题目列表；上传分析接口会返回识别到的 `groups` 与题目上的 `group_order`。
+
 返回 [**文档总索引**](../README.md)。

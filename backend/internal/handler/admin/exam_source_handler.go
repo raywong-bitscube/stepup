@@ -26,9 +26,22 @@ type examSourcePageRow struct {
 	Status    int     `json:"status"`
 }
 
+type examSourceQuestionGroupRow struct {
+	ID              uint64      `json:"id"`
+	PaperID         uint64      `json:"paper_id"`
+	GroupOrder      int         `json:"group_order"`
+	SystemKind      string      `json:"system_kind"`
+	TitleLabel      *string     `json:"title_label"`
+	DescriptionText *string     `json:"description_text"`
+	PageNo          *int        `json:"page_no"`
+	Status          int         `json:"status"`
+	UpdatedAt       RFC3339Time `json:"updated_at"`
+}
+
 type examSourceQuestionRow struct {
 	ID            uint64      `json:"id"`
 	PaperID       uint64      `json:"paper_id"`
+	GroupID       *uint64     `json:"group_id"`
 	QuestionNo    string      `json:"question_no"`
 	QuestionOrder int         `json:"question_order"`
 	SectionNo     *string     `json:"section_no"`
@@ -58,12 +71,31 @@ func toExamSourcePageRows(items []adminexamsource.Page) []examSourcePageRow {
 	return out
 }
 
+func toExamSourceQuestionGroupRows(items []adminexamsource.QuestionGroup) []examSourceQuestionGroupRow {
+	out := make([]examSourceQuestionGroupRow, 0, len(items))
+	for _, g := range items {
+		out = append(out, examSourceQuestionGroupRow{
+			ID:              g.ID,
+			PaperID:         g.PaperID,
+			GroupOrder:      g.GroupOrder,
+			SystemKind:      g.SystemKind,
+			TitleLabel:      g.TitleLabel,
+			DescriptionText: g.DescriptionText,
+			PageNo:          g.PageNo,
+			Status:          g.Status,
+			UpdatedAt:       RFC3339Time(g.UpdatedAt),
+		})
+	}
+	return out
+}
+
 func toExamSourceQuestionRows(items []adminexamsource.Question) []examSourceQuestionRow {
 	out := make([]examSourceQuestionRow, 0, len(items))
 	for _, q := range items {
 		out = append(out, examSourceQuestionRow{
 			ID:            q.ID,
 			PaperID:       q.PaperID,
+			GroupID:       q.GroupID,
 			QuestionNo:    q.QuestionNo,
 			QuestionOrder: q.QuestionOrder,
 			SectionNo:     q.SectionNo,
@@ -225,6 +257,7 @@ func (h *ExamSourceHandler) GetRecognitionPreview(w http.ResponseWriter, r *http
 			row := map[string]any{
 				"id":              q.ID,
 				"paper_id":        q.PaperID,
+				"group_id":        q.GroupID,
 				"question_no":     q.QuestionNo,
 				"question_order":  q.QuestionOrder,
 				"section_no":      q.SectionNo,
@@ -339,6 +372,11 @@ func (h *ExamSourceHandler) GetPaper(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 		return
 	}
+	groups, err := h.svc.ListQuestionGroups(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"paper": map[string]any{
 			"id":               p.ID,
@@ -361,8 +399,9 @@ func (h *ExamSourceHandler) GetPaper(w http.ResponseWriter, r *http.Request) {
 			"updated_at":       RFC3339Time(p.UpdatedAt),
 			"created_at":       RFC3339Time(p.CreatedAt),
 		},
-		"pages":     toExamSourcePageRows(pages),
-		"questions": toExamSourceQuestionRows(qs),
+		"pages":            toExamSourcePageRows(pages),
+		"question_groups":  toExamSourceQuestionGroupRows(groups),
+		"questions":        toExamSourceQuestionRows(qs),
 	})
 }
 
@@ -668,6 +707,7 @@ func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request
 				"total_score":       res.TotalScore,
 				"duration_minutes":  res.DurationMinutes,
 			},
+			"groups":       res.Groups,
 			"question_nos": res.QuestionNos,
 			"questions":    res.Questions,
 		})
