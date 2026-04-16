@@ -24,6 +24,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	"github.com/raywong-bitscube/stepup/backend/internal/dbutil"
+	"github.com/raywong-bitscube/stepup/backend/internal/service/ailog"
 	"github.com/raywong-bitscube/stepup/backend/internal/service/studentpaper"
 )
 
@@ -39,6 +40,7 @@ const examSourceRecognizeMaxTokens = 32768
 type Service struct {
 	db        *sqlx.DB
 	uploadDir string
+	aiLog     *ailog.Writer
 }
 
 func New(db *sqlx.DB, uploadDir string) *Service {
@@ -46,7 +48,7 @@ func New(db *sqlx.DB, uploadDir string) *Service {
 	if uploadDir == "" {
 		uploadDir = "data/uploads"
 	}
-	return &Service{db: db, uploadDir: uploadDir}
+	return &Service{db: db, uploadDir: uploadDir, aiLog: ailog.NewWriter(db)}
 }
 
 type Paper struct {
@@ -1252,7 +1254,7 @@ func (s *Service) PatchQuestion(ctx context.Context, questionID uint64, adminID 
 	return nil
 }
 
-func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []UploadImage) (*UploadAnalyzeResult, error) {
+func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint string, images []UploadImage) (*UploadAnalyzeResult, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
 	}
@@ -1260,11 +1262,11 @@ func (s *Service) AnalyzeUpload(ctx context.Context, titleHint string, images []
 		return nil, ErrInvalidInput
 	}
 	titleHint = strings.TrimSpace(titleHint)
-	meta, metaErr := s.recognizePaperMeta(ctx, titleHint, images)
+	meta, metaErr := s.recognizePaperMeta(ctx, titleHint, images, adminID)
 	if metaErr != nil {
 		meta = nil
 	}
-	recOut, recErr := s.recognizeQuestions(ctx, titleHint, images)
+	recOut, recErr := s.recognizeQuestions(ctx, titleHint, images, adminID)
 	var recognized []recognizedQuestion
 	var recGroups []recognizedGroup
 	if recErr != nil {
@@ -1476,7 +1478,7 @@ func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in 
 	if adminID == 0 || in.K12SubjectID == 0 || strings.TrimSpace(in.Title) == "" || len(images) == 0 {
 		return 0, ErrInvalidInput
 	}
-	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images)
+	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images, 0)
 	var recognized []recognizedQuestion
 	var recGroups []recognizedGroup
 	if recErr != nil {
@@ -1924,7 +1926,7 @@ func buildVisionImages(images []UploadImage) []studentpaper.VisionImage {
 	return vision
 }
 
-func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, images []UploadImage) (*recognizedPaperMeta, error) {
+func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, images []UploadImage, adminID uint64) (*recognizedPaperMeta, error) {
 	if len(images) == 0 {
 		return nil, nil
 	}
@@ -1953,14 +1955,16 @@ func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, imag
 1) 只输出JSON，不要解释。
 2) 无法确定可留空字符串或0。
 3) 若已给出标题提示，可参考它：%s`, titleHint)
-	res := adapter.Analyze(studentpaper.AnalyzeInput{
+	in := studentpaper.AnalyzeInput{
 		ChatUserPrompt:          prompt,
 		VisionImages:            vision,
 		OptionalMaxOutputTokens: examSourceRecognizeMaxTokens,
 		FileName:                titleHint,
 		Subject:                 "exam_source",
 		Stage:                   "admin",
-	})
+	}
+	res := adapter.Analyze(in)
+	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.meta", in, res)
 	raw := strings.TrimSpace(res.Out.RawContent)
 	if raw == "" {
 		raw = strings.TrimSpace(res.Out.Summary)
@@ -1971,7 +1975,7 @@ func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, imag
 	return parseRecognizedPaperMeta(raw)
 }
 
-func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage) (*recognitionOutput, error) {
+func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage, adminID uint64) (*recognitionOutput, error) {
 	if len(images) == 0 {
 		return nil, nil
 	}
@@ -2021,14 +2025,16 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 4) bbox 需要“尽可能紧贴当前题目内容”，不要跨到上一题/下一题的文字，不要把旁栏或页眉页脚包含进来。
 5) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 尽量给出。试卷标题参考：%s。`, title)
 
-	res := adapter.Analyze(studentpaper.AnalyzeInput{
+	in := studentpaper.AnalyzeInput{
 		ChatUserPrompt:          prompt,
 		VisionImages:            vision,
 		OptionalMaxOutputTokens: examSourceRecognizeMaxTokens,
 		FileName:                title,
 		Subject:                 "exam_source",
 		Stage:                   "admin",
-	})
+	}
+	res := adapter.Analyze(in)
+	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.questions", in, res)
 	raw := strings.TrimSpace(res.Out.RawContent)
 	if raw == "" {
 		raw = strings.TrimSpace(res.Out.Summary)
@@ -2041,6 +2047,50 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 		return nil, err
 	}
 	return refineRecognitionOutput(out), nil
+}
+
+func (s *Service) writeAnalyzeUploadAILog(ctx context.Context, adminID uint64, action string, in studentpaper.AnalyzeInput, res studentpaper.AnalyzeResult) {
+	if s == nil || s.aiLog == nil || adminID == 0 {
+		return
+	}
+	reqMeta, _ := json.Marshal(map[string]any{
+		"subject":             in.Subject,
+		"stage":               in.Stage,
+		"file_name":           in.FileName,
+		"vision_images_count": len(in.VisionImages),
+		"max_output_tokens":   in.OptionalMaxOutputTokens,
+	})
+	respMeta, _ := json.Marshal(map[string]any{
+		"summary_len":     len(strings.TrimSpace(res.Out.Summary)),
+		"raw_content_len": len(strings.TrimSpace(res.Out.RawContent)),
+	})
+	var httpSt *int
+	if res.Trace.HTTPStatus != 0 {
+		v := res.Trace.HTTPStatus
+		httpSt = &v
+	}
+	lat := res.Trace.LatencyMS
+	latPtr := &lat
+	adminPtr := &adminID
+	refTable := "exam_source_upload_analyze"
+	s.aiLog.Write(ctx, ailog.InsertRow{
+		Action:           action,
+		AdapterKind:      res.Trace.AdapterKind,
+		ResultStatus:     res.Trace.ResultStatus,
+		HTTPStatus:       httpSt,
+		LatencyMS:        latPtr,
+		ErrorPhase:       res.Trace.ErrorPhase,
+		ErrorMessage:     res.Trace.ErrorMessage,
+		EndpointHost:     res.Trace.EndpointHost,
+		ChatModel:        res.Trace.ChatModel,
+		FallbackToMock:   res.Trace.FallbackToMock,
+		SysUserID:        adminPtr,
+		RefTable:         &refTable,
+		RequestMetaJSON:  reqMeta,
+		ResponseMetaJSON: respMeta,
+		RequestBody:      res.Trace.RequestBody,
+		ResponseBody:     res.Trace.ResponseBody,
+	})
 }
 
 func (s *Service) resolveRecognitionAdapter(ctx context.Context) studentpaper.AnalysisAdapter {

@@ -201,6 +201,11 @@ table.data th { background: #f8fafc; }
 .es-qgroup {
   margin-top: 14px;
 }
+.es-inline-detail {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
 .es-qgroup-title {
   margin: 0 0 6px;
   font-size: 15px;
@@ -248,6 +253,9 @@ table.data th { background: #f8fafc; }
   border-radius: 6px;
   overflow: hidden;
   background: #fff;
+  padding: 0;
+  cursor: zoom-in;
+  width: 100%;
 }
 .es-question-image {
   display: block;
@@ -259,6 +267,32 @@ table.data th { background: #f8fafc; }
   margin-top: 6px;
   color: var(--muted);
   font-size: 12px;
+}
+.es-image-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 120;
+  padding: 24px;
+}
+.es-image-lightbox-inner {
+  max-width: min(1200px, 95vw);
+  max-height: min(90vh, 900px);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.es-image-lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(90vh - 32px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
 }
 .form-grid { display: grid; gap: 10px; }
 label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }

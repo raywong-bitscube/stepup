@@ -2347,17 +2347,17 @@
         <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>总分</th><th>状态</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7">暂无数据</td></tr>'}</tbody>
       </table>
-      <div id="modalRoot"></div>`;
+      <div id="detailRoot" style="margin-top:14px"></div>`;
   }
 
   function bindExamSourcePapers(pane) {
-    const mr = pane.querySelector('#modalRoot');
-    pane.querySelector('#btnExamUpload')?.addEventListener('click', () => openExamSourceUploadModal(mr));
+    const detailRoot = pane.querySelector('#detailRoot');
+    pane.querySelector('#btnExamUpload')?.addEventListener('click', () => openExamSourceUploadModal(detailRoot));
     pane.querySelectorAll('a[data-es-open]').forEach((a) => {
       a.addEventListener('click', (e) => {
         e.preventDefault();
         const id = Number(a.getAttribute('data-es-open'));
-        openExamSourceDetailModal(mr, id);
+        openExamSourceDetailModal(detailRoot, id);
       });
     });
   }
@@ -2559,16 +2559,24 @@
     renderStepAnalyze();
   }
 
-  function openExamSourceDetailModal(mr, paperId) {
+  function openExamSourceDetailModal(host, paperId) {
     const close = () => {
-      mr.innerHTML = '';
+      host.innerHTML = '';
     };
-    const load = async () => {
-      mr.innerHTML = `<div class="modal-backdrop" id="esDtlBd"><div class="modal wide"><h3>试卷详情 #${paperId}</h3><p class="muted">加载中…</p><div class="row"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div></div>`;
-      mr.querySelector('#esDtlClose').addEventListener('click', close);
-      mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
-        if (e.target.id === 'esDtlBd') close();
+    const openImageLightbox = (imgURL) => {
+      const u = String(imgURL || '').trim();
+      if (!u) return;
+      const mask = document.createElement('div');
+      mask.className = 'es-image-lightbox';
+      mask.innerHTML = `<div class="es-image-lightbox-inner"><img src="${escapeHtml(u)}" alt="preview" class="es-image-lightbox-img" /></div>`;
+      mask.addEventListener('click', (e) => {
+        if (e.target === mask) mask.remove();
       });
+      host.appendChild(mask);
+    };
+
+    const load = async () => {
+      host.innerHTML = `<div class="card es-inline-detail"><h3 style="margin:0">试卷详情 #${paperId}</h3><p class="muted">加载中…</p></div>`;
       try {
         const d = await api('/api/v1/admin/exam-source/papers/' + paperId);
         let preview = null;
@@ -2590,10 +2598,13 @@
           .map(
             (x) =>
               `<tr><td>${x.page_no}</td><td>${x.file_id}</td><td>${
-                x.public_url ? `<a href="${escapeHtml(assetURL(x.public_url))}" target="_blank" rel="noreferrer">查看</a>` : '—'
+                x.public_url
+                  ? `<button type="button" class="btn secondary small es-img-open" data-img="${escapeHtml(assetURL(x.public_url))}">查看</button>`
+                  : '—'
               }</td></tr>`
           )
           .join('');
+
         const collectQuestionImageURLs = (pq) => {
           const out = [];
           const seen = new Set();
@@ -2617,6 +2628,7 @@
           push(pq && pq.stem_crop_public_url);
           return out;
         };
+
         const renderQuestionBlock = (q) => {
           const pq = previewQByID.get(Number(q.id)) || {};
           const imgURLs = collectQuestionImageURLs(pq);
@@ -2624,9 +2636,9 @@
             ? `<div class="es-question-images-grid">${imgURLs
                 .map(
                   (u) =>
-                    `<a href="${escapeHtml(u)}" target="_blank" rel="noreferrer" class="es-question-image-item"><img src="${escapeHtml(
+                    `<button type="button" class="es-question-image-item es-img-open" data-img="${escapeHtml(u)}"><img src="${escapeHtml(
                       u
-                    )}" alt="question-image" class="es-question-image" /></a>`
+                    )}" alt="question-image" class="es-question-image" /></button>`
                 )
                 .join('')}</div>`
             : '<div class="es-question-empty">暂无题图</div>';
@@ -2637,6 +2649,7 @@
               <p class="es-question-section"><span class="es-question-label">解析:</span>${escapeHtml(q.explanation_text || '—')}</p>
             </article>`;
         };
+
         let questionBlocks = '';
         if (qgroups.length) {
           for (const g of qgroups) {
@@ -2656,20 +2669,22 @@
         } else {
           questionBlocks = qs.length ? qs.map(renderQuestionBlock).join('') : '<p class="muted">暂无题目</p>';
         }
-        mr.innerHTML = `
-          <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlPurge">彻底删除</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+
+        host.innerHTML = `
+          <div class="card es-inline-detail">
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlPurge">彻底删除</button><button type="button" class="btn secondary" id="esDtlClose">收起</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>试卷原图</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
             <h4 style="margin-top:14px">题目</h4>
             <p class="muted" style="margin-top:4px">按卷面大题分组展示说明与题目，题目内容与图片按详情形式完整展示。</p>
             ${questionBlocks}
-          </div></div>`;
-        mr.querySelector('#esDtlPurge')?.addEventListener('click', async () => {
+          </div>`;
+
+        host.querySelector('#esDtlPurge')?.addEventListener('click', async () => {
           if (!confirm('将彻底删除该试卷及其关联数据（不可恢复），确认继续？')) return;
           if (!confirm(`再次确认：彻底删除试卷 #${paperId} ?`)) return;
-          const btn = mr.querySelector('#esDtlPurge');
+          const btn = host.querySelector('#esDtlPurge');
           if (btn) btn.disabled = true;
           try {
             await api('/api/v1/admin/exam-source/papers/' + paperId + '/purge', { method: 'DELETE' });
@@ -2682,20 +2697,25 @@
             if (btn) btn.disabled = false;
           }
         });
-        mr.querySelector('#esDtlClose').addEventListener('click', close);
-        mr.querySelectorAll('.es-q-bbox-btn').forEach((btn) => {
+        host.querySelector('#esDtlClose')?.addEventListener('click', close);
+        host.querySelectorAll('.es-q-bbox-btn').forEach((btn) => {
           btn.addEventListener('click', () => {
             const qid = Number(btn.getAttribute('data-qid') || 0);
-            openExamSourceBboxModal(mr, paperId, qid);
+            openExamSourceBboxModal(host, paperId, qid);
           });
         });
-        mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
-          if (e.target.id === 'esDtlBd') close();
+        host.querySelectorAll('.es-img-open').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const u = btn.getAttribute('data-img');
+            if (!u) return;
+            openImageLightbox(u);
+          });
         });
       } catch (e) {
         if (authRedirectHandled(e)) return;
+        host.innerHTML = `<div class="card es-inline-detail"><h3 style="margin:0">试卷详情 #${paperId}</h3><p class="muted">加载失败</p><div class="row"><button type="button" class="btn secondary" id="esDtlClose">收起</button></div></div>`;
+        host.querySelector('#esDtlClose')?.addEventListener('click', close);
         alert('加载详情失败: ' + (e.data && e.data.code ? e.data.code : e.message));
-        close();
       }
     };
     load();

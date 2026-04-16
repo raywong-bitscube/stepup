@@ -704,7 +704,7 @@ func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 	titleHint := strings.TrimSpace(r.FormValue("title"))
-	res, err := h.svc.AnalyzeUpload(r.Context(), titleHint, images)
+	res, err := h.svc.AnalyzeUpload(r.Context(), adminIDFromReq(r), titleHint, images)
 	switch {
 	case errors.Is(err, adminexamsource.ErrNoDatabase):
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
