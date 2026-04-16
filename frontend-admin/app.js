@@ -2632,7 +2632,7 @@
             : '<div class="es-question-empty">暂无题图</div>';
           return `<article class="es-question-item">
               <p class="es-question-stem">[${escapeHtml(q.question_no || '—')}] ${escapeHtml(q.stem_text || '—')}</p>
-              <div class="es-question-section"><span class="es-question-label">图:</span>${imgGrid}</div>
+              <div class="es-question-section"><span class="es-question-label">图:</span><button type="button" class="btn secondary small es-q-bbox-btn" data-qid="${q.id}">校正bbox</button>${imgGrid}</div>
               <p class="es-question-section"><span class="es-question-label">答案:</span>${escapeHtml(q.answer_text || '—')}</p>
               <p class="es-question-section"><span class="es-question-label">解析:</span>${escapeHtml(q.explanation_text || '—')}</p>
             </article>`;
@@ -2658,7 +2658,7 @@
         }
         mr.innerHTML = `
           <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>试卷原图</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
@@ -2667,9 +2667,11 @@
             ${questionBlocks}
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);
-        mr.querySelector('#esDtlBbox')?.addEventListener('click', () => {
-          close();
-          openExamSourceBboxModal(mr, paperId);
+        mr.querySelectorAll('.es-q-bbox-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const qid = Number(btn.getAttribute('data-qid') || 0);
+            openExamSourceBboxModal(mr, paperId, qid);
+          });
         });
         mr.querySelector('#esDtlBd').addEventListener('click', (e) => {
           if (e.target.id === 'esDtlBd') close();
@@ -2683,22 +2685,22 @@
     load();
   }
 
-  function openExamSourceBboxModal(mr, paperId) {
-    const close = () => {
-      mr.innerHTML = '';
+  function openExamSourceBboxModal(mr, paperId, initialQuestionID) {
+    const goBack = () => {
+      openExamSourceDetailModal(mr, paperId);
     };
     const shell = (inner, busy) => `
       <div class="modal-backdrop" id="esBboxBd" data-busy="${busy ? '1' : '0'}"><div class="modal xwide" style="width:98vw;max-height:92vh">
         <div class="toolbar">
           <h3 style="margin:0">识别预览 / 题干 bbox 校正 — 试卷 #${paperId}</h3>
-          <div class="row" style="margin:0"><button type="button" class="btn secondary" id="esBboxClose">关闭</button></div>
+          <div class="row" style="margin:0"><button type="button" class="btn secondary" id="esBboxClose">返回</button></div>
         </div>
         ${inner}
       </div></div>`;
     mr.innerHTML = shell('<p class="muted">加载中…</p>', true);
-    mr.querySelector('#esBboxClose')?.addEventListener('click', close);
+    mr.querySelector('#esBboxClose')?.addEventListener('click', goBack);
     mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
-      if (e.target.id === 'esBboxBd') close();
+      if (e.target.id === 'esBboxBd') goBack();
     });
 
     (async () => {
@@ -2708,30 +2710,30 @@
       } catch (e) {
         if (authRedirectHandled(e)) return;
         alert('加载预览失败: ' + (e.data && e.data.code ? e.data.code : e.message));
-        close();
+        goBack();
         return;
       }
       const pages = data.pages || [];
       const questions = data.questions || [];
       if (!pages.length) {
         mr.innerHTML = shell(
-          '<p class="muted">该试卷暂无页面图片，请先上传建卷。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">关闭</button></div>',
+          '<p class="muted">该试卷暂无页面图片，请先上传建卷。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">返回</button></div>',
           false
         );
-        mr.querySelector('#esBboxClose2')?.addEventListener('click', close);
+        mr.querySelector('#esBboxClose2')?.addEventListener('click', goBack);
         mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
-          if (e.target.id === 'esBboxBd') close();
+          if (e.target.id === 'esBboxBd') goBack();
         });
         return;
       }
       if (!questions.length) {
         mr.innerHTML = shell(
-          '<p class="muted">暂无题目记录。可先上传并填写题号列表生成题目，再校正 bbox。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">关闭</button></div>',
+          '<p class="muted">暂无题目记录。可先上传并填写题号列表生成题目，再校正 bbox。</p><div class="row"><button type="button" class="btn secondary" id="esBboxClose2">返回</button></div>',
           false
         );
-        mr.querySelector('#esBboxClose2')?.addEventListener('click', close);
+        mr.querySelector('#esBboxClose2')?.addEventListener('click', goBack);
         mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
-          if (e.target.id === 'esBboxBd') close();
+          if (e.target.id === 'esBboxBd') goBack();
         });
         return;
       }
@@ -2771,9 +2773,9 @@
         false
       );
 
-      mr.querySelector('#esBboxClose')?.addEventListener('click', close);
+      mr.querySelector('#esBboxClose')?.addEventListener('click', goBack);
       mr.querySelector('#esBboxBd')?.addEventListener('click', (e) => {
-        if (e.target.id === 'esBboxBd') close();
+        if (e.target.id === 'esBboxBd') goBack();
       });
 
       const selQ = mr.querySelector('#esBboxQ');
@@ -2851,7 +2853,15 @@
       });
       img.addEventListener('load', syncOverlay);
 
-      applyQuestion(questions[0]);
+      let initial = questions[0];
+      if (initialQuestionID) {
+        const hit = questions.find((q) => Number(q.id) === Number(initialQuestionID));
+        if (hit) {
+          initial = hit;
+          selQ.value = String(hit.id);
+        }
+      }
+      applyQuestion(initial);
 
       mr.querySelector('#esBboxSave')?.addEventListener('click', async () => {
         const q = getQ();
