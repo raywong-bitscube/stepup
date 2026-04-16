@@ -2623,28 +2623,26 @@
           const stemImgCell = stemCropURL
             ? `<a href="${escapeHtml(stemCropURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
                 stemCropURL
-              )}" alt="stem-crop" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
+              )}" alt="stem-crop" class="es-question-img" /></a>`
             : '—';
           const pageImgCell = pageURL
             ? `<a href="${escapeHtml(pageURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
                 pageURL
-              )}" alt="page-image" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
+              )}" alt="page-image" class="es-question-img" /></a>`
             : '—';
           return `<tr>
-              <td>${q.id}</td>
               <td>${escapeHtml(q.question_no || '')}</td>
-              <td>${q.question_order || 0}</td>
               <td>${escapeHtml(q.question_type || '')}</td>
               <td>${q.page_from || '—'}-${q.page_to || '—'}</td>
+              <td style="min-width:360px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.stem_text || '—')}</td>
               <td>${stemImgCell}</td>
               <td>${pageImgCell}</td>
-              <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.stem_text || '—')}</td>
-              <td style="max-width:200px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.answer_text || '—')}</td>
-              <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.explanation_text || '—')}</td>
+              <td style="min-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.answer_text || '—')}</td>
+              <td style="min-width:320px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.explanation_text || '—')}</td>
             </tr>`;
         };
         const qTableHead =
-          '<thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th><th>题图(裁剪)</th><th>原页图</th><th>题干</th><th>答案</th><th>解析</th></tr></thead>';
+          '<thead><tr><th>题号</th><th>类型</th><th>页码</th><th>题目</th><th>题图(裁剪)</th><th>原页图</th><th>答案</th><th>解析</th></tr></thead>';
         let questionBlocks = '';
         if (qgroups.length) {
           for (const g of qgroups) {
@@ -2654,7 +2652,7 @@
               g.title_label ? ' · ' + escapeHtml(String(g.title_label)) : ''
             }`;
             const desc = escapeHtml(String(g.description_text || '—'));
-            const tbody = sub.length ? sub.map(oneQRow).join('') : '<tr><td colspan="10" class="muted">该大题下暂无题目记录</td></tr>';
+            const tbody = sub.length ? sub.map(oneQRow).join('') : '<tr><td colspan="8" class="muted">该大题下暂无题目记录</td></tr>';
             questionBlocks += `<div class="es-qgroup"><h4 class="es-qgroup-title">${headLine}</h4><p class="muted es-qgroup-desc">${desc}</p><table class="data">${qTableHead}<tbody>${tbody}</tbody></table></div>`;
           }
           const ungrouped = qs.filter((q) => !q.group_id);
@@ -2662,17 +2660,17 @@
             questionBlocks += `<h4 style="margin-top:14px">未分组题目</h4><table class="data">${qTableHead}<tbody>${ungrouped.map(oneQRow).join('')}</tbody></table>`;
           }
         } else {
-          const tbody = qs.length ? qs.map(oneQRow).join('') : '<tr><td colspan="10">暂无题目</td></tr>';
+          const tbody = qs.length ? qs.map(oneQRow).join('') : '<tr><td colspan="8">暂无题目</td></tr>';
           questionBlocks = `<table class="data">${qTableHead}<tbody>${tbody}</tbody></table>`;
         }
         mr.innerHTML = `
-          <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
+          <div class="modal-backdrop" id="esDtlBd"><div class="modal xwide" style="max-width:1320px;width:98vw">
             <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>页面图片</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
             <h4 style="margin-top:14px">题目</h4>
-            <p class="muted" style="margin-top:4px">按卷面大题分组展示说明与小题；题图优先展示识别/校正后的裁剪图，若无则可查看对应原页图。</p>
+            <p class="muted" style="margin-top:4px">先按大题显示说明，再展示题目详情。题图优先展示 bbox 裁剪图，支持查看原页图。</p>
             ${questionBlocks}
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);

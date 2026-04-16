@@ -1879,7 +1879,8 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 1) 只输出JSON，不要解释。
 2) bbox_norm 为相对坐标，x/y/w/h 范围 0~1。
 3) page_no 从1开始。
-4) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 尽量给出。试卷标题参考：%s。`, title)
+4) bbox 需要“尽可能紧贴当前题目内容”，不要跨到上一题/下一题的文字，不要把旁栏或页眉页脚包含进来。
+5) 无法确定的字段可留空字符串，但 question_no/page_no/bbox_norm 尽量给出。试卷标题参考：%s。`, title)
 
 	res := adapter.Analyze(studentpaper.AnalyzeInput{
 		ChatUserPrompt:          prompt,
@@ -1896,7 +1897,11 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 	if raw == "" {
 		return nil, nil
 	}
-	return parseRecognitionResult(raw)
+	out, err := parseRecognitionResult(raw)
+	if err != nil {
+		return nil, err
+	}
+	return refineRecognitionOutput(out), nil
 }
 
 func (s *Service) resolveRecognitionAdapter(ctx context.Context) studentpaper.AnalysisAdapter {
@@ -2033,6 +2038,249 @@ func parseRecognitionResult(raw string) (*recognitionOutput, error) {
 		out.Questions = append(out.Questions, rq)
 	}
 	return out, nil
+}
+
+func refineRecognitionOutput(out *recognitionOutput) *recognitionOutput {
+	if out == nil {
+		return &recognitionOutput{}
+	}
+	// Normalize and tighten bbox for each question first.
+	for i := range out.Questions {
+		q := &out.Questions[i]
+		q.QuestionNo = strings.TrimSpace(q.QuestionNo)
+		if q.QuestionType == "" {
+			q.QuestionType = "unknown"
+		}
+		if q.BBox != nil {
+			b := normalizeBBox(*q.BBox)
+			b = insetBBox(b, 0.006, 0.005)
+			q.BBox = &b
+		}
+	}
+
+	// On the same page, limit current bbox bottom by the next question top to reduce cross-question bleed.
+	pageIdx := make(map[int][]int)
+	for i := range out.Questions {
+		if out.Questions[i].PageNo > 0 && out.Questions[i].BBox != nil {
+			pageIdx[out.Questions[i].PageNo] = append(pageIdx[out.Questions[i].PageNo], i)
+		}
+	}
+	for _, idx := range pageIdx {
+		sort.SliceStable(idx, func(i, j int) bool {
+			ai := out.Questions[idx[i]]
+			aj := out.Questions[idx[j]]
+			if ai.BBox.Y != aj.BBox.Y {
+				return ai.BBox.Y < aj.BBox.Y
+			}
+			return ai.BBox.X < aj.BBox.X
+		})
+		for k := 0; k+1 < len(idx); k++ {
+			cur := &out.Questions[idx[k]]
+			next := &out.Questions[idx[k+1]]
+			if cur.BBox == nil || next.BBox == nil {
+				continue
+			}
+			maxBottom := next.BBox.Y - 0.004
+			minBottom := cur.BBox.Y + 0.02
+			if maxBottom > minBottom {
+				currentBottom := cur.BBox.Y + cur.BBox.H
+				if currentBottom > maxBottom {
+					cur.BBox.H = maxBottom - cur.BBox.Y
+				}
+			}
+			b := normalizeBBox(*cur.BBox)
+			cur.BBox = &b
+		}
+	}
+
+	// Ensure group_order continuity and synthesize groups if model didn't output.
+	sort.SliceStable(out.Questions, func(i, j int) bool {
+		oi := out.Questions[i].QuestionOrder
+		oj := out.Questions[j].QuestionOrder
+		if oi > 0 && oj > 0 && oi != oj {
+			return oi < oj
+		}
+		if out.Questions[i].PageNo != out.Questions[j].PageNo {
+			return out.Questions[i].PageNo < out.Questions[j].PageNo
+		}
+		return i < j
+	})
+	nextOrder := 1
+	lastGroup := 0
+	lastType := ""
+	for i := range out.Questions {
+		q := &out.Questions[i]
+		if q.QuestionOrder <= 0 {
+			q.QuestionOrder = nextOrder
+		}
+		nextOrder = maxInt(nextOrder, q.QuestionOrder+1)
+		if q.GroupOrder <= 0 {
+			if lastGroup == 0 {
+				lastGroup = 1
+			} else if lastType != "" && lastType != q.QuestionType {
+				lastGroup++
+			}
+			q.GroupOrder = lastGroup
+		} else {
+			lastGroup = q.GroupOrder
+		}
+		lastType = q.QuestionType
+	}
+
+	if len(out.Groups) == 0 {
+		out.Groups = synthesizeGroupsFromQuestions(out.Questions)
+	} else {
+		seen := make(map[int]struct{}, len(out.Groups))
+		normGroups := make([]recognizedGroup, 0, len(out.Groups))
+		for _, g := range out.Groups {
+			ord := g.GroupOrder
+			if ord <= 0 {
+				continue
+			}
+			if _, ok := seen[ord]; ok {
+				continue
+			}
+			seen[ord] = struct{}{}
+			g.SystemKind = normalizeSystemKind(g.SystemKind)
+			if strings.TrimSpace(g.TitleLabel) == "" {
+				g.TitleLabel = defaultGroupTitle(g.SystemKind)
+			}
+			normGroups = append(normGroups, g)
+		}
+		if len(normGroups) == 0 {
+			out.Groups = synthesizeGroupsFromQuestions(out.Questions)
+		} else {
+			sort.SliceStable(normGroups, func(i, j int) bool { return normGroups[i].GroupOrder < normGroups[j].GroupOrder })
+			out.Groups = normGroups
+		}
+	}
+	return out
+}
+
+func synthesizeGroupsFromQuestions(questions []recognizedQuestion) []recognizedGroup {
+	if len(questions) == 0 {
+		return nil
+	}
+	type agg struct {
+		systemKind string
+		pageNo     int
+	}
+	byOrder := make(map[int]agg)
+	for _, q := range questions {
+		ord := q.GroupOrder
+		if ord <= 0 {
+			continue
+		}
+		if _, ok := byOrder[ord]; ok {
+			continue
+		}
+		byOrder[ord] = agg{
+			systemKind: normalizeSystemKind(q.QuestionType),
+			pageNo:     q.PageNo,
+		}
+	}
+	if len(byOrder) == 0 {
+		return nil
+	}
+	ords := make([]int, 0, len(byOrder))
+	for ord := range byOrder {
+		ords = append(ords, ord)
+	}
+	sort.Ints(ords)
+	out := make([]recognizedGroup, 0, len(ords))
+	for _, ord := range ords {
+		a := byOrder[ord]
+		out = append(out, recognizedGroup{
+			GroupOrder: ord,
+			SystemKind: a.systemKind,
+			TitleLabel: defaultGroupTitle(a.systemKind),
+			PageNo:     a.pageNo,
+		})
+	}
+	return out
+}
+
+func normalizeSystemKind(kind string) string {
+	t := strings.ToLower(strings.TrimSpace(kind))
+	switch t {
+	case "", "未知", "unknown":
+		return "unknown"
+	case "single_choice", "single", "单选", "单项选择", "单项选择题":
+		return "single_choice"
+	case "multi_choice", "multiple_choice", "多选", "多项选择", "多项选择题":
+		return "multi_choice"
+	case "fill_blank", "填空", "填空题":
+		return "fill_blank"
+	case "short_answer", "简答", "简答题":
+		return "short_answer"
+	case "essay", "作文":
+		return "essay"
+	default:
+		return t
+	}
+}
+
+func defaultGroupTitle(kind string) string {
+	switch normalizeSystemKind(kind) {
+	case "single_choice":
+		return "单项选择题"
+	case "multi_choice":
+		return "多项选择题"
+	case "fill_blank":
+		return "填空题"
+	case "short_answer":
+		return "简答题"
+	case "essay":
+		return "作文题"
+	default:
+		return "试题"
+	}
+}
+
+func normalizeBBox(b recognizedBBox) recognizedBBox {
+	x := clamp01(b.X)
+	y := clamp01(b.Y)
+	w := clamp01(b.W)
+	h := clamp01(b.H)
+	if x+w > 1 {
+		w = 1 - x
+	}
+	if y+h > 1 {
+		h = 1 - y
+	}
+	if w < 0.01 {
+		w = 0.01
+	}
+	if h < 0.01 {
+		h = 0.01
+	}
+	return recognizedBBox{X: x, Y: y, W: w, H: h}
+}
+
+func insetBBox(b recognizedBBox, padX, padY float64) recognizedBBox {
+	if padX <= 0 && padY <= 0 {
+		return b
+	}
+	maxPadX := b.W * 0.2
+	maxPadY := b.H * 0.2
+	if padX > maxPadX {
+		padX = maxPadX
+	}
+	if padY > maxPadY {
+		padY = maxPadY
+	}
+	b.X += padX
+	b.Y += padY
+	b.W -= padX * 2
+	b.H -= padY * 2
+	return normalizeBBox(b)
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func parseRecognizedPaperMeta(raw string) (*recognizedPaperMeta, error) {
