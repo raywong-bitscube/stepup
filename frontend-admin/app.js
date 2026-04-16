@@ -2605,28 +2605,62 @@
               }</td></tr>`
           )
           .join('');
-        const oneQRow = (q) => {
+        const getQuestionImages = (q, pq) => {
+          const urls = [];
+          const pushURL = (u) => {
+            const t = String(u || '').trim();
+            if (!t) return;
+            urls.push(assetURL(t));
+          };
+          const pushArr = (arr) => {
+            if (!Array.isArray(arr)) return;
+            arr.forEach((it) => {
+              if (typeof it === 'string') pushURL(it);
+              else if (it && typeof it === 'object') pushURL(it.public_url || it.url);
+            });
+          };
+          pushArr(pq && pq.stem_crop_public_urls);
+          pushArr(pq && pq.crop_public_urls);
+          pushArr(pq && pq.image_urls);
+          pushArr(pq && pq.stem_images);
+          pushURL(pq && pq.stem_crop_public_url);
+          const out = [];
+          const seen = new Set();
+          urls.forEach((u) => {
+            if (u && !seen.has(u)) {
+              seen.add(u);
+              out.push(u);
+            }
+          });
+          return out;
+        };
+        const oneQRows = (q) => {
           const pq = previewQByID.get(Number(q.id)) || {};
-          const stemCropURL = assetURL(pq.stem_crop_public_url || '');
-          const stemImgCell = stemCropURL
-            ? `<span class="es-question-img-placeholder">已收起</span><span class="es-question-img-wrap"><a href="${escapeHtml(
-                stemCropURL
-              )}" target="_blank" rel="noreferrer"><span class="es-question-img-frame"><img src="${escapeHtml(
-                stemCropURL
-              )}" alt="stem-crop" class="es-question-img" /></span></a></span>`
-            : '—';
-          return `<tr>
+          const imgs = getQuestionImages(q, pq);
+          const imgGrid = imgs.length
+            ? `<div class="es-question-images-grid">${imgs
+                .map(
+                  (u) =>
+                    `<a href="${escapeHtml(u)}" target="_blank" rel="noreferrer" class="es-question-image-item"><span class="es-question-img-frame"><img src="${escapeHtml(
+                      u
+                    )}" alt="question-crop" class="es-question-img" /></span></a>`
+                )
+                .join('')}</div>`
+            : '<p class="muted" style="margin:0">暂无题图</p>';
+          return `<tr class="es-question-main">
               <td>${escapeHtml(q.question_no || '')}</td>
               <td>${escapeHtml(q.question_type || '')}</td>
-              <td>${q.page_from || '—'}-${q.page_to || '—'}</td>
-              <td style="min-width:360px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.stem_text || '—')}</td>
-              <td>${stemImgCell}</td>
-              <td style="min-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.answer_text || '—')}</td>
-              <td style="min-width:320px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.explanation_text || '—')}</td>
+              <td class="es-question-text">${escapeHtml(q.stem_text || '—')}</td>
+              <td class="es-question-text">${escapeHtml(q.answer_text || '—')}</td>
+              <td class="es-question-text">${escapeHtml(q.explanation_text || '—')}</td>
+              <td><button type="button" class="btn secondary small es-question-toggle" data-qid="${q.id}">显示题图</button></td>
+            </tr>
+            <tr class="es-question-images-row" data-qid="${q.id}" hidden>
+              <td colspan="6">${imgGrid}</td>
             </tr>`;
         };
         const qTableHead =
-          '<thead><tr><th>题号</th><th>类型</th><th>页码</th><th>题目</th><th>题图(裁剪)</th><th>答案</th><th>解析</th></tr></thead>';
+          '<thead><tr><th>题号</th><th>类型</th><th>题目</th><th>答案</th><th>解析</th><th>操作</th></tr></thead>';
         let questionBlocks = '';
         if (qgroups.length) {
           for (const g of qgroups) {
@@ -2636,26 +2670,26 @@
               g.title_label ? ' · ' + escapeHtml(String(g.title_label)) : ''
             }`;
             const desc = escapeHtml(String(g.description_text || '—'));
-            const tbody = sub.length ? sub.map(oneQRow).join('') : '<tr><td colspan="7" class="muted">该大题下暂无题目记录</td></tr>';
+            const tbody = sub.length ? sub.map(oneQRows).join('') : '<tr><td colspan="6" class="muted">该大题下暂无题目记录</td></tr>';
             questionBlocks += `<div class="es-qgroup"><h4 class="es-qgroup-title">${headLine}</h4><p class="muted es-qgroup-desc">${desc}</p><table class="data">${qTableHead}<tbody>${tbody}</tbody></table></div>`;
           }
           const ungrouped = qs.filter((q) => !q.group_id);
           if (ungrouped.length) {
-            questionBlocks += `<h4 style="margin-top:14px">未分组题目</h4><table class="data">${qTableHead}<tbody>${ungrouped.map(oneQRow).join('')}</tbody></table>`;
+            questionBlocks += `<h4 style="margin-top:14px">未分组题目</h4><table class="data">${qTableHead}<tbody>${ungrouped.map(oneQRows).join('')}</tbody></table>`;
           }
         } else {
-          const tbody = qs.length ? qs.map(oneQRow).join('') : '<tr><td colspan="7">暂无题目</td></tr>';
+          const tbody = qs.length ? qs.map(oneQRows).join('') : '<tr><td colspan="6">暂无题目</td></tr>';
           questionBlocks = `<table class="data">${qTableHead}<tbody>${tbody}</tbody></table>`;
         }
         mr.innerHTML = `
-          <div class="modal-backdrop" id="esDtlBd"><div class="modal xwide es-dtl-images-hidden es-dtl-pages-hidden" id="esDtlModal" style="max-width:1320px;width:98vw">
-            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlTogglePages">显示页面图</button><button type="button" class="btn secondary" id="esDtlToggleImages">显示题图</button><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
+          <div class="modal-backdrop" id="esDtlBd"><div class="modal xwide es-dtl-pages-hidden" id="esDtlModal" style="max-width:1320px;width:98vw">
+            <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn secondary" id="esDtlTogglePages">显示页面图</button><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
             <h4>页面图片</h4>
             <p class="muted es-page-images-placeholder" style="margin:4px 0 8px">页面图已收起，点击上方按钮展开。</p>
             <div class="es-page-images-wrap"><table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table></div>
             <h4 style="margin-top:14px">题目</h4>
-            <p class="muted" style="margin-top:4px">先按大题显示说明，再展示题目详情。题图默认收起，可按需展开查看。</p>
+            <p class="muted" style="margin-top:4px">先按大题显示说明，再展示完整题目详情。点击每题“显示题图”可展开对应题图。</p>
             ${questionBlocks}
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);
@@ -2666,12 +2700,16 @@
           const btn = mr.querySelector('#esDtlTogglePages');
           if (btn) btn.textContent = hidden ? '显示页面图' : '收起页面图';
         });
-        mr.querySelector('#esDtlToggleImages')?.addEventListener('click', () => {
-          const modal = mr.querySelector('#esDtlModal');
-          if (!modal) return;
-          const hidden = modal.classList.toggle('es-dtl-images-hidden');
-          const btn = mr.querySelector('#esDtlToggleImages');
-          if (btn) btn.textContent = hidden ? '显示题图' : '收起题图';
+        mr.querySelectorAll('.es-question-toggle').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const qid = btn.getAttribute('data-qid');
+            if (!qid) return;
+            const row = mr.querySelector(`.es-question-images-row[data-qid="${CSS.escape(qid)}"]`);
+            if (!row) return;
+            const nextHidden = !row.hidden;
+            row.hidden = nextHidden;
+            btn.textContent = nextHidden ? '显示题图' : '收起题图';
+          });
         });
         mr.querySelector('#esDtlBbox')?.addEventListener('click', () => {
           close();
