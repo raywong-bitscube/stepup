@@ -877,7 +877,7 @@
 
   function bindLogin(root) {
     const b = root.querySelector('#btnLogin');
-    b.addEventListener('click', async () => {
+    const doLogin = async () => {
       const u = root.querySelector('#user').value.trim();
       const p = root.querySelector('#pass').value;
       let ab = root.querySelector('#apiBase').value.trim();
@@ -902,6 +902,17 @@
         setFlash('err', '登录失败：' + (e.data && e.data.code ? e.data.code : e.message));
         mount(document.getElementById('app'));
       }
+    };
+    b.addEventListener('click', doLogin);
+    root.querySelector('#pass')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      doLogin();
+    });
+    root.querySelector('#user')?.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      doLogin();
     });
   }
 
