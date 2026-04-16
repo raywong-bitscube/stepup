@@ -255,21 +255,21 @@ func (h *ExamSourceHandler) GetRecognitionPreview(w http.ResponseWriter, r *http
 		items := make([]map[string]any, 0, len(qs))
 		for _, q := range qs {
 			row := map[string]any{
-				"id":              q.ID,
-				"paper_id":        q.PaperID,
-				"group_id":        q.GroupID,
-				"question_no":     q.QuestionNo,
-				"question_order":  q.QuestionOrder,
-				"section_no":      q.SectionNo,
-				"question_type":   q.QuestionType,
-				"score":           q.Score,
-				"stem_text":       q.StemText,
-				"answer_text":     q.AnswerText,
+				"id":               q.ID,
+				"paper_id":         q.PaperID,
+				"group_id":         q.GroupID,
+				"question_no":      q.QuestionNo,
+				"question_order":   q.QuestionOrder,
+				"section_no":       q.SectionNo,
+				"question_type":    q.QuestionType,
+				"score":            q.Score,
+				"stem_text":        q.StemText,
+				"answer_text":      q.AnswerText,
 				"explanation_text": q.Explanation,
-				"page_from":       q.PageFrom,
-				"page_to":         q.PageTo,
-				"status":          q.Status,
-				"updated_at":      RFC3339Time(q.UpdatedAt),
+				"page_from":        q.PageFrom,
+				"page_to":          q.PageTo,
+				"status":           q.Status,
+				"updated_at":       RFC3339Time(q.UpdatedAt),
 			}
 			if q.StemQuestionFileID != nil {
 				row["stem_question_file_id"] = *q.StemQuestionFileID
@@ -298,11 +298,11 @@ func (h *ExamSourceHandler) GetRecognitionPreview(w http.ResponseWriter, r *http
 }
 
 type patchStemBBoxBody struct {
-	PageNo   int     `json:"page_no"`
-	X        float64 `json:"x"`
-	Y        float64 `json:"y"`
-	W        float64 `json:"w"`
-	H        float64 `json:"h"`
+	PageNo int     `json:"page_no"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+	W      float64 `json:"w"`
+	H      float64 `json:"h"`
 }
 
 func (h *ExamSourceHandler) PatchQuestionStemBBox(w http.ResponseWriter, r *http.Request) {
@@ -334,10 +334,10 @@ func (h *ExamSourceHandler) PatchQuestionStemBBox(w http.ResponseWriter, r *http
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":              "ok",
-			"crop_public_url":     res.CropPublicURL,
-			"page_no":             res.PageNo,
-			"bbox_norm":           res.BBoxNorm,
+			"status":          "ok",
+			"crop_public_url": res.CropPublicURL,
+			"page_no":         res.PageNo,
+			"bbox_norm":       res.BBoxNorm,
 		})
 	}
 }
@@ -399,9 +399,9 @@ func (h *ExamSourceHandler) GetPaper(w http.ResponseWriter, r *http.Request) {
 			"updated_at":       RFC3339Time(p.UpdatedAt),
 			"created_at":       RFC3339Time(p.CreatedAt),
 		},
-		"pages":            toExamSourcePageRows(pages),
-		"question_groups":  toExamSourceQuestionGroupRows(groups),
-		"questions":        toExamSourceQuestionRows(qs),
+		"pages":           toExamSourcePageRows(pages),
+		"question_groups": toExamSourceQuestionGroupRows(groups),
+		"questions":       toExamSourceQuestionRows(qs),
 	})
 }
 
@@ -655,6 +655,27 @@ func parseOptionalUint64Form(raw string) (*uint64, error) {
 	return &v, nil
 }
 
+func parseBoolForm(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func readAnalyzeBBoxOptionsFromReq(r *http.Request) adminexamsource.AnalyzeBBoxOptions {
+	if r == nil {
+		return adminexamsource.AnalyzeBBoxOptions{}
+	}
+	get := func(k string) string { return strings.TrimSpace(r.FormValue(k)) }
+	return adminexamsource.AnalyzeBBoxOptions{
+		EnableDebug:              parseBoolForm(get("debug_bbox")),
+		DisableInset:             parseBoolForm(get("bbox_disable_inset")),
+		DisableNextQuestionClamp: parseBoolForm(get("bbox_disable_next_clamp")),
+	}
+}
+
 func readUploadImage(hdr *multipart.FileHeader) (adminexamsource.UploadImage, error) {
 	f, err := hdr.Open()
 	if err != nil {
@@ -704,7 +725,8 @@ func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request
 		return
 	}
 	titleHint := strings.TrimSpace(r.FormValue("title"))
-	res, err := h.svc.AnalyzeUpload(r.Context(), adminIDFromReq(r), titleHint, images)
+	bboxOpt := readAnalyzeBBoxOptionsFromReq(r)
+	res, err := h.svc.AnalyzeUpload(r.Context(), adminIDFromReq(r), titleHint, images, bboxOpt)
 	switch {
 	case errors.Is(err, adminexamsource.ErrNoDatabase):
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
@@ -731,6 +753,7 @@ func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request
 			"groups":       res.Groups,
 			"question_nos": res.QuestionNos,
 			"questions":    res.Questions,
+			"debug":        res.Debug,
 		})
 	}
 }
@@ -802,6 +825,7 @@ func (h *ExamSourceHandler) CreatePaperWithUpload(w http.ResponseWriter, r *http
 			Status:          status,
 		},
 		QuestionNos: parseCSVValues(get("question_nos")),
+		BBoxOptions: readAnalyzeBBoxOptionsFromReq(r),
 	}
 	nid, err := h.svc.CreatePaperWithImages(r.Context(), adminIDFromReq(r), req, images)
 	switch {

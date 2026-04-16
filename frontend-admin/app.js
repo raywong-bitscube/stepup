@@ -2395,6 +2395,14 @@
     };
     let selectedFiles = [];
     let analyzed = null;
+    let bboxOpt = { debugBBox: false, disableInset: false, disableNextClamp: false };
+
+    const appendBBoxOptions = (fd, opt) => {
+      if (!fd || !opt) return;
+      if (opt.debugBBox) fd.append('debug_bbox', '1');
+      if (opt.disableInset) fd.append('bbox_disable_inset', '1');
+      if (opt.disableNextClamp) fd.append('bbox_disable_next_clamp', '1');
+    };
 
     const bindBackdropClose = () => {
       mr.querySelector('#esUpBd')?.addEventListener('click', (e) => {
@@ -2411,6 +2419,14 @@
         <div class="form-grid">
           <div style="grid-column:1/-1"><label>标题提示（可选）</label><input id="esuHintTitle" placeholder="可留空，系统会自动识别标题" /></div>
           <div style="grid-column:1/-1"><label>图片文件（可多选） *</label><input id="esuFiles" type="file" multiple accept="image/*" /></div>
+          <div style="grid-column:1/-1">
+            <label style="margin-bottom:6px">bbox 调试/开关（仅用于排查）</label>
+            <div class="row" style="margin:0;gap:12px;flex-wrap:wrap">
+              <label style="margin:0"><input id="esuDbgBBox" type="checkbox" ${bboxOpt.debugBBox ? 'checked' : ''} /> 返回调试信息</label>
+              <label style="margin:0"><input id="esuNoInset" type="checkbox" ${bboxOpt.disableInset ? 'checked' : ''} /> 关闭 inset 收缩</label>
+              <label style="margin:0"><input id="esuNoClamp" type="checkbox" ${bboxOpt.disableNextClamp ? 'checked' : ''} /> 关闭邻题底边截断</label>
+            </div>
+          </div>
         </div>
         <div class="row"><button type="button" class="btn" id="esuAnalyze">上传并分析</button><button type="button" class="btn secondary" id="esuCancel">取消</button></div>
       </div></div>`;
@@ -2426,6 +2442,12 @@
         const fd = new FormData();
         const hintTitle = (mr.querySelector('#esuHintTitle').value || '').trim();
         if (hintTitle) fd.append('title', hintTitle);
+        bboxOpt = {
+          debugBBox: !!mr.querySelector('#esuDbgBBox')?.checked,
+          disableInset: !!mr.querySelector('#esuNoInset')?.checked,
+          disableNextClamp: !!mr.querySelector('#esuNoClamp')?.checked,
+        };
+        appendBBoxOptions(fd, bboxOpt);
         selectedFiles.forEach((f) => fd.append('images', f));
         setAdminModalLongTask(mr, true, {
           backdropSel: '#esUpBd',
@@ -2469,6 +2491,12 @@
         .join('');
       const qnos = Array.isArray(analyzed && analyzed.question_nos) ? analyzed.question_nos.join(',') : '';
       const suggestedSubject = s.suggested_subject ? `（识别建议：${escapeHtml(String(s.suggested_subject))}）` : '';
+      const debugBlock =
+        analyzed && analyzed.debug
+          ? `<details style="grid-column:1/-1"><summary>bbox 调试信息（页面尺寸 / AI框 / 最终框）</summary><pre class="raw" style="max-height:280px;overflow:auto">${escapeHtml(
+              JSON.stringify(analyzed.debug, null, 2)
+            )}</pre></details>`
+          : '';
       mr.innerHTML = `
       <div class="modal-backdrop" id="esUpBd"><div class="modal" style="max-width:820px;width:96vw">
         <h3>多图上传建卷（第 2 步：确认并补全）</h3>
@@ -2486,7 +2514,16 @@
           <div><label>年级标签</label><input id="esuGradeLabel" value="${escapeHtml(String(s.grade_label || ''))}" /></div>
           <div><label>试卷类型</label><input id="esuPaperType" value="${escapeHtml(String(s.paper_type || 'mock_exam'))}" /></div>
           <div style="grid-column:1/-1"><label>题号列表（可改）</label><input id="esuQNos" placeholder="1,2,3,4,5..." value="${escapeHtml(qnos)}" /></div>
+          <div style="grid-column:1/-1">
+            <label style="margin-bottom:6px">bbox 调试/开关（建卷时会继续生效）</label>
+            <div class="row" style="margin:0;gap:12px;flex-wrap:wrap">
+              <label style="margin:0"><input id="esuDbgBBox2" type="checkbox" ${bboxOpt.debugBBox ? 'checked' : ''} /> 返回调试信息</label>
+              <label style="margin:0"><input id="esuNoInset2" type="checkbox" ${bboxOpt.disableInset ? 'checked' : ''} /> 关闭 inset 收缩</label>
+              <label style="margin:0"><input id="esuNoClamp2" type="checkbox" ${bboxOpt.disableNextClamp ? 'checked' : ''} /> 关闭邻题底边截断</label>
+            </div>
+          </div>
           <div style="grid-column:1/-1" id="esuGroupsWrap">${renderExamSourceAnalyzeGroups(analyzed)}</div>
+          ${debugBlock}
           <div style="grid-column:1/-1"><p class="muted" style="margin:0">已上传图片数：${selectedFiles.length} ${suggestedSubject}</p></div>
         </div>
         <div class="row">
@@ -2525,6 +2562,12 @@
         putOpt('grade_label', mr.querySelector('#esuGradeLabel').value);
         putOpt('paper_type', mr.querySelector('#esuPaperType').value);
         putOpt('question_nos', mr.querySelector('#esuQNos').value);
+        bboxOpt = {
+          debugBBox: !!mr.querySelector('#esuDbgBBox2')?.checked,
+          disableInset: !!mr.querySelector('#esuNoInset2')?.checked,
+          disableNextClamp: !!mr.querySelector('#esuNoClamp2')?.checked,
+        };
+        appendBBoxOptions(fd, bboxOpt);
         selectedFiles.forEach((f) => fd.append('images', f));
         setAdminModalLongTask(mr, true, {
           backdropSel: '#esUpBd',

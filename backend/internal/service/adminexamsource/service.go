@@ -1,6 +1,7 @@
 package adminexamsource
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -180,9 +181,16 @@ type UploadImage struct {
 	Bytes    []byte
 }
 
+type AnalyzeBBoxOptions struct {
+	EnableDebug              bool
+	DisableInset             bool
+	DisableNextQuestionClamp bool
+}
+
 type CreatePaperWithUploadInput struct {
 	CreatePaperInput
 	QuestionNos []string
+	BBoxOptions AnalyzeBBoxOptions
 }
 
 type recognizedBBox struct {
@@ -207,6 +215,7 @@ type recognizedQuestion struct {
 	PageNo        int
 	QuestionOrder int
 	BBox          *recognizedBBox
+	RawBBox       *recognizedBBox
 	StemText      string
 	AnswerText    string
 	Explanation   string
@@ -271,21 +280,51 @@ type UploadAnalyzeGroup struct {
 }
 
 type UploadAnalyzeResult struct {
-	Title           string
-	SourceRegion    string
-	SourceSchool    string
-	ExamYear        *int
-	Term            string
-	GradeLabel      string
-	K12GradeID      *uint64
-	K12SubjectID    *uint64
+	Title            string
+	SourceRegion     string
+	SourceSchool     string
+	ExamYear         *int
+	Term             string
+	GradeLabel       string
+	K12GradeID       *uint64
+	K12SubjectID     *uint64
 	SuggestedSubject string
-	PaperType       string
-	TotalScore      *string
-	DurationMinutes *int
-	Groups          []UploadAnalyzeGroup
-	QuestionNos     []string
-	Questions       []UploadAnalyzeQuestion
+	PaperType        string
+	TotalScore       *string
+	DurationMinutes  *int
+	Groups           []UploadAnalyzeGroup
+	QuestionNos      []string
+	Questions        []UploadAnalyzeQuestion
+	Debug            *UploadAnalyzeDebug
+}
+
+type UploadAnalyzeDebug struct {
+	Options   UploadAnalyzeDebugOptions
+	Pages     []UploadAnalyzeDebugPage
+	Questions []UploadAnalyzeDebugQuestion
+}
+
+type UploadAnalyzeDebugOptions struct {
+	DisableInset             bool
+	DisableNextQuestionClamp bool
+}
+
+type UploadAnalyzeDebugPage struct {
+	PageNo   int
+	FileName string
+	WidthPX  int
+	HeightPX int
+	Format   string
+}
+
+type UploadAnalyzeDebugQuestion struct {
+	QuestionNo      string
+	QuestionOrder   int
+	PageNo          int
+	AIBBoxNorm      map[string]float64
+	FinalBBoxNorm   map[string]float64
+	AIBBoxPixels    map[string]int
+	FinalBBoxPixels map[string]int
 }
 
 type recognizedPaperMeta struct {
@@ -1254,7 +1293,7 @@ func (s *Service) PatchQuestion(ctx context.Context, questionID uint64, adminID 
 	return nil
 }
 
-func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint string, images []UploadImage) (*UploadAnalyzeResult, error) {
+func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint string, images []UploadImage, bboxOpt AnalyzeBBoxOptions) (*UploadAnalyzeResult, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
 	}
@@ -1266,7 +1305,7 @@ func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint s
 	if metaErr != nil {
 		meta = nil
 	}
-	recOut, recErr := s.recognizeQuestions(ctx, titleHint, images, adminID)
+	recOut, recErr := s.recognizeQuestions(ctx, titleHint, images, adminID, bboxOpt)
 	var recognized []recognizedQuestion
 	var recGroups []recognizedGroup
 	if recErr != nil {
@@ -1361,6 +1400,36 @@ func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint s
 		out.Questions = append(out.Questions, item)
 	}
 	out.QuestionNos = normalizeQuestionNos(out.QuestionNos)
+	if bboxOpt.EnableDebug {
+		pages := detectUploadAnalyzePages(images)
+		pageByNo := make(map[int]UploadAnalyzeDebugPage, len(pages))
+		for _, p := range pages {
+			pageByNo[p.PageNo] = p
+		}
+		dbg := &UploadAnalyzeDebug{
+			Options: UploadAnalyzeDebugOptions{
+				DisableInset:             bboxOpt.DisableInset,
+				DisableNextQuestionClamp: bboxOpt.DisableNextQuestionClamp,
+			},
+			Pages:     pages,
+			Questions: make([]UploadAnalyzeDebugQuestion, 0, len(recognized)),
+		}
+		for _, rq := range recognized {
+			dq := UploadAnalyzeDebugQuestion{
+				QuestionNo:    strings.TrimSpace(rq.QuestionNo),
+				QuestionOrder: rq.QuestionOrder,
+				PageNo:        rq.PageNo,
+				AIBBoxNorm:    bboxMapFromPtr(rq.RawBBox),
+				FinalBBoxNorm: bboxMapFromPtr(rq.BBox),
+			}
+			if page, ok := pageByNo[rq.PageNo]; ok && page.WidthPX > 0 && page.HeightPX > 0 {
+				dq.AIBBoxPixels = bboxPixelsFromPtr(rq.RawBBox, page.WidthPX, page.HeightPX)
+				dq.FinalBBoxPixels = bboxPixelsFromPtr(rq.BBox, page.WidthPX, page.HeightPX)
+			}
+			dbg.Questions = append(dbg.Questions, dq)
+		}
+		out.Debug = dbg
+	}
 	return out, nil
 }
 
@@ -1478,7 +1547,7 @@ func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in 
 	if adminID == 0 || in.K12SubjectID == 0 || strings.TrimSpace(in.Title) == "" || len(images) == 0 {
 		return 0, ErrInvalidInput
 	}
-	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images, 0)
+	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images, 0, in.BBoxOptions)
 	var recognized []recognizedQuestion
 	var recGroups []recognizedGroup
 	if recErr != nil {
@@ -1964,7 +2033,7 @@ func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, imag
 		Stage:                   "admin",
 	}
 	res := adapter.Analyze(in)
-	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.meta", in, res)
+	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.meta", in, res, AnalyzeBBoxOptions{})
 	raw := strings.TrimSpace(res.Out.RawContent)
 	if raw == "" {
 		raw = strings.TrimSpace(res.Out.Summary)
@@ -1975,7 +2044,7 @@ func (s *Service) recognizePaperMeta(ctx context.Context, titleHint string, imag
 	return parseRecognizedPaperMeta(raw)
 }
 
-func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage, adminID uint64) (*recognitionOutput, error) {
+func (s *Service) recognizeQuestions(ctx context.Context, title string, images []UploadImage, adminID uint64, bboxOpt AnalyzeBBoxOptions) (*recognitionOutput, error) {
 	if len(images) == 0 {
 		return nil, nil
 	}
@@ -2034,7 +2103,7 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 		Stage:                   "admin",
 	}
 	res := adapter.Analyze(in)
-	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.questions", in, res)
+	s.writeAnalyzeUploadAILog(ctx, adminID, "exam_source.upload_analyze.questions", in, res, bboxOpt)
 	raw := strings.TrimSpace(res.Out.RawContent)
 	if raw == "" {
 		raw = strings.TrimSpace(res.Out.Summary)
@@ -2046,10 +2115,10 @@ func (s *Service) recognizeQuestions(ctx context.Context, title string, images [
 	if err != nil {
 		return nil, err
 	}
-	return refineRecognitionOutput(out), nil
+	return refineRecognitionOutput(out, bboxOpt), nil
 }
 
-func (s *Service) writeAnalyzeUploadAILog(ctx context.Context, adminID uint64, action string, in studentpaper.AnalyzeInput, res studentpaper.AnalyzeResult) {
+func (s *Service) writeAnalyzeUploadAILog(ctx context.Context, adminID uint64, action string, in studentpaper.AnalyzeInput, res studentpaper.AnalyzeResult, bboxOpt AnalyzeBBoxOptions) {
 	if s == nil || s.aiLog == nil || adminID == 0 {
 		return
 	}
@@ -2059,6 +2128,11 @@ func (s *Service) writeAnalyzeUploadAILog(ctx context.Context, adminID uint64, a
 		"file_name":           in.FileName,
 		"vision_images_count": len(in.VisionImages),
 		"max_output_tokens":   in.OptionalMaxOutputTokens,
+		"bbox_options": map[string]any{
+			"enable_debug":                bboxOpt.EnableDebug,
+			"disable_inset":               bboxOpt.DisableInset,
+			"disable_next_question_clamp": bboxOpt.DisableNextQuestionClamp,
+		},
 	})
 	respMeta, _ := json.Marshal(map[string]any{
 		"summary_len":     len(strings.TrimSpace(res.Out.Summary)),
@@ -2229,7 +2303,7 @@ func parseRecognitionResult(raw string) (*recognitionOutput, error) {
 	return out, nil
 }
 
-func refineRecognitionOutput(out *recognitionOutput) *recognitionOutput {
+func refineRecognitionOutput(out *recognitionOutput, bboxOpt AnalyzeBBoxOptions) *recognitionOutput {
 	if out == nil {
 		return &recognitionOutput{}
 	}
@@ -2241,44 +2315,49 @@ func refineRecognitionOutput(out *recognitionOutput) *recognitionOutput {
 			q.QuestionType = "unknown"
 		}
 		if q.BBox != nil {
+			q.RawBBox = cloneBBoxPtr(q.BBox)
 			b := normalizeBBox(*q.BBox)
-			b = insetBBox(b, 0.006, 0.005)
+			if !bboxOpt.DisableInset {
+				b = insetBBox(b, 0.006, 0.005)
+			}
 			q.BBox = &b
 		}
 	}
 
-	// On the same page, limit current bbox bottom by the next question top to reduce cross-question bleed.
-	pageIdx := make(map[int][]int)
-	for i := range out.Questions {
-		if out.Questions[i].PageNo > 0 && out.Questions[i].BBox != nil {
-			pageIdx[out.Questions[i].PageNo] = append(pageIdx[out.Questions[i].PageNo], i)
+	if !bboxOpt.DisableNextQuestionClamp {
+		// On the same page, limit current bbox bottom by the next question top to reduce cross-question bleed.
+		pageIdx := make(map[int][]int)
+		for i := range out.Questions {
+			if out.Questions[i].PageNo > 0 && out.Questions[i].BBox != nil {
+				pageIdx[out.Questions[i].PageNo] = append(pageIdx[out.Questions[i].PageNo], i)
+			}
 		}
-	}
-	for _, idx := range pageIdx {
-		sort.SliceStable(idx, func(i, j int) bool {
-			ai := out.Questions[idx[i]]
-			aj := out.Questions[idx[j]]
-			if ai.BBox.Y != aj.BBox.Y {
-				return ai.BBox.Y < aj.BBox.Y
-			}
-			return ai.BBox.X < aj.BBox.X
-		})
-		for k := 0; k+1 < len(idx); k++ {
-			cur := &out.Questions[idx[k]]
-			next := &out.Questions[idx[k+1]]
-			if cur.BBox == nil || next.BBox == nil {
-				continue
-			}
-			maxBottom := next.BBox.Y - 0.004
-			minBottom := cur.BBox.Y + 0.02
-			if maxBottom > minBottom {
-				currentBottom := cur.BBox.Y + cur.BBox.H
-				if currentBottom > maxBottom {
-					cur.BBox.H = maxBottom - cur.BBox.Y
+		for _, idx := range pageIdx {
+			sort.SliceStable(idx, func(i, j int) bool {
+				ai := out.Questions[idx[i]]
+				aj := out.Questions[idx[j]]
+				if ai.BBox.Y != aj.BBox.Y {
+					return ai.BBox.Y < aj.BBox.Y
 				}
+				return ai.BBox.X < aj.BBox.X
+			})
+			for k := 0; k+1 < len(idx); k++ {
+				cur := &out.Questions[idx[k]]
+				next := &out.Questions[idx[k+1]]
+				if cur.BBox == nil || next.BBox == nil {
+					continue
+				}
+				maxBottom := next.BBox.Y - 0.004
+				minBottom := cur.BBox.Y + 0.02
+				if maxBottom > minBottom {
+					currentBottom := cur.BBox.Y + cur.BBox.H
+					if currentBottom > maxBottom {
+						cur.BBox.H = maxBottom - cur.BBox.Y
+					}
+				}
+				b := normalizeBBox(*cur.BBox)
+				cur.BBox = &b
 			}
-			b := normalizeBBox(*cur.BBox)
-			cur.BBox = &b
 		}
 	}
 
@@ -2424,6 +2503,72 @@ func defaultGroupTitle(kind string) string {
 	default:
 		return "试题"
 	}
+}
+
+func cloneBBoxPtr(b *recognizedBBox) *recognizedBBox {
+	if b == nil {
+		return nil
+	}
+	v := *b
+	return &v
+}
+
+func bboxMapFromPtr(b *recognizedBBox) map[string]float64 {
+	if b == nil {
+		return nil
+	}
+	return map[string]float64{
+		"x": b.X,
+		"y": b.Y,
+		"w": b.W,
+		"h": b.H,
+	}
+}
+
+func bboxPixelsFromPtr(b *recognizedBBox, width, height int) map[string]int {
+	if b == nil || width <= 1 || height <= 1 {
+		return nil
+	}
+	x := int(clamp01(b.X) * float64(width))
+	y := int(clamp01(b.Y) * float64(height))
+	bw := int(clamp01(b.W) * float64(width))
+	bh := int(clamp01(b.H) * float64(height))
+	if bw <= 0 || bh <= 0 {
+		return nil
+	}
+	if x+bw > width {
+		bw = width - x
+	}
+	if y+bh > height {
+		bh = height - y
+	}
+	if bw <= 1 || bh <= 1 {
+		return nil
+	}
+	return map[string]int{
+		"x": x,
+		"y": y,
+		"w": bw,
+		"h": bh,
+	}
+}
+
+func detectUploadAnalyzePages(images []UploadImage) []UploadAnalyzeDebugPage {
+	out := make([]UploadAnalyzeDebugPage, 0, len(images))
+	for i, im := range images {
+		item := UploadAnalyzeDebugPage{
+			PageNo:   i + 1,
+			FileName: strings.TrimSpace(im.Filename),
+		}
+		cfg, format, err := image.DecodeConfig(bytes.NewReader(im.Bytes))
+		if err == nil {
+			item.WidthPX = cfg.Width
+			item.HeightPX = cfg.Height
+			item.Format = strings.TrimSpace(format)
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func normalizeBBox(b recognizedBBox) recognizedBBox {
