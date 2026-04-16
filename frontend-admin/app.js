@@ -2581,17 +2581,7 @@
         const pages = d.pages || [];
         const qs = d.questions || [];
         const qgroups = (d.question_groups || []).slice().sort((a, b) => (a.group_order || 0) - (b.group_order || 0));
-        const pvPages = (preview && preview.pages) || [];
         const pvQs = (preview && preview.questions) || [];
-        const pageURLByNo = new Map();
-        pages.forEach((x) => {
-          if (x && x.page_no) pageURLByNo.set(Number(x.page_no), x.public_url || '');
-        });
-        pvPages.forEach((x) => {
-          if (x && x.page_no && !pageURLByNo.get(Number(x.page_no))) {
-            pageURLByNo.set(Number(x.page_no), x.public_url || '');
-          }
-        });
         const previewQByID = new Map();
         pvQs.forEach((x) => {
           if (x && x.id) previewQByID.set(Number(x.id), x);
@@ -2604,36 +2594,49 @@
               }</td></tr>`
           )
           .join('');
-        const oneQRow = (q) => {
-          const pq = previewQByID.get(Number(q.id)) || {};
-          const stemCropURL = assetURL(pq.stem_crop_public_url || '');
-          const stemPageNo = Number(pq.stem_page_no || q.page_from || 0);
-          const pageURL = stemPageNo > 0 ? assetURL(pageURLByNo.get(stemPageNo) || '') : '';
-          const stemImgCell = stemCropURL
-            ? `<a href="${escapeHtml(stemCropURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
-                stemCropURL
-              )}" alt="stem-crop" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
-            : '—';
-          const pageImgCell = pageURL
-            ? `<a href="${escapeHtml(pageURL)}" target="_blank" rel="noreferrer"><img src="${escapeHtml(
-                pageURL
-              )}" alt="page-image" style="max-width:120px;max-height:80px;object-fit:contain;border:1px solid #e2e8f0;border-radius:6px" /></a>`
-            : '—';
-          return `<tr>
-              <td>${q.id}</td>
-              <td>${escapeHtml(q.question_no || '')}</td>
-              <td>${q.question_order || 0}</td>
-              <td>${escapeHtml(q.question_type || '')}</td>
-              <td>${q.page_from || '—'}-${q.page_to || '—'}</td>
-              <td>${stemImgCell}</td>
-              <td>${pageImgCell}</td>
-              <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.stem_text || '—')}</td>
-              <td style="max-width:200px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.answer_text || '—')}</td>
-              <td style="max-width:260px;white-space:pre-wrap;word-break:break-word">${escapeHtml(q.explanation_text || '—')}</td>
-            </tr>`;
+        const collectQuestionImageURLs = (pq) => {
+          const out = [];
+          const seen = new Set();
+          const push = (u) => {
+            const t = String(u || '').trim();
+            if (!t) return;
+            const url = assetURL(t);
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            out.push(url);
+          };
+          if (pq && Array.isArray(pq.image_urls)) pq.image_urls.forEach(push);
+          if (pq && Array.isArray(pq.stem_crop_public_urls)) pq.stem_crop_public_urls.forEach(push);
+          if (pq && Array.isArray(pq.crop_public_urls)) pq.crop_public_urls.forEach(push);
+          if (pq && Array.isArray(pq.stem_images)) {
+            pq.stem_images.forEach((it) => {
+              if (typeof it === 'string') push(it);
+              else if (it && typeof it === 'object') push(it.public_url || it.url);
+            });
+          }
+          push(pq && pq.stem_crop_public_url);
+          return out;
         };
-        const qTableHead =
-          '<thead><tr><th>ID</th><th>题号</th><th>顺序</th><th>类型</th><th>页码</th><th>题图(裁剪)</th><th>原页图</th><th>题干</th><th>答案</th><th>解析</th></tr></thead>';
+        const renderQuestionBlock = (q) => {
+          const pq = previewQByID.get(Number(q.id)) || {};
+          const imgURLs = collectQuestionImageURLs(pq);
+          const imgGrid = imgURLs.length
+            ? `<div class="es-question-images-grid">${imgURLs
+                .map(
+                  (u) =>
+                    `<a href="${escapeHtml(u)}" target="_blank" rel="noreferrer" class="es-question-image-item"><img src="${escapeHtml(
+                      u
+                    )}" alt="question-image" class="es-question-image" /></a>`
+                )
+                .join('')}</div>`
+            : '<div class="es-question-empty">暂无题图</div>';
+          return `<article class="es-question-item">
+              <p class="es-question-stem">[${escapeHtml(q.question_no || '—')}] ${escapeHtml(q.stem_text || '—')}</p>
+              <div class="es-question-section"><span class="es-question-label">图:</span>${imgGrid}</div>
+              <p class="es-question-section"><span class="es-question-label">答案:</span>${escapeHtml(q.answer_text || '—')}</p>
+              <p class="es-question-section"><span class="es-question-label">解析:</span>${escapeHtml(q.explanation_text || '—')}</p>
+            </article>`;
+        };
         let questionBlocks = '';
         if (qgroups.length) {
           for (const g of qgroups) {
@@ -2643,25 +2646,24 @@
               g.title_label ? ' · ' + escapeHtml(String(g.title_label)) : ''
             }`;
             const desc = escapeHtml(String(g.description_text || '—'));
-            const tbody = sub.length ? sub.map(oneQRow).join('') : '<tr><td colspan="10" class="muted">该大题下暂无题目记录</td></tr>';
-            questionBlocks += `<div class="es-qgroup"><h4 class="es-qgroup-title">${headLine}</h4><p class="muted es-qgroup-desc">${desc}</p><table class="data">${qTableHead}<tbody>${tbody}</tbody></table></div>`;
+            const qContent = sub.length ? sub.map(renderQuestionBlock).join('') : '<p class="muted">该大题下暂无题目记录</p>';
+            questionBlocks += `<section class="es-qgroup"><h4 class="es-qgroup-title">${headLine}</h4><p class="muted es-qgroup-desc">${desc}</p>${qContent}</section>`;
           }
           const ungrouped = qs.filter((q) => !q.group_id);
           if (ungrouped.length) {
-            questionBlocks += `<h4 style="margin-top:14px">未分组题目</h4><table class="data">${qTableHead}<tbody>${ungrouped.map(oneQRow).join('')}</tbody></table>`;
+            questionBlocks += `<section class="es-qgroup"><h4 class="es-qgroup-title">未分组题目</h4>${ungrouped.map(renderQuestionBlock).join('')}</section>`;
           }
         } else {
-          const tbody = qs.length ? qs.map(oneQRow).join('') : '<tr><td colspan="10">暂无题目</td></tr>';
-          questionBlocks = `<table class="data">${qTableHead}<tbody>${tbody}</tbody></table>`;
+          questionBlocks = qs.length ? qs.map(renderQuestionBlock).join('') : '<p class="muted">暂无题目</p>';
         }
         mr.innerHTML = `
           <div class="modal-backdrop" id="esDtlBd"><div class="modal wide" style="max-width:1000px;width:96vw">
             <div class="toolbar"><h3 style="margin:0">试卷详情 #${paperId}</h3><div class="row" style="margin:0"><button type="button" class="btn" id="esDtlBbox">校正 bbox</button><button type="button" class="btn secondary" id="esDtlClose">关闭</button></div></div>
             <p class="muted">标题：${escapeHtml(p.title || '')}｜学科ID：${p.k12_subject_id || '—'}｜页数：${p.page_count || 0}｜题数：${p.question_count || 0}</p>
-            <h4>页面图片</h4>
+            <h4>试卷原图</h4>
             <table class="data"><thead><tr><th>页码</th><th>文件ID</th><th>图片</th></tr></thead><tbody>${pageRows || '<tr><td colspan="3">暂无页面</td></tr>'}</tbody></table>
             <h4 style="margin-top:14px">题目</h4>
-            <p class="muted" style="margin-top:4px">按卷面大题分组展示说明与小题；题图优先展示识别/校正后的裁剪图，若无则可查看对应原页图。</p>
+            <p class="muted" style="margin-top:4px">按卷面大题分组展示说明与题目，题目内容与图片按详情形式完整展示。</p>
             ${questionBlocks}
           </div></div>`;
         mr.querySelector('#esDtlClose').addEventListener('click', close);
