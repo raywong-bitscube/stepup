@@ -189,8 +189,9 @@ type AnalyzeBBoxOptions struct {
 
 type CreatePaperWithUploadInput struct {
 	CreatePaperInput
-	QuestionNos []string
-	BBoxOptions AnalyzeBBoxOptions
+	QuestionNos     []string
+	BBoxOptions     AnalyzeBBoxOptions
+	AnalyzeSnapshot *UploadAnalyzeResult
 }
 
 type recognizedBBox struct {
@@ -260,23 +261,23 @@ type PatchStemBBoxResult struct {
 }
 
 type UploadAnalyzeQuestion struct {
-	GroupOrder    int
-	QuestionNo    string
-	QuestionOrder int
-	QuestionType  string
-	PageNo        int
-	BBoxNorm      map[string]float64
-	StemText      string
-	AnswerText    string
-	Explanation   string
+	GroupOrder    int                `json:"group_order"`
+	QuestionNo    string             `json:"question_no"`
+	QuestionOrder int                `json:"question_order"`
+	QuestionType  string             `json:"question_type"`
+	PageNo        int                `json:"page_no"`
+	BBoxNorm      map[string]float64 `json:"bbox_norm"`
+	StemText      string             `json:"stem_text"`
+	AnswerText    string             `json:"answer_text"`
+	Explanation   string             `json:"explanation"`
 }
 
 type UploadAnalyzeGroup struct {
-	GroupOrder      int
-	SystemKind      string
-	TitleLabel      string
-	DescriptionText string
-	PageNo          int
+	GroupOrder      int    `json:"group_order"`
+	SystemKind      string `json:"system_kind"`
+	TitleLabel      string `json:"title_label"`
+	DescriptionText string `json:"description_text"`
+	PageNo          int    `json:"page_no"`
 }
 
 type UploadAnalyzeResult struct {
@@ -325,6 +326,31 @@ type UploadAnalyzeDebugQuestion struct {
 	FinalBBoxNorm   map[string]float64
 	AIBBoxPixels    map[string]int
 	FinalBBoxPixels map[string]int
+}
+
+type ImportRecordSummary struct {
+	ID         string
+	Title      string
+	SourceDir  string
+	ImageCount int
+	Status     string
+	CreatedAt  time.Time
+}
+
+type ImportRecordDetail struct {
+	ImportRecordSummary
+	Images  []string
+	Analyze *UploadAnalyzeResult
+}
+
+type importRecordModel struct {
+	ID        string              `json:"id"`
+	Title     string              `json:"title"`
+	SourceDir string              `json:"source_dir"`
+	Status    string              `json:"status"`
+	CreatedAt time.Time           `json:"created_at"`
+	Images    []string            `json:"images"`
+	Analyze   UploadAnalyzeResult `json:"analyze"`
 }
 
 type recognizedPaperMeta struct {
@@ -1433,6 +1459,258 @@ func (s *Service) AnalyzeUpload(ctx context.Context, adminID uint64, titleHint s
 	return out, nil
 }
 
+func fromAnalyzeSnapshot(snap *UploadAnalyzeResult) ([]recognizedQuestion, []recognizedGroup) {
+	if snap == nil {
+		return nil, nil
+	}
+	recQs := make([]recognizedQuestion, 0, len(snap.Questions))
+	for _, q := range snap.Questions {
+		rq := recognizedQuestion{
+			GroupOrder:    q.GroupOrder,
+			QuestionNo:    strings.TrimSpace(q.QuestionNo),
+			QuestionType:  strings.TrimSpace(q.QuestionType),
+			PageNo:        q.PageNo,
+			QuestionOrder: q.QuestionOrder,
+			StemText:      q.StemText,
+			AnswerText:    q.AnswerText,
+			Explanation:   q.Explanation,
+		}
+		if rq.QuestionType == "" {
+			rq.QuestionType = "unknown"
+		}
+		if q.BBoxNorm != nil {
+			rq.BBox = &recognizedBBox{
+				X: toFloat(q.BBoxNorm["x"]),
+				Y: toFloat(q.BBoxNorm["y"]),
+				W: toFloat(q.BBoxNorm["w"]),
+				H: toFloat(q.BBoxNorm["h"]),
+			}
+		}
+		if rq.QuestionNo != "" {
+			recQs = append(recQs, rq)
+		}
+	}
+	recGs := make([]recognizedGroup, 0, len(snap.Groups))
+	for _, g := range snap.Groups {
+		recGs = append(recGs, recognizedGroup{
+			GroupOrder:      g.GroupOrder,
+			SystemKind:      strings.TrimSpace(g.SystemKind),
+			TitleLabel:      strings.TrimSpace(g.TitleLabel),
+			DescriptionText: strings.TrimSpace(g.DescriptionText),
+			PageNo:          g.PageNo,
+		})
+	}
+	return recQs, recGs
+}
+
+func (s *Service) importRecordsBaseDir() string {
+	return filepath.Join(s.uploadDir, "exam-source", "import-records")
+}
+
+func (s *Service) importRecordDir(id string) string {
+	return filepath.Join(s.importRecordsBaseDir(), id)
+}
+
+func (s *Service) CreateImportRecordByAnalyze(ctx context.Context, adminID uint64, titleHint, sourceDir string, images []UploadImage, bboxOpt AnalyzeBBoxOptions) (*ImportRecordDetail, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	if adminID == 0 || len(images) == 0 {
+		return nil, ErrInvalidInput
+	}
+	analyzed, err := s.AnalyzeUpload(ctx, adminID, titleHint, images, bboxOpt)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	id := fmt.Sprintf("%s_%s", now.Format("20060102_150405"), randHex(5))
+	dir := s.importRecordDir(id)
+	pagesDir := filepath.Join(dir, "pages")
+	if err = os.MkdirAll(pagesDir, 0755); err != nil {
+		return nil, err
+	}
+	imageURLs := make([]string, 0, len(images))
+	for i, im := range images {
+		ext := fileExt(im.Filename)
+		rel := filepath.ToSlash(filepath.Join("exam-source", "import-records", id, "pages", fmt.Sprintf("%03d%s", i+1, ext)))
+		abs := filepath.Join(s.uploadDir, rel)
+		if err = os.WriteFile(abs, im.Bytes, 0644); err != nil {
+			return nil, err
+		}
+		imageURLs = append(imageURLs, "/uploads/"+rel)
+	}
+	model := importRecordModel{
+		ID:        id,
+		Title:     strings.TrimSpace(analyzed.Title),
+		SourceDir: strings.TrimSpace(sourceDir),
+		Status:    "pending",
+		CreatedAt: now,
+		Images:    imageURLs,
+		Analyze:   *analyzed,
+	}
+	raw, _ := json.MarshalIndent(model, "", "  ")
+	if err = os.WriteFile(filepath.Join(dir, "record.json"), raw, 0644); err != nil {
+		return nil, err
+	}
+	return &ImportRecordDetail{
+		ImportRecordSummary: ImportRecordSummary{
+			ID:         model.ID,
+			Title:      model.Title,
+			SourceDir:  model.SourceDir,
+			ImageCount: len(model.Images),
+			Status:     model.Status,
+			CreatedAt:  model.CreatedAt,
+		},
+		Images:  model.Images,
+		Analyze: &model.Analyze,
+	}, nil
+}
+
+func (s *Service) readImportRecord(id string) (*importRecordModel, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+	raw, err := os.ReadFile(filepath.Join(s.importRecordDir(id), "record.json"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var m importRecordModel
+	if err = json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(m.ID) == "" {
+		m.ID = id
+	}
+	return &m, nil
+}
+
+func (s *Service) ListImportRecords(ctx context.Context) ([]ImportRecordSummary, error) {
+	_ = ctx
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	base := s.importRecordsBaseDir()
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	out := make([]ImportRecordSummary, 0, len(entries))
+	for _, it := range entries {
+		if !it.IsDir() {
+			continue
+		}
+		m, err := s.readImportRecord(it.Name())
+		if err != nil {
+			continue
+		}
+		out = append(out, ImportRecordSummary{
+			ID:         m.ID,
+			Title:      m.Title,
+			SourceDir:  m.SourceDir,
+			ImageCount: len(m.Images),
+			Status:     m.Status,
+			CreatedAt:  m.CreatedAt,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	return out, nil
+}
+
+func (s *Service) GetImportRecord(ctx context.Context, id string) (*ImportRecordDetail, error) {
+	_ = ctx
+	if s == nil || s.db == nil {
+		return nil, ErrNoDatabase
+	}
+	m, err := s.readImportRecord(id)
+	if err != nil {
+		return nil, err
+	}
+	return &ImportRecordDetail{
+		ImportRecordSummary: ImportRecordSummary{
+			ID:         m.ID,
+			Title:      m.Title,
+			SourceDir:  m.SourceDir,
+			ImageCount: len(m.Images),
+			Status:     m.Status,
+			CreatedAt:  m.CreatedAt,
+		},
+		Images:  m.Images,
+		Analyze: &m.Analyze,
+	}, nil
+}
+
+func (s *Service) CreatePaperFromImportRecord(ctx context.Context, adminID uint64, id string) (uint64, error) {
+	if s == nil || s.db == nil {
+		return 0, ErrNoDatabase
+	}
+	if adminID == 0 {
+		return 0, ErrInvalidInput
+	}
+	m, err := s.readImportRecord(id)
+	if err != nil {
+		return 0, err
+	}
+	if strings.EqualFold(strings.TrimSpace(m.Status), "created") {
+		return 0, ErrConflict
+	}
+	if m.Analyze.K12SubjectID == nil || *m.Analyze.K12SubjectID == 0 {
+		return 0, ErrInvalidInput
+	}
+	images := make([]UploadImage, 0, len(m.Images))
+	for i, u := range m.Images {
+		rel := strings.TrimPrefix(strings.TrimSpace(u), "/uploads/")
+		if rel == "" {
+			continue
+		}
+		abs := filepath.Join(s.uploadDir, filepath.FromSlash(rel))
+		b, err := os.ReadFile(abs)
+		if err != nil {
+			return 0, err
+		}
+		ext := filepath.Ext(rel)
+		images = append(images, UploadImage{
+			Filename: fmt.Sprintf("%03d%s", i+1, ext),
+			Bytes:    b,
+		})
+	}
+	if len(images) == 0 {
+		return 0, ErrInvalidInput
+	}
+	in := CreatePaperWithUploadInput{
+		CreatePaperInput: CreatePaperInput{
+			Title:           strings.TrimSpace(m.Analyze.Title),
+			SourceRegion:    strings.TrimSpace(m.Analyze.SourceRegion),
+			SourceSchool:    strings.TrimSpace(m.Analyze.SourceSchool),
+			ExamYear:        m.Analyze.ExamYear,
+			Term:            strings.TrimSpace(m.Analyze.Term),
+			GradeLabel:      strings.TrimSpace(m.Analyze.GradeLabel),
+			K12GradeID:      m.Analyze.K12GradeID,
+			K12SubjectID:    *m.Analyze.K12SubjectID,
+			PaperType:       strings.TrimSpace(m.Analyze.PaperType),
+			TotalScore:      m.Analyze.TotalScore,
+			DurationMinutes: m.Analyze.DurationMinutes,
+			Status:          1,
+		},
+		QuestionNos:     append([]string(nil), m.Analyze.QuestionNos...),
+		AnalyzeSnapshot: &m.Analyze,
+	}
+	paperID, err := s.CreatePaperWithImages(ctx, adminID, in, images)
+	if err != nil {
+		return 0, err
+	}
+	m.Status = "created"
+	raw, _ := json.MarshalIndent(m, "", "  ")
+	_ = os.WriteFile(filepath.Join(s.importRecordDir(id), "record.json"), raw, 0644)
+	return paperID, nil
+}
+
 func guessTitleFromImage(images []UploadImage) string {
 	if len(images) == 0 {
 		return ""
@@ -1547,16 +1825,20 @@ func (s *Service) CreatePaperWithImages(ctx context.Context, adminID uint64, in 
 	if adminID == 0 || in.K12SubjectID == 0 || strings.TrimSpace(in.Title) == "" || len(images) == 0 {
 		return 0, ErrInvalidInput
 	}
-	recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images, 0, in.BBoxOptions)
 	var recognized []recognizedQuestion
 	var recGroups []recognizedGroup
-	if recErr != nil {
-		// Keep upload available even when upstream recognition fails.
-		recognized = nil
-		recGroups = nil
-	} else if recOut != nil {
-		recognized = recOut.Questions
-		recGroups = recOut.Groups
+	if in.AnalyzeSnapshot != nil {
+		recognized, recGroups = fromAnalyzeSnapshot(in.AnalyzeSnapshot)
+	} else {
+		recOut, recErr := s.recognizeQuestions(ctx, strings.TrimSpace(in.Title), images, 0, in.BBoxOptions)
+		if recErr != nil {
+			// Keep upload available even when upstream recognition fails.
+			recognized = nil
+			recGroups = nil
+		} else if recOut != nil {
+			recognized = recOut.Questions
+			recGroups = recOut.Groups
+		}
 	}
 	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
 		return 0, err

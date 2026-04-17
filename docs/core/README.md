@@ -49,4 +49,9 @@ location /uploads/ {
 
 整卷识别与建卷支持 **大题（`exam_source_question_group`）**：`system_kind` 为系统题型（如 `single_choice` / `multi_choice` 等），`title_label` / `description_text` 存卷面上该大题标题与完整说明；`exam_source_question.group_id` 指向所属大题。`GET /api/v1/admin/exam-source/papers/{paperId}` 返回 `question_groups` 与带 `group_id` 的题目列表；上传分析接口会返回识别到的 `groups` 与题目上的 `group_order`。
 
+## 外部批处理导入（Step-1）
+
+支持通过外部 Python 程序按目录批量执行“上传分析”（一份试卷一个子目录，目录内多张页面图片），产出分份 `manifest`、分析响应与汇总文件，便于后续审核后再创建试卷。脚手架见 `scripts/exam_source_batch_import/README.md` 与 `scripts/exam_source_batch_import/main.py`。  
+后端提供导入记录接口：`POST /api/v1/admin/exam-source/import-records/upload-analyze`、`GET /api/v1/admin/exam-source/import-records`、`POST /api/v1/admin/exam-source/import-records/{recordId}/create-paper`，支持“Step-1 批处理暂存 + Step-2 admin 审核创建”。
+
 返回 [**文档总索引**](../README.md)。

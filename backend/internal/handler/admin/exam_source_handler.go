@@ -758,6 +758,115 @@ func (h *ExamSourceHandler) AnalyzeUpload(w http.ResponseWriter, r *http.Request
 	}
 }
 
+func (h *ExamSourceHandler) CreateImportRecordByAnalyze(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_MULTIPART"})
+		return
+	}
+	images, err := collectUploadImages(r.MultipartForm)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "IMAGES_REQUIRED"})
+		return
+	}
+	titleHint := strings.TrimSpace(r.FormValue("title"))
+	sourceDir := strings.TrimSpace(r.FormValue("source_dir"))
+	bboxOpt := readAnalyzeBBoxOptionsFromReq(r)
+	res, err := h.svc.CreateImportRecordByAnalyze(r.Context(), adminIDFromReq(r), titleHint, sourceDir, images, bboxOpt)
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"id":          res.ID,
+			"title":       res.Title,
+			"source_dir":  res.SourceDir,
+			"image_count": res.ImageCount,
+			"status":      res.Status,
+			"created_at":  RFC3339Time(res.CreatedAt),
+			"images":      res.Images,
+			"analyze":     res.Analyze,
+		})
+	}
+}
+
+func (h *ExamSourceHandler) ListImportRecords(w http.ResponseWriter, r *http.Request) {
+	items, err := h.svc.ListImportRecords(r.Context())
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		rows := make([]map[string]any, 0, len(items))
+		for _, it := range items {
+			rows = append(rows, map[string]any{
+				"id":          it.ID,
+				"title":       it.Title,
+				"source_dir":  it.SourceDir,
+				"image_count": it.ImageCount,
+				"status":      it.Status,
+				"created_at":  RFC3339Time(it.CreatedAt),
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": rows})
+	}
+}
+
+func (h *ExamSourceHandler) GetImportRecord(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("recordId"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_ID"})
+		return
+	}
+	it, err := h.svc.GetImportRecord(r.Context(), id)
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":          it.ID,
+			"title":       it.Title,
+			"source_dir":  it.SourceDir,
+			"image_count": it.ImageCount,
+			"status":      it.Status,
+			"created_at":  RFC3339Time(it.CreatedAt),
+			"images":      it.Images,
+			"analyze":     it.Analyze,
+		})
+	}
+}
+
+func (h *ExamSourceHandler) CreatePaperFromImportRecord(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("recordId"))
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_ID"})
+		return
+	}
+	pid, err := h.svc.CreatePaperFromImportRecord(r.Context(), adminIDFromReq(r), id)
+	switch {
+	case errors.Is(err, adminexamsource.ErrNoDatabase):
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"code": "DATABASE_REQUIRED"})
+	case errors.Is(err, adminexamsource.ErrInvalidInput):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_INPUT"})
+	case errors.Is(err, adminexamsource.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": "NOT_FOUND"})
+	case errors.Is(err, adminexamsource.ErrConflict):
+		writeJSON(w, http.StatusConflict, map[string]any{"code": "CONFLICT"})
+	case err != nil:
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"code": "INTERNAL_ERROR"})
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "paper_id": pid})
+	}
+}
+
 func (h *ExamSourceHandler) CreatePaperWithUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "INVALID_MULTIPART"})

@@ -754,6 +754,7 @@
     auditFilters: { limit: 50, offset: 0 },
     aiLogs: [],
     examPapers: [],
+    examImportRecords: [],
     examSourceDetailPaperID: 0,
     aiLogFilters: {
       limit: 50,
@@ -1038,8 +1039,12 @@
         return;
       }
       if (state.view === 'exam_source') {
-        const d = await api('/api/v1/admin/exam-source/papers');
+        const [d, ir] = await Promise.all([
+          api('/api/v1/admin/exam-source/papers'),
+          api('/api/v1/admin/exam-source/import-records'),
+        ]);
         state.examPapers = d.items || [];
+        state.examImportRecords = ir.items || [];
         pane.innerHTML = renderExamSourcePapers();
         bindExamSourcePapers(pane);
         return;
@@ -2346,6 +2351,23 @@
         </tr>`;
       })
       .join('');
+    const importRows = (state.examImportRecords || [])
+      .map(
+        (x) => `<tr>
+          <td>${escapeHtml(String(x.id || ''))}</td>
+          <td>${escapeHtml(String(x.title || ''))}</td>
+          <td>${escapeHtml(String(x.source_dir || '—'))}</td>
+          <td>${x.image_count || 0}</td>
+          <td>${escapeHtml(String(x.status || 'pending'))}</td>
+          <td>${escapeHtml(String(x.created_at || ''))}</td>
+          <td><div class="row" style="margin:0"><button type="button" class="btn secondary small" data-ir-view="${escapeHtml(
+            String(x.id || '')
+          )}">查看</button><button type="button" class="btn secondary small" data-ir-create="${escapeHtml(
+            String(x.id || '')
+          )}">创建试卷</button></div></td>
+        </tr>`
+      )
+      .join('');
     return `
       <div class="toolbar">
         <h2 style="margin:0">试卷库（exam_source）</h2>
@@ -2354,6 +2376,11 @@
         </div>
       </div>
       <p class="muted">支持浏览整卷信息，并通过“两阶段上传（先分析、再补全）”创建试卷及页面子记录。</p>
+      <h4 style="margin:8px 0">外部导入记录（待审核）</h4>
+      <table class="data">
+        <thead><tr><th>ID</th><th>标题</th><th>来源目录</th><th>图片数</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
+        <tbody>${importRows || '<tr><td colspan="7">暂无导入记录</td></tr>'}</tbody>
+      </table>
       <table class="data">
         <thead><tr><th>ID</th><th>标题</th><th>年份</th><th>学期</th><th>学科ID</th><th>总分</th><th>状态</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7">暂无数据</td></tr>'}</tbody>
@@ -2375,6 +2402,48 @@
         if (!id) return;
         state.examSourceDetailPaperID = id;
         mount(document.getElementById('app'));
+      });
+    });
+    pane.querySelectorAll('button[data-ir-view]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = String(btn.getAttribute('data-ir-view') || '').trim();
+        if (!id) return;
+        try {
+          const d = await api('/api/v1/admin/exam-source/import-records/' + encodeURIComponent(id));
+          const a = d.analyze || {};
+          const groups = Array.isArray(a.groups) ? a.groups : [];
+          const questions = Array.isArray(a.questions) ? a.questions : [];
+          const groupText = groups
+            .map((g) => `大题 ${g.group_order || '—'} · ${g.system_kind || ''} ${g.title_label || ''}\n${g.description_text || ''}`)
+            .join('\n\n');
+          const msg = `标题: ${d.title || ''}\n来源: ${d.source_dir || '—'}\n图片: ${d.image_count || 0}\n分组: ${groups.length}\n题目: ${
+            questions.length
+          }\n\n${groupText || '(无分组文本)'}`;
+          alert(msg);
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          alert('加载导入记录失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        }
+      });
+    });
+    pane.querySelectorAll('button[data-ir-create]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = String(btn.getAttribute('data-ir-create') || '').trim();
+        if (!id) return;
+        if (!confirm(`确认基于导入记录 ${id} 创建试卷？`)) return;
+        btn.disabled = true;
+        try {
+          const d = await api('/api/v1/admin/exam-source/import-records/' + encodeURIComponent(id) + '/create-paper', {
+            method: 'POST',
+          });
+          alert('创建成功，试卷ID: ' + (d.paper_id || ''));
+          mount(document.getElementById('app'));
+        } catch (e) {
+          if (authRedirectHandled(e)) return;
+          alert('创建失败: ' + (e.data && e.data.code ? e.data.code : e.message));
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
     const detailPaperID = Number(state.examSourceDetailPaperID || 0);
