@@ -344,13 +344,14 @@ type ImportRecordDetail struct {
 }
 
 type importRecordModel struct {
-	ID        string              `json:"id"`
-	Title     string              `json:"title"`
-	SourceDir string              `json:"source_dir"`
-	Status    string              `json:"status"`
-	CreatedAt time.Time           `json:"created_at"`
-	Images    []string            `json:"images"`
-	Analyze   UploadAnalyzeResult `json:"analyze"`
+	ID        string
+	Title     string
+	SourceDir string
+	Status    string
+	CreatedAt time.Time
+	PaperID   *uint64
+	Images    []string
+	Analyze   UploadAnalyzeResult
 }
 
 type recognizedPaperMeta struct {
@@ -1503,12 +1504,64 @@ func fromAnalyzeSnapshot(snap *UploadAnalyzeResult) ([]recognizedQuestion, []rec
 	return recQs, recGs
 }
 
-func (s *Service) importRecordsBaseDir() string {
-	return filepath.Join(s.uploadDir, "exam-source", "import-records")
+func importRecordRelPagePath(id string, pageNo int, ext string) string {
+	return filepath.ToSlash(filepath.Join("exam-source", "import-records", id, "pages", fmt.Sprintf("%03d%s", pageNo, ext)))
 }
 
-func (s *Service) importRecordDir(id string) string {
-	return filepath.Join(s.importRecordsBaseDir(), id)
+func decodeImportRecordFromRow(id, title string, sourceDir sql.NullString, status string, paperID sql.NullInt64, createdAt time.Time, imageURLsRaw, analyzeRaw []byte) (*importRecordModel, error) {
+	m := &importRecordModel{
+		ID:        strings.TrimSpace(id),
+		Title:     strings.TrimSpace(title),
+		Status:    strings.TrimSpace(status),
+		CreatedAt: createdAt,
+	}
+	if sourceDir.Valid {
+		m.SourceDir = strings.TrimSpace(sourceDir.String)
+	}
+	if paperID.Valid && paperID.Int64 > 0 {
+		v := uint64(paperID.Int64)
+		m.PaperID = &v
+	}
+	if len(imageURLsRaw) > 0 {
+		_ = json.Unmarshal(imageURLsRaw, &m.Images)
+	}
+	if len(analyzeRaw) == 0 {
+		return nil, ErrInvalidInput
+	}
+	if err := json.Unmarshal(analyzeRaw, &m.Analyze); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (s *Service) loadImportRecord(ctx context.Context, id string) (*importRecordModel, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, ErrInvalidInput
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	var (
+		title        string
+		sourceDir    sql.NullString
+		status       string
+		paperID      sql.NullInt64
+		createdAt    time.Time
+		imageURLsRaw []byte
+		analyzeRaw   []byte
+	)
+	err := s.db.QueryRowContext(ctx, dbutil.Rebind(`
+SELECT id, title, source_dir, status, paper_id, created_at, image_urls, analyze_snapshot
+FROM exam_source_import_record
+WHERE id = ? AND is_deleted = 0
+`), id).Scan(&id, &title, &sourceDir, &status, &paperID, &createdAt, &imageURLsRaw, &analyzeRaw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	return decodeImportRecordFromRow(id, title, sourceDir, status, paperID, createdAt, imageURLsRaw, analyzeRaw)
 }
 
 func (s *Service) CreateImportRecordByAnalyze(ctx context.Context, adminID uint64, titleHint, sourceDir string, images []UploadImage, bboxOpt AnalyzeBBoxOptions) (*ImportRecordDetail, error) {
@@ -1524,111 +1577,95 @@ func (s *Service) CreateImportRecordByAnalyze(ctx context.Context, adminID uint6
 	}
 	now := time.Now()
 	id := fmt.Sprintf("%s_%s", now.Format("20060102_150405"), randHex(5))
-	dir := s.importRecordDir(id)
-	pagesDir := filepath.Join(dir, "pages")
-	if err = os.MkdirAll(pagesDir, 0755); err != nil {
-		return nil, err
-	}
 	imageURLs := make([]string, 0, len(images))
 	for i, im := range images {
 		ext := fileExt(im.Filename)
-		rel := filepath.ToSlash(filepath.Join("exam-source", "import-records", id, "pages", fmt.Sprintf("%03d%s", i+1, ext)))
+		rel := importRecordRelPagePath(id, i+1, ext)
 		abs := filepath.Join(s.uploadDir, rel)
+		if err = os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			return nil, err
+		}
 		if err = os.WriteFile(abs, im.Bytes, 0644); err != nil {
 			return nil, err
 		}
 		imageURLs = append(imageURLs, "/uploads/"+rel)
 	}
-	model := importRecordModel{
-		ID:        id,
-		Title:     strings.TrimSpace(analyzed.Title),
-		SourceDir: strings.TrimSpace(sourceDir),
-		Status:    "pending",
-		CreatedAt: now,
-		Images:    imageURLs,
-		Analyze:   *analyzed,
-	}
-	raw, _ := json.MarshalIndent(model, "", "  ")
-	if err = os.WriteFile(filepath.Join(dir, "record.json"), raw, 0644); err != nil {
+	imageURLsRaw, _ := json.Marshal(imageURLs)
+	analyzeRaw, _ := json.Marshal(analyzed)
+	ctx2, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	_, err = s.db.ExecContext(ctx2, dbutil.Rebind(`
+INSERT INTO exam_source_import_record
+  (id, title, source_dir, image_urls, analyze_snapshot, status, paper_id, remarks,
+   created_at, created_by, updated_at, updated_by, is_deleted)
+VALUES (?, ?, ?, ?::jsonb, ?::jsonb, 'pending', NULL, NULL, ?, ?, ?, ?, 0)
+`), id, strings.TrimSpace(analyzed.Title), emptyToNil(sourceDir), string(imageURLsRaw), string(analyzeRaw), now, adminID, now, adminID)
+	if err != nil {
 		return nil, err
 	}
 	return &ImportRecordDetail{
 		ImportRecordSummary: ImportRecordSummary{
-			ID:         model.ID,
-			Title:      model.Title,
-			SourceDir:  model.SourceDir,
-			ImageCount: len(model.Images),
-			Status:     model.Status,
-			CreatedAt:  model.CreatedAt,
+			ID:         id,
+			Title:      strings.TrimSpace(analyzed.Title),
+			SourceDir:  strings.TrimSpace(sourceDir),
+			ImageCount: len(imageURLs),
+			Status:     "pending",
+			CreatedAt:  now,
 		},
-		Images:  model.Images,
-		Analyze: &model.Analyze,
+		Images:  imageURLs,
+		Analyze: analyzed,
 	}, nil
 }
 
-func (s *Service) readImportRecord(id string) (*importRecordModel, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return nil, ErrInvalidInput
-	}
-	raw, err := os.ReadFile(filepath.Join(s.importRecordDir(id), "record.json"))
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotFound
-		}
-		return nil, err
-	}
-	var m importRecordModel
-	if err = json.Unmarshal(raw, &m); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(m.ID) == "" {
-		m.ID = id
-	}
-	return &m, nil
-}
-
 func (s *Service) ListImportRecords(ctx context.Context) ([]ImportRecordSummary, error) {
-	_ = ctx
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
 	}
-	base := s.importRecordsBaseDir()
-	entries, err := os.ReadDir(base)
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, title, source_dir, status, created_at, image_urls
+FROM exam_source_import_record
+WHERE is_deleted = 0
+ORDER BY created_at DESC
+LIMIT 1000`)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	out := make([]ImportRecordSummary, 0, len(entries))
-	for _, it := range entries {
-		if !it.IsDir() {
-			continue
+	defer rows.Close()
+	out := make([]ImportRecordSummary, 0, 64)
+	for rows.Next() {
+		var (
+			id, title, status string
+			sourceDir         sql.NullString
+			createdAt         time.Time
+			imageURLsRaw      []byte
+			imgs              []string
+		)
+		if err := rows.Scan(&id, &title, &sourceDir, &status, &createdAt, &imageURLsRaw); err != nil {
+			return nil, err
 		}
-		m, err := s.readImportRecord(it.Name())
-		if err != nil {
-			continue
+		_ = json.Unmarshal(imageURLsRaw, &imgs)
+		item := ImportRecordSummary{
+			ID:         strings.TrimSpace(id),
+			Title:      strings.TrimSpace(title),
+			ImageCount: len(imgs),
+			Status:     strings.TrimSpace(status),
+			CreatedAt:  createdAt,
 		}
-		out = append(out, ImportRecordSummary{
-			ID:         m.ID,
-			Title:      m.Title,
-			SourceDir:  m.SourceDir,
-			ImageCount: len(m.Images),
-			Status:     m.Status,
-			CreatedAt:  m.CreatedAt,
-		})
+		if sourceDir.Valid {
+			item.SourceDir = strings.TrimSpace(sourceDir.String)
+		}
+		out = append(out, item)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
-	return out, nil
+	return out, rows.Err()
 }
 
 func (s *Service) GetImportRecord(ctx context.Context, id string) (*ImportRecordDetail, error) {
-	_ = ctx
 	if s == nil || s.db == nil {
 		return nil, ErrNoDatabase
 	}
-	m, err := s.readImportRecord(id)
+	m, err := s.loadImportRecord(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -1653,7 +1690,7 @@ func (s *Service) CreatePaperFromImportRecord(ctx context.Context, adminID uint6
 	if adminID == 0 {
 		return 0, ErrInvalidInput
 	}
-	m, err := s.readImportRecord(id)
+	m, err := s.loadImportRecord(ctx, id)
 	if err != nil {
 		return 0, err
 	}
@@ -1705,9 +1742,16 @@ func (s *Service) CreatePaperFromImportRecord(ctx context.Context, adminID uint6
 	if err != nil {
 		return 0, err
 	}
-	m.Status = "created"
-	raw, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(filepath.Join(s.importRecordDir(id), "record.json"), raw, 0644)
+	ctx2, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	_, err = s.db.ExecContext(ctx2, dbutil.Rebind(`
+UPDATE exam_source_import_record
+SET status = 'created', paper_id = ?, updated_at = ?, updated_by = ?
+WHERE id = ? AND is_deleted = 0
+`), paperID, time.Now(), adminID, strings.TrimSpace(id))
+	if err != nil {
+		return 0, err
+	}
 	return paperID, nil
 }
 

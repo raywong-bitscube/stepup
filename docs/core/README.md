@@ -52,6 +52,6 @@ location /uploads/ {
 ## 外部批处理导入（Step-1）
 
 支持通过外部 Python 程序按目录批量执行“上传分析”（一份试卷一个子目录，目录内多张页面图片），产出分份 `manifest`、分析响应与汇总文件，便于后续审核后再创建试卷。脚手架见 `scripts/exam_source_batch_import/README.md` 与 `scripts/exam_source_batch_import/main.py`。  
-后端提供导入记录接口：`POST /api/v1/admin/exam-source/import-records/upload-analyze`、`GET /api/v1/admin/exam-source/import-records`、`POST /api/v1/admin/exam-source/import-records/{recordId}/create-paper`，支持“Step-1 批处理暂存 + Step-2 admin 审核创建”。
+后端提供导入记录接口：`POST /api/v1/admin/exam-source/import-records/upload-analyze`、`GET /api/v1/admin/exam-source/import-records`、`POST /api/v1/admin/exam-source/import-records/{recordId}/create-paper`，支持“Step-1 批处理暂存 + Step-2 admin 审核创建”。导入记录元数据与分析快照持久化在 `exam_source_import_record`，页面图片仍写入 `UPLOAD_DIR/exam-source/import-records/...` 并通过 `/uploads/...` 访问。
 
 返回 [**文档总索引**](../README.md)。
